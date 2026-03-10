@@ -1,0 +1,40 @@
+📊 【DAILY FLIGHT LOG】 {{ date_iso }}
+━━━━━━━━━━━━━━━━━━━━
+✈️ 飛行状態: {{ mode }} (Lv{{ worst_level }})
+🛡 システム: 🟢 正常 (Auto-Pilot: ON)
+━━━━━━━━━━━━━━━━━━━━
+
+{% for section in icl_sections %}
+────────────────────
+[{{ section.section_id }}] ICL（個別層）<{{ section.symbol }}> | {{ section.level }}
+{% for row in section.rows %}
+{{ row.factor }} | {{ row.lv }} | {{ row.value }}{% if row.recovery %} (復帰{{ row.recovery }}日目){% endif %}
+
+{% endfor %}
+
+{% endfor %}
+────────────────────
+[2] SCL（同期層） | {{ scl_level }}
+{% for row in scl_rows %}
+{{ row.factor }} | {{ row.lv }} | {{ row.value }}{% if row.recovery %} (復帰{{ row.recovery }}日目){% endif %}
+
+{% endfor %}
+
+────────────────────
+[3] LCL（制限層） | {{ lcl_level }}
+{% for row in lcl_rows %}
+{{ row.factor }} | {{ row.lv }} | {{ row.value }}{% if row.recovery %} (復帰{{ row.recovery }}日目){% endif %}
+
+{% endfor %}
+{{ nlv_line }}
+
+{% if cash_buffer_line %}{{ cash_buffer_line }}
+{% endif %}
+
+────────────────────
+[4] 24H MAINTENANCE SCHEDULE
+{% for line in maintenance_lines %}
+- {{ line }}
+{% endfor %}
+
+━━━━━━━━━━━━━━━━━━━━

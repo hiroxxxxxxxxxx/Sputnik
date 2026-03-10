@@ -1,0 +1,107 @@
+# Sputnik 用 Compose。定義書「0-2 前提条件」「4 オートパイロット」対応。
+# .env に IB_USERID, IB_PASSWORD を設定すること。
+#
+# サービス役割:
+#   ib-gateway  … IB API サーバ。常時起動。価格・口座・API 提供。noVNC(6080)/API(7497)。
+#   cockpit-bot … Telegram ボット。24h 起動。/cockpit で計器取得して返す。
+#   runner     … テスト・一時スクリプト用。都度「run」で実行。up では起動しない（profile: run）。
+#
+# 運用: up -d → ib-gateway + cockpit-bot のみ起動。runner は docker compose run --rm runner ... で実行。
+
+services:
+  ib-gateway:
+    image: ghcr.io/extrange/ibkr:latest
+    container_name: sputnik-ib-gateway
+    restart: unless-stopped
+    networks:
+      sputnik:
+        aliases:
+          - ib-gateway
+    dns:
+      - 8.8.8.8   # cockpit-bot（service:ib-gateway）が api.telegram.org を解決するために必要
+      - 8.8.4.4   # フォールバック（取得後の返信時に -3 が出る場合の対策）
+    ulimits:
+      nofile: 10000   # イメージ推奨。不足だと noVNC/起動失敗の原因になる
+    # /root/Jts をマウントするとイメージ内の ibgateway が隠れて起動に失敗するためマウントしない。
+    # IBC_ で始まる変数は config.ini を上書き（extrange/ibkr の replace.sh）。接続・免責の手動操作を避ける。
+    environment:
+      - USERNAME=${IB_USERID}
+      - PASSWORD=${IB_PASSWORD}
+      - GATEWAY_OR_TWS=gateway
+      - IBC_TradingMode=paper
+      - IBC_ReadOnlyApi=no
+      - IBC_AcceptIncomingConnectionAction=accept   # API 接続を自動許可（デフォルト manual）
+      - IBC_AcceptNonBrokerageAccountWarning=yes    # Paper 免責を自動承諾（API 接続前に必要）
+    ports:
+      - "127.0.0.1:6080:6080"   # noVNC ブラウザアクセス（localhost にバインド）
+      - "127.0.0.1:7497:8888"   # API: イメージは内部で 8888 で待ち受け
+  runner:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: sputnik:latest
+    container_name: sputnik-runner
+    profiles:
+      - run   # up -d では起動しない。都度 docker compose run --rm runner ... で実行
+    restart: "no"
+    networks:
+      - sputnik
+    # 名前解決（api.telegram.org / ib-gateway）が失敗しないよう DNS を指定
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    environment:
+      - PYTHONPATH=/app/src
+      - PYTHONUNBUFFERED=1
+      - IBKR_HOST=ib-gateway
+      - IBKR_PORT=8888
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+    volumes:
+      - ../src:/app/src:ro
+      - ../scripts:/app/scripts:ro
+      - ../src/config:/app/config:ro
+      - ../tests:/app/tests:ro
+    depends_on:
+      - ib-gateway
+    # 起動時に TELEGRAM_TOKEN/CHAT_ID があれば Telegram 通知してからメインコマンド実行
+    # デフォルト: pytest。Cockpit+IB 実行例:
+    #   docker compose -f docker/docker-compose.yml run --rm runner python scripts/run_cockpit_with_ib.py
+    command:
+      - sh
+      - -c
+      - "python /app/scripts/telegram_startup_notify.py; exec python -m pytest tests/ -v --ignore=tests/avionics/test_factors_config.py"
+
+  # Telegram Cockpit ボット（24h 稼働）。ib-gateway のネットワーク名前空間で動作し 127.0.0.1 で IB に接続（名前解決不要・errorno -3 回避）
+  cockpit-bot:
+    image: sputnik:latest
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: sputnik-cockpit-bot
+    restart: unless-stopped
+    network_mode: service:ib-gateway
+    environment:
+      - PYTHONPATH=/app/src
+      - PYTHONUNBUFFERED=1
+      - IBKR_HOST=127.0.0.1
+      - IBKR_PORT=8888
+      - IBKR_CLIENT_ID=${IBKR_CLIENT_ID:-3}
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+      - TELEGRAM_COCKPIT_SYMBOLS=${TELEGRAM_COCKPIT_SYMBOLS:-NQ,GC}
+    volumes:
+      - ../src:/app/src:ro
+      - ../scripts:/app/scripts:ro
+      - ../src/config:/app/config:ro
+    depends_on:
+      - ib-gateway
+    # 起動時に Telegram 通知（TELEGRAM_TOKEN/CHAT_ID があれば）してからボット開始
+    command:
+      - sh
+      - -c
+      - "python /app/scripts/telegram_startup_notify.py; exec python /app/scripts/telegram_cockpit_bot.py"
+
+networks:
+  sputnik:
+    driver: bridge

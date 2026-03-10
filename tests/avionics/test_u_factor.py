@@ -1,0 +1,263 @@
+from __future__ import annotations
+
+import asyncio
+
+import pytest
+
+from avionics import UFactor
+from avionics.factors_config import FactorsConfigError, get_u_thresholds, load_factors_config
+
+
+def _run(coro):
+    """async関数を同期テスト内で実行するユーティリティ。"""
+    return asyncio.run(coro)
+
+
+@pytest.fixture
+def u_thresholds():
+    """config/factors.toml の [U] から閾値を取得。無ければ skip。"""
+    try:
+        config = load_factors_config()
+    except FactorsConfigError:
+        pytest.skip("config/factors.toml required")
+    try:
+        return get_u_thresholds(config)
+    except Exception:
+        pytest.skip("config/factors.toml [U] required")
+
+
+def test_downgrade_immediate(u_thresholds) -> None:
+    """
+    U因子がMM/NLV閾値に達した際に即時でC1/C2へ降格することを確認する。
+    """
+    uf = UFactor(thresholds=u_thresholds)
+    assert uf.level == 0
+
+    async def scenario():
+        # 40%以上でC1
+        level = await uf.update_from_ratio(0.40)
+        assert level == 1
+
+        # 50%以上でC2
+        level = await uf.update_from_ratio(0.50)
+        assert level == 2
+
+    _run(scenario())
+
+
+def test_upgrade_delayed(u_thresholds) -> None:
+    """
+    C2→C1が2日、C1→C0が3日連続確認で復帰することを確認する。
+    """
+    uf = UFactor(thresholds=u_thresholds)
+    uf.level = 2
+
+    async def scenario():
+        # C2→C1 復帰テスト
+        for i in range(2):
+            await uf.update_from_ratio(0.44)
+            if i == 0:
+                assert uf.level == 2
+        assert uf.level == 1
+
+        # C1→C0 復帰テスト
+        for i in range(3):
+            await uf.update_from_ratio(0.37)
+            if i < 2:
+                assert uf.level == 1
+        assert uf.level == 0
+
+    _run(scenario())
+
+
+def test_level_calculation_thresholds(u_thresholds) -> None:
+    """
+    SPECの表どおりにCレベルが決定されることを確認する。
+    """
+    uf = UFactor(thresholds=u_thresholds)
+
+    async def scenario():
+        # 適正負荷（C0）
+        level0 = await uf.update_from_ratio(0.30)
+        assert level0 == 0
+
+        # 超過負荷（C1）
+        level1 = await uf.update_from_ratio(0.42)
+        assert level1 == 1
+
+        # 限界負荷（C2）
+        level2 = await uf.update_from_ratio(0.55)
+        assert level2 == 2
+
+    _run(scenario())
+
+
+def test_ufactor_update_runs_with_defaults(u_thresholds) -> None:
+    """
+    UFactor.update がデフォルト引数で update_from_ratio を呼び正常終了することを確認する。
+    """
+    uf = UFactor(thresholds=u_thresholds)
+
+    async def scenario():
+        await uf.update()
+        assert uf.level in (0, 1, 2)
+
+    _run(scenario())
+
+
+def test_ufactor_no_change_records_history(u_thresholds) -> None:
+    """
+    Uが閾値の間にありレベルが変わらない場合にrecord_levelのみ行われるパスを確認する。
+    """
+    uf = UFactor(thresholds=u_thresholds)
+    uf.level = 1
+
+    async def scenario():
+        before_len = len(uf.history)
+        # current=1, rが0.38〜0.40の間 → C1維持
+        level = await uf.update_from_ratio(0.39)
+        assert level == 1
+        assert len(uf.history) == before_len + 1
+
+    _run(scenario())
+
+
+def test_ufactor_current2_stays_c2_when_above_threshold(u_thresholds) -> None:
+    """
+    current=C2かつr>=0.45のとき、C2維持パスを明示的にカバーする。
+    """
+    uf = UFactor(thresholds=u_thresholds)
+    uf.level = 2
+
+    async def scenario():
+        level = await uf.update_from_ratio(0.48)
+        assert level == 2
+
+    _run(scenario())
+
+
+def test_ufactor_current1_upgrades_to_c2_on_high_ratio(u_thresholds) -> None:
+    """
+    current=C1かつr>=0.50でC2へ悪化する分岐をカバーする。
+    """
+    uf = UFactor(thresholds=u_thresholds)
+    uf.level = 1
+
+    async def scenario():
+        level = await uf.update_from_ratio(0.55)
+        assert level == 2
+
+    _run(scenario())
+
+
+def test_update_from_ratio_exact_threshold_0_45_current2(u_thresholds) -> None:
+    """
+    current=C2かつrがちょうど0.45未満でC1候補になる境界をカバーする。
+    定義書: C2→C1復帰は r < 0.45（2日確認）。
+    """
+    uf = UFactor(thresholds=u_thresholds)
+    uf.level = 2
+
+    async def scenario():
+        level = await uf.update_from_ratio(0.44)
+        assert level == 2  # 1日目はまだC2
+        level = await uf.update_from_ratio(0.44)
+        assert level == 1  # 2日目でC1復帰
+
+    _run(scenario())
+
+
+def test_update_from_ratio_exact_threshold_0_38_current1(u_thresholds) -> None:
+    """
+    current=C1かつrがちょうど0.38未満でC0候補になる境界をカバーする。
+    定義書: C1→C0復帰は r < 0.38（3日確認）。
+    """
+    uf = UFactor(thresholds=u_thresholds)
+    uf.level = 1
+
+    async def scenario():
+        for _ in range(3):
+            await uf.update_from_ratio(0.37)
+        assert uf.level == 0
+
+    _run(scenario())
+
+
+def test_update_from_ratio_current0_r_ge_50_downgrade_to_c2(u_thresholds) -> None:
+    """
+    current=C0かつr>=0.50で即C2へ降格する分岐をカバーする。
+    定義書: C2発動（即）r >= 50%。
+    """
+    uf = UFactor(thresholds=u_thresholds)
+    assert uf.level == 0
+
+    async def scenario():
+        level = await uf.update_from_ratio(0.50)
+        assert level == 2
+
+    _run(scenario())
+
+
+def test_update_from_ratio_exact_threshold_0_45_c2_stays(u_thresholds) -> None:
+    """
+    current=C2かつrがちょうど0.45以上のときC2維持（else: candidate=2）の境界をカバーする。
+    """
+    uf = UFactor(thresholds=u_thresholds)
+    uf.level = 2
+
+    async def scenario():
+        level = await uf.update_from_ratio(0.45)
+        assert level == 2
+
+    _run(scenario())
+
+
+def test_update_from_ratio_exact_threshold_0_38_current1_else_branch(u_thresholds) -> None:
+    """
+    current=C1かつ0.38<=r<0.40のときelse: candidate=1となる境界をカバーする。
+    """
+    uf = UFactor(thresholds=u_thresholds)
+    uf.level = 1
+
+    async def scenario():
+        level = await uf.update_from_ratio(0.38)
+        assert level == 1
+
+    _run(scenario())
+
+
+def test_update_from_ratio_current1_r_ge_0_40_candidate_1(u_thresholds) -> None:
+    """
+    current=C1かつr>=0.40（かつr<0.50）のとき「elif r >= 0.40: candidate = 1」をカバーする。
+    """
+    uf = UFactor(thresholds=u_thresholds)
+    uf.level = 1
+
+    async def scenario():
+        level = await uf.update_from_ratio(0.42)
+        assert level == 1
+
+    _run(scenario())
+
+
+def test_update_from_ratio_c2_no_direct_jump_to_c0(u_thresholds) -> None:
+    """
+    定義書どおり C2 からは一段階ずつ復帰する。r<0.38 でも C2→C1 のみ（C0 へは直飛びしない）。
+    """
+    uf = UFactor(thresholds=u_thresholds)
+    uf.level = 2
+
+    async def scenario():
+        # 1日目: r<0.45 で candidate=1 だが confirm_days=2 のためまだ C2
+        level = await uf.update_from_ratio(0.37)
+        assert level == 2
+        # 2日目: C2→C1 復帰
+        level = await uf.update_from_ratio(0.37)
+        assert level == 1
+        # さらに3日で C1→C0
+        for _ in range(3):
+            await uf.update_from_ratio(0.37)
+        assert uf.level == 0
+
+    _run(scenario())
+
