@@ -1,0 +1,17 @@
+【Layer 2 シグナル内訳】
+
+{% for row in price_rows %}
+  P/T入力({{ row.symbol }}): trend={{ row.trend }} daily_change={{ row.daily_change }} cum5={{ row.cum5 }} cum2={{ row.cum2 }} downside_gap={{ row.downside_gap }}
+{% endfor %}
+{% for row in volatility_rows %}
+  V入力({{ row.symbol }}): index_value={{ row.index_value }} altitude={{ row.altitude }}
+{% endfor %}
+{% if liquidity_credit %}
+  L(credit): below_sma20={{ liquidity_credit.below_sma20 }} daily_change={{ liquidity_credit.daily_change }} altitude={{ liquidity_credit.altitude }}
+{% endif %}
+{% if liquidity_tip %}
+  L(tip): tip_drawdown_from_high={{ liquidity_tip.tip_drawdown_from_high }} altitude={{ liquidity_tip.altitude }}
+{% endif %}
+{% if capital_row %}
+  U/S入力: mm_over_nlv={{ capital_row.mm_over_nlv }} span_ratio={{ capital_row.span_ratio }}
+{% endif %}

@@ -1,0 +1,96 @@
+"""
+R因子（Real-Rate Stress）：GC系専用。実質金利ストレスの検知。
+
+TIP の高値比ドローダウンで R0/R2 を判定する。R1廃止。二択のみ。
+悪化は即時、復帰は confirm_days 連続確認。高高度・中高度と低高度で閾値テーブル切り替え。
+定義書「4-2-1-4 R因子（Real-Rate Stress：GC系）」参照。
+"""
+
+from __future__ import annotations
+
+from typing import Literal, TYPE_CHECKING
+
+import ib_async  # noqa: F401
+
+from .base_factor import BaseFactor, LevelType
+
+if TYPE_CHECKING:
+    from .signals import LiquiditySignals
+
+
+AltitudeRegime = Literal["high_mid", "low"]
+
+
+class RFactor(BaseFactor):
+    """
+    R因子（Real-Rate Stress）：GC系専用。
+
+    R2発動（即）: 高値比ドローダウンが閾値以下（高度別）。
+    R0復帰（2日確認）: 高値比が復帰閾値以内を維持（高度別）。
+    定義書「4-2-1-4」「0-4」参照。
+    """
+
+    def __init__(
+        self,
+        name: str,
+        thresholds: dict,
+        history_size: int = 64,
+    ) -> None:
+        """
+        R因子を初期化する。
+
+        :param name: 表示用ラベル（例: "R"）。
+        :param thresholds: しきい値辞書（drawdown_*_L2, drawdown_*_L0, confirm_days）。factors_config.get_r_thresholds で注入。
+        :param history_size: レベル履歴バッファ長
+        定義書「4-2-1-4 R因子」参照。
+        """
+        self.thresholds: dict = dict(thresholds)
+        super().__init__(name=name, levels=[0, 2], history_size=history_size)
+
+    def _drawdown_L2(self, altitude: AltitudeRegime) -> float:
+        """R2発動閾値（高値比。例: -0.025）。"""
+        key = "drawdown_high_mid_L2" if altitude == "high_mid" else "drawdown_low_L2"
+        return float(self.thresholds[key])
+
+    def _drawdown_L0(self, altitude: AltitudeRegime) -> float:
+        """R0復帰判定の上限（高値比。例: -0.015 なら -1.5%以内）。"""
+        key = "drawdown_high_mid_L0" if altitude == "high_mid" else "drawdown_low_L0"
+        return float(self.thresholds[key])
+
+    async def update(self) -> None:
+        """
+        未注入時は安全なデフォルトで update_from_signals を呼ぶ。
+        定義書「3-1 PFD」「4-2-1-4 R因子」参照。
+        """
+        await self.update_from_signals(
+            altitude="high_mid",
+            tip_drawdown_from_high=-0.001,
+        )
+
+    async def update_from_signals(
+        self,
+        altitude: AltitudeRegime,
+        tip_drawdown_from_high: float,
+    ) -> LevelType:
+        """
+        事前計算済みシグナル（LiquiditySignals 相当：tip_drawdown_from_high）から R レベルを更新する。
+
+        R2発動（即）: tip_drawdown_from_high <= drawdown_L2（高度別）。
+        R0復帰: tip_drawdown_from_high >= drawdown_L0（より浅い側）を confirm_days 連続維持。
+        定義書「0-4」「4-2-1-4」参照。
+        """
+        confirm_days = int(self.thresholds["confirm_days"])
+        L2 = self._drawdown_L2(altitude)
+        L0 = self._drawdown_L0(altitude)
+
+        r2_triggered = tip_drawdown_from_high <= L2
+        # R0復帰: ドローダウンが L0 以上（＝浅い。例: -0.015 以上 ＝ -1.5%以内）
+        r0_condition_met = tip_drawdown_from_high >= L0
+
+        if r2_triggered:
+            self.downgrade(2)
+            return 2
+
+        if self.level == 2:
+            await self.upgrade(0, confirm_days, condition_met=r0_condition_met)
+        return self.level

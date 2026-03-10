@@ -1,0 +1,7 @@
+【Cockpit】取得: {{ now_utc }}
+
+{% for block in symbol_blocks %}
+■ {{ block.symbol }}: {{ block.mode }} (Lv{{ block.throttle_level }})
+  {{ block.reason }}
+  critical={{ block.is_critical }} | P={{ block.p }} V={{ block.v }} L={{ block.l }} T={{ block.t }} U={{ block.u }} S={{ block.s }}
+{% endfor %}

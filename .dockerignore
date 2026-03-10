@@ -1,0 +1,15 @@
+# ビルドコンテキストから除外
+.venv
+venv
+__pycache__
+*.pyc
+.git
+.gitignore
+.cursor
+*.md
+.pytest_cache
+.coverage
+htmlcov
+*.egg-info
+dist
+build

@@ -1,0 +1,20 @@
+# Main 層：先物 / K1 / K2。Cruise は PB、Emergency は PB 転換（1:2 シフト）。
+# 定義書「1-4」「6-2」参照。人間がメンテナンスするマトリクスデータ。
+
+[ratios.Boost]
+future = 1.0
+option_k1 = -1.0
+option_k2 = 0.0
+strategy = "PB"
+
+[ratios.Cruise]
+future = 1.0
+option_k1 = -1.0
+option_k2 = 0.0
+strategy = "PB"
+
+[ratios.Emergency]
+future = 1.0
+option_k1 = -1.0
+option_k2 = 1.0
+strategy = "PB_CONVERTED"
