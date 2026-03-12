@@ -1,2 +1,27 @@
 # この CI ワークフローは definition.md の「0-1. システム憲章（構造を壊さない）」「6. メンテナンス（オペレーション）」「付録A. 未決事項管理」に対応し、テスト自動実行と品質維持を通じて航空機システムの定期点検に相当する継続的インテグレーション基盤のスケルトンを提供します。
 
+name: CI
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.10"
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+    - name: Run Tests
+      run: |
+        # ここにテストコマンドを書きます。なければ何もしない設定です。
+        echo "No tests specified"
