@@ -2,6 +2,9 @@
 """
 Telegram から /cockpit または /status で現在の Cockpit 計器内容を返すボット。
 
+コマンド: /start, /ping, /cockpit, /status, /breakdown, /daily, /schedule
+  /schedule: 取引時間スキャン（夏冬・短縮・休場の事前通知）。毎朝のルーチンや週次で実行推奨。
+
 用法:
   PYTHONPATH=src python scripts/telegram_cockpit_bot.py
   環境変数: TELEGRAM_TOKEN（必須）, IBKR_HOST, IBKR_PORT（IB 取得時）, TELEGRAM_COCKPIT_SYMBOLS（省略時 NQ,GC）
@@ -20,10 +23,13 @@ if TYPE_CHECKING:
     from telegram.ext import ContextTypes
 
 _root = Path(__file__).resolve().parent.parent
+_scripts = Path(__file__).resolve().parent
 if str(_root) not in sys.path:
     sys.path.insert(0, str(_root))
 if str(_root / "src") not in sys.path:
     sys.path.insert(0, str(_root / "src"))
+if str(_scripts) not in sys.path:
+    sys.path.insert(0, str(_scripts))
 
 
 def _build_cockpit(symbols: list[str]):
@@ -113,7 +119,8 @@ async def fetch_cockpit_report(host: str, port: int, symbols: list[str]) -> str:
         except (FactorsConfigError, KeyError):
             v_recovery_params = None
         fetcher = IBDataFetcher(ib)
-        as_of = date.today()
+        from util import ny_date_now
+        as_of = ny_date_now()  # バー日付（NY Trade Date）と整合
         bundle, _ = await fetcher.fetch_signal_bundle(
             as_of=as_of,
             price_symbols=symbols,
@@ -126,7 +133,7 @@ async def fetch_cockpit_report(host: str, port: int, symbols: list[str]) -> str:
         await cockpit.update_all(signal_bundle=bundle)
         now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         from reports.format_cockpit_report import format_cockpit_report
-        return await format_cockpit_report(cockpit, symbols, now_utc)
+        return await format_cockpit_report(cockpit, symbols, now_utc, bundle=bundle)
     finally:
         ib.disconnect()
 
@@ -157,7 +164,8 @@ async def fetch_breakdown_report(host: str, port: int, symbols: list[str]) -> st
         except (FactorsConfigError, KeyError):
             v_recovery_params = None
         fetcher = IBDataFetcher(ib)
-        as_of = date.today()
+        from util import ny_date_now
+        as_of = ny_date_now()
         bundle, _ = await fetcher.fetch_signal_bundle(
             as_of=as_of,
             price_symbols=symbols,
@@ -197,7 +205,8 @@ async def fetch_daily_report(host: str, port: int, symbols: list[str]) -> str:
         except (FactorsConfigError, KeyError):
             v_recovery_params = None
         fetcher = IBDataFetcher(ib)
-        as_of = date.today()
+        from util import ny_date_now
+        as_of = ny_date_now()
         bundle, capital_snapshot = await fetcher.fetch_signal_bundle(
             as_of=as_of,
             price_symbols=symbols,
@@ -360,6 +369,64 @@ async def daily_command(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
             pass
 
 
+async def fetch_schedule_alerts(host: str, port: int, symbols: list[str]) -> str:
+    """
+    IB から取引時間を取得し、翌日以降の DST・短縮・休場の通知文を組み立てて返す。
+    """
+    from avionics.trading_hours import run_daily_schedule_scan
+    from ib_async import IB
+
+    ib = IB()
+    client_id = int(os.environ.get("IBKR_CLIENT_ID", "3"))
+    await ib.connectAsync(host=host, port=port, clientId=client_id, timeout=30)
+    try:
+        results = await run_daily_schedule_scan(ib, symbols)
+    finally:
+        ib.disconnect()
+
+    lines = ["【取引時間スキャン】"]
+    for symbol, messages in results:
+        lines.append(f"\n{symbol}:")
+        if messages:
+            for m in messages:
+                lines.append(f"  {m}")
+        else:
+            lines.append("  特記事項なし（明日以降の変化なし）")
+    return "\n".join(lines)
+
+
+async def schedule_command(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """ /schedule で取引時間スキャン（夏冬・短縮・休場の事前通知）を取得して返す。"""
+    msg = getattr(update, "effective_message", None)
+    if msg is None:
+        return
+    host = os.environ.get("IBKR_HOST", "127.0.0.1").strip()
+    port_str = os.environ.get("IBKR_PORT", "").strip()
+    port = int(port_str) if port_str.isdigit() else 4002
+    symbols_str = os.environ.get("TELEGRAM_COCKPIT_SYMBOLS", "NQ,GC").strip()
+    symbols = [s.strip() for s in symbols_str.split(",") if s.strip()] or ["NQ", "GC"]
+    try:
+        await msg.reply_text("取引時間スキャン中…")
+    except Exception:
+        pass
+    try:
+        report = await asyncio.wait_for(
+            fetch_schedule_alerts(host, port, symbols),
+            timeout=45,
+        )
+        await msg.reply_text(report[:4000])
+    except asyncio.TimeoutError:
+        try:
+            await msg.reply_text("取得失敗: タイムアウト。")
+        except Exception:
+            pass
+    except Exception as e:
+        try:
+            await msg.reply_text(f"取得失敗: {type(e).__name__}: {e!s}"[:4000])
+        except Exception:
+            pass
+
+
 async def _notify_gateway_ready(application: object) -> None:
     """
     ボット起動後、Gateway が API 接続可能になるまで待ち、完了メッセージを送る。
@@ -417,6 +484,7 @@ def main() -> int:
     app.add_handler(CommandHandler("status", cockpit_command))
     app.add_handler(CommandHandler("breakdown", breakdown_command))
     app.add_handler(CommandHandler("daily", daily_command))
+    app.add_handler(CommandHandler("schedule", schedule_command))
     app.run_polling(allowed_updates=["message"])
     return 0
 

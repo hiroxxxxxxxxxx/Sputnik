@@ -57,7 +57,7 @@ async def build_daily_flight_log_context(
 
     worst_level = 0
     for sym in symbols:
-        sig = await cockpit.get_cockpit_signal(sym)
+        sig = await cockpit.get_cockpit_signal(sym, bundle)
         worst_level = max(worst_level, sig.throttle_level)
     mode = MODE_STR.get(worst_level, "?")
 
@@ -66,7 +66,7 @@ async def build_daily_flight_log_context(
     gap_str = "—"
     vol_str = "—"
     for sym in symbols:
-        sig = await cockpit.get_cockpit_signal(sym)
+        sig = await cockpit.get_cockpit_signal(sym, bundle)
         m = sig.raw_metrics
         p_lv = max(p_lv, m.get("P", 0))
         v_lv = max(v_lv, m.get("V", 0))
@@ -83,7 +83,7 @@ async def build_daily_flight_log_context(
     u_lv = s_lv = 0
     first_sig_recovery: dict[str, str] = {}
     if symbols:
-        first_sig = await cockpit.get_cockpit_signal(symbols[0])
+        first_sig = await cockpit.get_cockpit_signal(symbols[0], bundle)
         u_lv = first_sig.raw_metrics.get("U", 0)
         s_lv = first_sig.raw_metrics.get("S", 0)
         first_sig_recovery = first_sig.recovery_metrics
@@ -107,7 +107,7 @@ async def build_daily_flight_log_context(
     if bundle.liquidity_tip and bundle.liquidity_tip.tip_drawdown_from_high is not None:
         r_val = f"{bundle.liquidity_tip.tip_drawdown_from_high * 100:.1f}%"
     for idx, sym in enumerate(symbols):
-        sig = await cockpit.get_cockpit_signal(sym)
+        sig = await cockpit.get_cockpit_signal(sym, bundle)
         m = sig.raw_metrics
         p_lv = m.get("P", 0)
         v_lv = m.get("V", 0)

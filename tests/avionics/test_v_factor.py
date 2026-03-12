@@ -30,10 +30,16 @@ def test_downgrade_immediate() -> None:
     assert vf.level == 0
 
     async def scenario():
-        level = await vf.update_from_index(index_value=30.5, altitude="high_mid")
+        level = await vf.update_from_index(
+            index_value=30.5, altitude="high_mid",
+            recovery_confirm_satisfied_days_v1_off=0, recovery_confirm_satisfied_days_v2_off=0,
+        )
         assert level == 1
 
-        level = await vf.update_from_index(index_value=41.0, altitude="high_mid")
+        level = await vf.update_from_index(
+            index_value=41.0, altitude="high_mid",
+            recovery_confirm_satisfied_days_v1_off=0, recovery_confirm_satisfied_days_v2_off=0,
+        )
         assert level == 2
 
     _run(scenario())
@@ -47,10 +53,16 @@ def test_upgrade_delayed_v2_to_v1() -> None:
     vf.level = 2
 
     async def scenario():
-        await vf.update_from_index(index_value=37.5, altitude="high_mid")
+        await vf.update_from_index(
+            index_value=37.5, altitude="high_mid",
+            recovery_confirm_satisfied_days_v1_off=0, recovery_confirm_satisfied_days_v2_off=0,
+        )
         assert vf.level == 2
 
-        await vf.update_from_index(index_value=37.0, altitude="high_mid")
+        await vf.update_from_index(
+            index_value=37.0, altitude="high_mid",
+            recovery_confirm_satisfied_days_v1_off=2, recovery_confirm_satisfied_days_v2_off=2,
+        )
         assert vf.level == 1
 
     _run(scenario())
@@ -75,6 +87,8 @@ def test_v_recovery_with_1h_knockin() -> None:
         await vf.update_from_index(
             index_value=index_value,
             altitude="high_mid",
+            recovery_confirm_satisfied_days_v1_off=1,
+            recovery_confirm_satisfied_days_v2_off=0,
             buffer_condition_v1_to_v0=buffer_false,
         )
         assert vf.level == 1
@@ -82,6 +96,8 @@ def test_v_recovery_with_1h_knockin() -> None:
         await vf.update_from_index(
             index_value=index_value,
             altitude="high_mid",
+            recovery_confirm_satisfied_days_v1_off=1,
+            recovery_confirm_satisfied_days_v2_off=0,
             buffer_condition_v1_to_v0=buffer_true,
         )
         assert vf.level == 0
@@ -96,25 +112,31 @@ def test_level_calculation_altitude_tables() -> None:
     vf = VFactor(name="V_NQ", thresholds=_v_nq())
 
     async def scenario():
-        level_high = await vf.update_from_index(index_value=35.0, altitude="high_mid")
+        level_high = await vf.update_from_index(
+            index_value=35.0, altitude="high_mid",
+            recovery_confirm_satisfied_days_v1_off=0, recovery_confirm_satisfied_days_v2_off=0,
+        )
         assert level_high == 1
 
         vf.level = 0
-        level_low = await vf.update_from_index(index_value=35.0, altitude="low")
+        level_low = await vf.update_from_index(
+            index_value=35.0, altitude="low",
+            recovery_confirm_satisfied_days_v1_off=0, recovery_confirm_satisfied_days_v2_off=0,
+        )
         assert level_low == 2
 
     _run(scenario())
 
 
-def test_vfactor_update_runs_with_defaults() -> None:
+def test_vfactor_update_not_implemented() -> None:
     """
-    VFactor.update がデフォルト引数で update_from_index を呼び正常終了することを確認する。
+    VFactor は update() を実装せず、必ず update_from_volatility_signal で更新する。
     """
     vf = VFactor(name="V_NQ", thresholds=_v_nq())
 
     async def scenario():
-        await vf.update()
-        assert vf.level in (0, 1, 2)
+        with pytest.raises(NotImplementedError):
+            await vf.update()
 
     _run(scenario())
 
@@ -128,7 +150,10 @@ def test_vfactor_no_change_records_history() -> None:
 
     async def scenario():
         before_len = len(vf.history)
-        level = await vf.update_from_index(index_value=20.0, altitude="high_mid")
+        level = await vf.update_from_index(
+            index_value=20.0, altitude="high_mid",
+            recovery_confirm_satisfied_days_v1_off=0, recovery_confirm_satisfied_days_v2_off=0,
+        )
         assert level == 0
         assert len(vf.history) == before_len + 1
 
@@ -143,8 +168,14 @@ def test_vfactor_v1_to_v0_without_buffer_condition() -> None:
     vf.level = 1
 
     async def scenario():
-        await vf.update_from_index(index_value=27.0, altitude="high_mid")
-        await vf.update_from_index(index_value=27.0, altitude="high_mid")
+        await vf.update_from_index(
+            index_value=27.0, altitude="high_mid",
+            recovery_confirm_satisfied_days_v1_off=1, recovery_confirm_satisfied_days_v2_off=0,
+        )
+        await vf.update_from_index(
+            index_value=27.0, altitude="high_mid",
+            recovery_confirm_satisfied_days_v1_off=1, recovery_confirm_satisfied_days_v2_off=0,
+        )
         assert vf.level == 0
 
     _run(scenario())
@@ -198,7 +229,10 @@ def test_vfactor_update_from_index_v1_unchanged_records_history() -> None:
 
     async def scenario():
         before_len = len(vf.history)
-        level = await vf.update_from_index(index_value=30.0, altitude="high_mid")
+        level = await vf.update_from_index(
+            index_value=30.0, altitude="high_mid",
+            recovery_confirm_satisfied_days_v1_off=0, recovery_confirm_satisfied_days_v2_off=0,
+        )
         assert level == 1
         assert len(vf.history) == before_len + 1
 
@@ -213,7 +247,10 @@ def test_vfactor_update_from_index_v2_to_v0_upgrade_confirm_days_1() -> None:
     vf.level = 2
 
     async def scenario():
-        level = await vf.update_from_index(index_value=27.0, altitude="high_mid")
+        level = await vf.update_from_index(
+            index_value=27.0, altitude="high_mid",
+            recovery_confirm_satisfied_days_v1_off=0, recovery_confirm_satisfied_days_v2_off=1,
+        )
         assert level == 0
 
     _run(scenario())

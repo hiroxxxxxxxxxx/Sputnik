@@ -18,12 +18,15 @@ import sys
 from datetime import date
 from pathlib import Path
 
-# プロジェクトルートを path に追加
+# プロジェクトルートと scripts を path に追加
 _root = Path(__file__).resolve().parent.parent
+_scripts = Path(__file__).resolve().parent
 if str(_root) not in sys.path:
     sys.path.insert(0, str(_root))
 if str(_root / "src") not in sys.path:
     sys.path.insert(0, str(_root / "src"))
+if str(_scripts) not in sys.path:
+    sys.path.insert(0, str(_scripts))
 
 
 async def main() -> int:
@@ -129,8 +132,9 @@ async def main() -> int:
         return 1
 
     try:
+        from util import ny_date_now
         fetcher = IBDataFetcher(ib)
-        as_of = date.today()
+        as_of = ny_date_now()  # バー日付（NY Trade Date）と整合
         v_recovery_params = None
         if config:
             try:
@@ -158,7 +162,7 @@ async def main() -> int:
 
         print("--- Cockpit 計器シグナル ---")
         for sym in args.symbols:
-            signal = await cockpit.get_cockpit_signal(sym)
+            signal = await cockpit.get_cockpit_signal(sym, bundle)
             mode_str = {0: "Boost", 1: "Cruise", 2: "Emergency"}.get(signal.throttle_level, "?")
             print(f"  {sym}: throttle={signal.throttle_level} ({mode_str})")
             print(f"        reason={signal.reason}")

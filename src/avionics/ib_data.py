@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
+from .Instruments.factors_config import FactorsConfigError, load_factors_config
 from .Instruments.raw_data import (
     PriceBar,
     PriceBar1h,
@@ -32,6 +33,7 @@ from .Instruments.signals import (
     compute_price_signals,
     compute_volatility_signal,
 )
+
 
 def _bar_to_price_bar(bar: Any) -> PriceBar:
     """ib_async の BarData を PriceBar（日足）に変換する。"""
@@ -274,6 +276,7 @@ class IBDataFetcher:
         """
         IB から Raw を取得し、Layer 2 計算で SignalBundle を組み立てる。
 
+        :param as_of: 取得・算出の基準日。清算値の「当日」バー検索にも使う。バー日付が NY Trade Date の場合は scripts.util.ny_date_now() を渡すと整合する。
         :param liquidity_credit_symbol: C因子用（NQ系）。例: "HYG"。None のときは取得しない。
         :param liquidity_tip: R因子用（GC系）TIP 系列を取得するか。
         :param v_recovery_params: 銘柄→V因子の高度スライス（V1_off, V2_off, V1_confirm_days, V2_confirm_days 等）。
@@ -340,10 +343,11 @@ class IBDataFetcher:
             cache._price_bars_1h[sym] = results[idx]
             idx += 1
 
-        # Layer 2 計算
-        price_signals: Dict[str, PriceSignals] = {}
-        for sym in price_symbols:
-            price_signals[sym] = compute_price_signals(cache, sym, as_of)
+        # Layer 2 計算（清算値は当日日付でバー検索し、その足と1本前を比較）
+        price_signals = {
+            sym: compute_price_signals(cache, sym, as_of)
+            for sym in price_symbols
+        }
 
         vol_signals: Dict[str, VolatilitySignal] = {}
         for sym in price_symbols:

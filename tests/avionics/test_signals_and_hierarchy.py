@@ -25,6 +25,7 @@ from avionics.Instruments.signals import (
     PriceSignals,
     SignalBundle,
     VolatilitySignal,
+    _settlement_bar_indices_from_date,
     compute_capital_signals,
     compute_price_signals,
 )
@@ -110,6 +111,47 @@ def test_compute_price_signals_from_series() -> None:
     assert out.symbol == "NQ"
     assert out.daily_change == pytest.approx((102.0 - 101.0) / 101.0)
     assert out.downside_gap != 0.0
+
+
+def test_compute_price_signals_settlement_uses_as_of() -> None:
+    """as_of の日付でバーを検索し、その足と1本前で daily_change を算出する。"""
+    base = date(2025, 2, 1)
+    bars = [
+        PriceBar(date=base + timedelta(days=i), close=100.0 + i, high=101.0 + i, volume=1000)
+        for i in range(25)
+    ]
+    bars[-3] = PriceBar(date=bars[-3].date, close=98.0, high=99.0, volume=1000)
+    bars[-2] = PriceBar(date=bars[-2].date, close=99.0, high=100.0, volume=1000)
+    bars[-1] = PriceBar(date=bars[-1].date, close=100.0, high=101.0, volume=1000)
+    provider = _MockRawProvider(bars=bars)
+    # as_of を bars[-2].date にすると latest=bars[-2], prev=bars[-3]
+    out = compute_price_signals(provider, "NQ", as_of=bars[-2].date)
+    assert out.daily_change == pytest.approx((99.0 - 98.0) / 98.0)
+    assert out.last_close == 99.0
+
+
+def test_settlement_bar_indices_finds_ref_date() -> None:
+    """ref_date と一致するバーがあればそのインデックスと1本前を返す。"""
+    base = date(2025, 2, 1)
+    bars = [
+        PriceBar(date=base + timedelta(days=i), close=100.0 + i, high=101.0, volume=1000)
+        for i in range(10)
+    ]
+    ref = base + timedelta(days=4)
+    latest_idx, prev_idx = _settlement_bar_indices_from_date(bars, ref)
+    assert latest_idx == 4
+    assert prev_idx == 3
+
+
+def test_settlement_bar_indices_not_found_uses_last_two() -> None:
+    """ref_date がリストに無い場合は (-1, -2)。"""
+    base = date(2025, 2, 1)
+    bars = [
+        PriceBar(date=base + timedelta(days=i), close=100.0, high=101.0, volume=1000)
+        for i in range(5)
+    ]
+    latest_idx, prev_idx = _settlement_bar_indices_from_date(bars, date(2025, 3, 1))
+    assert (latest_idx, prev_idx) == (-1, -2)
 
 
 def test_compute_capital_signals() -> None:

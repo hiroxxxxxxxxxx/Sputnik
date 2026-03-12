@@ -39,6 +39,7 @@ def test_downgrade_immediate() -> None:
             cum5_change=-0.04,
             downside_gap=-0.06,
             trend="down",
+            recovery_confirm_satisfied_days=0,
             cum2_change=-0.06,
         )
         assert level == 2
@@ -60,10 +61,11 @@ def test_upgrade_delayed() -> None:
             cum5_change=0.0,
             downside_gap=-0.01,
             trend="up",
+            recovery_confirm_satisfied_days=1,
             cum2_change=-0.01,
         )
 
-        # 1日目：calm 条件でも confirm_days=1 なら1日で昇格
+        # 1日目：calm 条件かつ recovery_confirm_satisfied_days=1 で昇格
         await pf.update_from_signals(**calm_kwargs)
         assert pf.level == 0
 
@@ -81,6 +83,7 @@ def test_level_calculation_nq_vs_gc() -> None:
             cum5_change=-0.04,
             downside_gap=-0.035,
             trend="flat",
+            recovery_confirm_satisfied_days=0,
             cum2_change=-0.03,
         )
         assert level_nq == 1
@@ -91,6 +94,7 @@ def test_level_calculation_nq_vs_gc() -> None:
             cum5_change=-0.02,
             downside_gap=-0.02,
             trend="up",
+            recovery_confirm_satisfied_days=0,
             cum2_change=-0.01,
         )
         assert level_gc == 0
@@ -100,7 +104,7 @@ def test_level_calculation_nq_vs_gc() -> None:
 
 def test_pfactor_update_runs_with_defaults() -> None:
     """
-    PFactor.update がデフォルト引数で update_from_signals を呼び正常終了することを確認する。
+    PFactor.update が安全デフォルトで update_from_signals を呼び正常終了することを確認する。
     """
     pf = PFactor(name="P_NQ", thresholds=_p_nq())
 
@@ -123,6 +127,7 @@ def test_classify_nq_fallback_to_p1() -> None:
             cum5_change=0.0,
             downside_gap=-0.02,
             trend="down",
+            recovery_confirm_satisfied_days=0,
             cum2_change=0.0,
         )
         assert level == 1
@@ -141,6 +146,7 @@ def test_classify_gc_p2_and_fallback_p1() -> None:
             cum5_change=-0.04,
             downside_gap=-0.05,
             trend="down",
+            recovery_confirm_satisfied_days=0,
             cum2_change=-0.06,
         )
         assert level_p2 == 2
@@ -151,6 +157,7 @@ def test_classify_gc_p2_and_fallback_p1() -> None:
             cum5_change=0.01,
             downside_gap=-0.01,
             trend="down",
+            recovery_confirm_satisfied_days=0,
             cum2_change=0.0,
         )
         assert level_fb == 1
@@ -170,6 +177,7 @@ def test_classify_gc_p1_gap_edge_case() -> None:
             cum5_change=0.0,
             downside_gap=-0.03,
             trend="flat",
+            recovery_confirm_satisfied_days=0,
             cum2_change=0.0,
         )
         assert level == 1

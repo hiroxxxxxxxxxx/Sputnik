@@ -5,7 +5,6 @@ from collections import deque
 from collections.abc import Awaitable, Callable
 from typing import Any, Optional, Deque
 
-import ib_async  # noqa: F401
 from transitions import Machine
 
 
@@ -44,6 +43,7 @@ class BaseFactor:
         self.levels: list[LevelType] = sorted(levels)
         self.level: LevelType = self.levels[0]
 
+        # U/S 用の stateful カウンタ（証拠金は日次履歴を取らないため）
         self._target_level: Optional[LevelType] = None
         self._confirm_counter: int = 0
         self._confirm_days_required: Optional[int] = None
@@ -82,21 +82,20 @@ class BaseFactor:
 
     def recovery_confirm_progress(self) -> Optional[tuple[int, int]]:
         """
-        復帰ヒステリシスの「x日目 / N日」を返す。復帰確認中でないときは None。
-
-        :return: (現在の連続確認日数, 必要日数) または None
+        復帰ヒステリシスの「x日目 / N日」。U/S の stateful 時のみ。ステートレス因子は bundle から get_recovery_progress_from_bundle で算出。
         """
-        if self._target_level is None or self._confirm_days_required is None:
-            return None
-        return (self._confirm_counter, self._confirm_days_required)
+        if self._target_level is not None and self._confirm_days_required is not None:
+            return (self._confirm_counter, self._confirm_days_required)
+        return None
+
+    def get_recovery_progress_from_bundle(self, symbol: str, bundle: Any) -> Optional[tuple[int, int]]:
+        """
+        bundle から復帰 x/N をその場で算出する。ステートレス因子がオーバーライド。デフォルトは None。
+        """
+        return None
 
     def reset_confirmation(self) -> None:
-        """
-        昇格判定用の内部カウンタとターゲットをリセットする。
-
-        新しいターゲットレベルを評価する前や、
-        ダウングレード発生時に呼び出すことを想定。
-        """
+        """ダウングレード時などに復帰用カウンタをクリアする。"""
         self._target_level = None
         self._confirm_counter = 0
         self._confirm_days_required = None
@@ -134,24 +133,15 @@ class BaseFactor:
         new_level: LevelType,
         confirm_days: int,
         *,
+        recovery_confirm_satisfied_days: Optional[int] = None,
         condition_met: bool = True,
         buffer_condition: Optional[BufferCondition] = None,
     ) -> bool:
         """
         改善方向のレベル遷移を、継続確認とバッファ条件付きで適用する。
 
-        :param new_level: 新しいレベル（現在値以下であること）
-        :param confirm_days: 必要とする「条件を満たした日」の連続日数
-        :param condition_met: 当日の入力が昇格条件を満たしているかどうか。
-            False の場合はカウンタをリセットし、昇格は行わない。
-        :param buffer_condition: 追加バッファ条件（オプション）。
-            シグネチャ: async or sync (factor, new_level) -> bool。
-            連続確認の各日において True を返す必要がある。
-        :return: 昇格が確定して実際にレベルが変更された場合 True
-
-        非対称ヒステリシスの原則に従い、
-        昇格には十分な継続期間と余裕（バッファ）を要求する。
-        定義書「0-4」「4-2-1〜4-2-2」参照。
+        :param recovery_confirm_satisfied_days: None なら stateful（U/S 用・カウンタ加算）。
+            int ならステートレス（P/R/C/T: API から遡って数えた連続日数）。
         """
         if new_level not in self.levels:
             raise ValueError(f"invalid level {new_level} for factor {self.name}")
@@ -163,43 +153,54 @@ class BaseFactor:
         if confirm_days <= 0:
             raise ValueError("confirm_days must be positive")
 
-        # 当日の入力が昇格条件を満たしていない場合は連続性が切れる
-        if not condition_met:
+        use_stateless = recovery_confirm_satisfied_days is not None
+        if use_stateless:
+            satisfied = recovery_confirm_satisfied_days
+        else:
+            if not condition_met:
+                self.reset_confirmation()
+                return False
+            if self._target_level is None or self._target_level != new_level:
+                self._target_level = new_level
+                self._confirm_counter = 0
+                self._confirm_days_required = confirm_days
+            if buffer_condition is not None:
+                result = buffer_condition(self, new_level)
+                if isinstance(result, Awaitable):
+                    result = await result
+                if not result:
+                    self.reset_confirmation()
+                    return False
+                self._confirm_counter += 1
+            else:
+                self._confirm_counter += 1
+            if self._confirm_counter < confirm_days:
+                return False
+            self.level = new_level
+            trigger_name = f"to_level_{new_level}"
+            trigger: Optional[Callable[..., Any]] = getattr(self, trigger_name, None)
+            if callable(trigger):
+                trigger()
+            self.record_level()
             self.reset_confirmation()
+            return True
+
+        if not condition_met:
             return False
-
-        # ターゲットレベルが変わった場合は連続カウンタをリセット
-        if self._target_level is None or self._target_level != new_level:
-            self._target_level = new_level
-            self._confirm_counter = 0
-            self._confirm_days_required = confirm_days
-
-        # バッファ条件がある場合は本日分が満たされているかを先に確認
         if buffer_condition is not None:
             result = buffer_condition(self, new_level)
             if isinstance(result, Awaitable):
                 result = await result
             if not result:
-                # 1日でもバッファ条件を満たさなければ連続性が切れる
-                self.reset_confirmation()
                 return False
-
-        # 条件＋バッファ条件を満たした日としてカウント
-        self._confirm_counter += 1
-
-        if self._confirm_counter < confirm_days:
+        if satisfied < confirm_days:
             return False
-
-        # 連続日数条件を満たしたので昇格を適用
         self.level = new_level
-
         trigger_name = f"to_level_{new_level}"
-        trigger: Optional[Callable[..., Any]] = getattr(self, trigger_name, None)
+        trigger = getattr(self, trigger_name, None)
         if callable(trigger):
             trigger()
-
         self.record_level()
-        self.reset_confirmation()
         return True
 
     def test_downgrade(self) -> bool:

@@ -6,12 +6,13 @@ Cockpit 計器レポートのテンプレートレンダリング。
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from reports._render import render
 
 if TYPE_CHECKING:
     from avionics.cockpit import Cockpit
+    from avionics.Instruments.signals import SignalBundle
 
 MODE_STR = {0: "Boost", 1: "Cruise", 2: "Emergency"}
 COCKPIT_TEMPLATE = "cockpit_report.txt"
@@ -21,14 +22,16 @@ async def build_cockpit_report_context(
     cockpit: "Cockpit",
     symbols: list[str],
     now_utc: str,
+    bundle: Optional["SignalBundle"] = None,
 ) -> dict[str, Any]:
     """
     Cockpit 計器レポート用のテンプレートコンテキストを組み立てる。
     フォーマット後の値のみ渡し、表示文言はテンプレート側で組み立てる。
+    bundle を渡すと復帰 x/N が bundle から算出される。
     """
     symbol_blocks: list[dict[str, Any]] = []
     for sym in symbols:
-        sig = await cockpit.get_cockpit_signal(sym)
+        sig = await cockpit.get_cockpit_signal(sym, bundle)
         m = sig.raw_metrics
         symbol_blocks.append({
             "symbol": sym,
@@ -52,6 +55,7 @@ async def format_cockpit_report(
     symbols: list[str],
     now_utc: str,
     template_name: str = COCKPIT_TEMPLATE,
+    bundle: Optional["SignalBundle"] = None,
 ) -> str:
     """
     Cockpit 計器レポート文字列をテンプレートで生成する。
@@ -60,7 +64,8 @@ async def format_cockpit_report(
     :param symbols: 銘柄リスト。
     :param now_utc: 取得時刻（UTC 文字列）。
     :param template_name: テンプレートファイル名。
+    :param bundle: 未指定可。渡すと復帰 x/N を bundle から算出。
     :return: レポート文字列。
     """
-    context = await build_cockpit_report_context(cockpit, symbols, now_utc)
+    context = await build_cockpit_report_context(cockpit, symbols, now_utc, bundle)
     return render(template_name, context)

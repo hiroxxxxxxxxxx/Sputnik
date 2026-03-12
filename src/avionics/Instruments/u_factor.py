@@ -7,8 +7,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import ib_async  # noqa: F401
-
 from .base_factor import BaseFactor, LevelType
 
 if TYPE_CHECKING:

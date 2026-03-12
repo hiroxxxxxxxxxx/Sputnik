@@ -9,9 +9,7 @@ V因子（Volatility Stress）：ボラティリティストレス計器。
 from __future__ import annotations
 
 from collections.abc import Awaitable
-from typing import Literal, Optional, TYPE_CHECKING
-
-import ib_async  # noqa: F401
+from typing import Any, Literal, Optional, TYPE_CHECKING
 
 from .base_factor import BaseFactor, BufferCondition, LevelType
 
@@ -46,8 +44,6 @@ class VFactor(BaseFactor):
         定義書「3-1 PFD」「4-2-1-2 V因子」参照。
         """
         self._thresholds_by_altitude: dict = dict(thresholds)
-        self._last_recovery_satisfied_days: Optional[int] = None
-        self._last_recovery_required_days: Optional[int] = None
         super().__init__(name=name, levels=[0, 1, 2], history_size=history_size)
 
     def _get_thresholds(self, altitude: AltitudeRegime) -> dict:
@@ -59,24 +55,21 @@ class VFactor(BaseFactor):
             )
         return self._thresholds_by_altitude[altitude]
 
-    def recovery_confirm_progress(self) -> Optional[tuple[int, int]]:
-        """復帰ヒステリシスの x/N。シグナル由来の値を表示用に保持。"""
-        if self._last_recovery_satisfied_days is None or self._last_recovery_required_days is None:
+    def get_recovery_progress_from_bundle(self, symbol: str, bundle: Any) -> Optional[tuple[int, int]]:
+        """bundle の volatility_signals[symbol] から復帰 x/N を算出。"""
+        sig = getattr(bundle, "volatility_signals", {}).get(symbol)
+        if not sig:
             return None
-        return (self._last_recovery_satisfied_days, self._last_recovery_required_days)
-
-    async def update(self) -> None:
-        """
-        最新のボラティリティ指数から V レベルを更新する。
-
-        未注入時は安全なデフォルトで update_from_index を呼ぶ。
-        定義書「3-1 PFD」「4-2-1-2 V因子」参照。
-        """
-        await self.update_from_index(
-            index_value=25.0,
-            altitude="high_mid",
-            buffer_condition_v1_to_v0=None,
-        )
+        th = self._get_thresholds(getattr(sig, "altitude", "high_mid"))
+        if self.level == 2:
+            required = int(th["V2_confirm_days"])
+            satisfied = getattr(sig, "recovery_confirm_satisfied_days_v2_off", 0)
+            return (min(satisfied, required), required)
+        if self.level == 1:
+            required = int(th["V1_confirm_days"])
+            satisfied = getattr(sig, "recovery_confirm_satisfied_days_v1_off", 0)
+            return (min(satisfied, required), required)
+        return None
 
     async def update_from_volatility_signal(
         self,
@@ -95,25 +88,24 @@ class VFactor(BaseFactor):
         return await self.update_from_index(
             index_value=signal.index_value,
             altitude=signal.altitude,
-            buffer_condition_v1_to_v0=buffer_condition_v1_to_v0,
             recovery_confirm_satisfied_days_v1_off=signal.recovery_confirm_satisfied_days_v1_off,
             recovery_confirm_satisfied_days_v2_off=signal.recovery_confirm_satisfied_days_v2_off,
+            buffer_condition_v1_to_v0=buffer_condition_v1_to_v0,
         )
 
     async def update_from_index(
         self,
         index_value: float,
         altitude: AltitudeRegime,
+        recovery_confirm_satisfied_days_v1_off: int,
+        recovery_confirm_satisfied_days_v2_off: int,
         buffer_condition_v1_to_v0: Optional[BufferCondition] = None,
-        *,
-        recovery_confirm_satisfied_days_v1_off: Optional[int] = None,
-        recovery_confirm_satisfied_days_v2_off: Optional[int] = None,
     ) -> LevelType:
         """
-        VXN/GVZ 相当の指数値（Layer 2 出力）から V レベルを更新する。
+        VXN/GVZ 相当の指数値（Layer 2 出力）から V レベルを更新する。ステートレス専用。
 
         復帰はシグナル由来の連続日数で一発判定（docs/recovery_confirm_spec_options.md）。
-        recovery_confirm_satisfied_days_* が渡されない場合は従来の upgrade() で判定。
+        recovery_confirm_satisfied_days_* は呼び出し元（Layer 2 算出結果）で必ず渡すこと。
         """
         thresholds = self._get_thresholds(altitude)
         current = self.level
@@ -134,62 +126,32 @@ class VFactor(BaseFactor):
 
         if candidate > self.level:
             self.downgrade(candidate)
-            self._last_recovery_satisfied_days = None
-            self._last_recovery_required_days = None
         elif candidate < self.level:
-            use_signal_based = (
-                recovery_confirm_satisfied_days_v1_off is not None
-                and recovery_confirm_satisfied_days_v2_off is not None
-            )
-            if use_signal_based:
-                if self.level == 2 and candidate == 1:
-                    required = int(thresholds["V2_confirm_days"])
-                    if recovery_confirm_satisfied_days_v2_off >= required:
-                        self.level = 1
-                        self.record_level()
-                        self.reset_confirmation()
-                        self._last_recovery_satisfied_days = None
-                        self._last_recovery_required_days = None
-                    else:
-                        self._last_recovery_satisfied_days = recovery_confirm_satisfied_days_v2_off
-                        self._last_recovery_required_days = required
-                elif self.level == 1 and candidate == 0:
-                    required = int(thresholds["V1_confirm_days"])
-                    buf_ok = buffer_condition_v1_to_v0 is not None
-                    if buf_ok:
-                        result = buffer_condition_v1_to_v0(self, 0)
-                        if isinstance(result, Awaitable):
-                            result = await result
-                        buf_ok = bool(result)
-                    if recovery_confirm_satisfied_days_v1_off >= required and buf_ok:
-                        self.level = 0
-                        self.record_level()
-                        self.reset_confirmation()
-                        self._last_recovery_satisfied_days = None
-                        self._last_recovery_required_days = None
-                    else:
-                        self._last_recovery_satisfied_days = recovery_confirm_satisfied_days_v1_off
-                        self._last_recovery_required_days = required
-                else:
-                    await self.upgrade(candidate, confirm_days=1)
-                    self._last_recovery_satisfied_days = None
-                    self._last_recovery_required_days = None
+            if self.level == 2 and candidate == 1:
+                required = int(thresholds["V2_confirm_days"])
+                if recovery_confirm_satisfied_days_v2_off >= required:
+                    self.level = 1
+                    self.record_level()
+                    self.reset_confirmation()
+            elif self.level == 1 and candidate == 0:
+                required = int(thresholds["V1_confirm_days"])
+                buf_ok = buffer_condition_v1_to_v0 is not None
+                if buf_ok:
+                    result = buffer_condition_v1_to_v0(self, 0)
+                    if isinstance(result, Awaitable):
+                        result = await result
+                    buf_ok = bool(result)
+                if recovery_confirm_satisfied_days_v1_off >= required and buf_ok:
+                    self.level = 0
+                    self.record_level()
+                    self.reset_confirmation()
             else:
-                if self.level == 2 and candidate == 1:
-                    await self.upgrade(candidate, confirm_days=thresholds["V2_confirm_days"])
-                elif self.level == 1 and candidate == 0:
-                    await self.upgrade(
-                        candidate,
-                        confirm_days=thresholds["V1_confirm_days"],
-                        buffer_condition=buffer_condition_v1_to_v0,
-                    )
-                else:
-                    await self.upgrade(candidate, confirm_days=1)
-                self._last_recovery_satisfied_days = None
-                self._last_recovery_required_days = None
+                await self.upgrade(
+                    candidate,
+                    confirm_days=1,
+                    recovery_confirm_satisfied_days=1,
+                )
         else:
             self.record_level()
-            self._last_recovery_satisfied_days = None
-            self._last_recovery_required_days = None
 
         return self.level

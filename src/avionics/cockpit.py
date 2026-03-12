@@ -138,7 +138,12 @@ class Cockpit:
                 elif isinstance(f, VFactor) and vol is not None:
                     tasks.append(f.update_from_volatility_signal(vol))
                 elif isinstance(f, TFactor) and price is not None:
-                    tasks.append(f.apply_trend(price.trend))
+                    tasks.append(
+                        f.apply_trend(
+                            price.trend,
+                            daily_history=getattr(price, "daily_history", ()),
+                        )
+                    )
                 elif isinstance(f, CFactor) and bundle.liquidity_credit is not None:
                     lc = bundle.liquidity_credit
                     tasks.append(
@@ -146,6 +151,7 @@ class Cockpit:
                             altitude=lc.altitude,
                             below_sma20=lc.below_sma20 is True,
                             daily_change=lc.daily_change if lc.daily_change is not None else 0.0,
+                            daily_history_credit=getattr(lc, "daily_history_credit", ()),
                         )
                     )
                 elif isinstance(f, RFactor) and bundle.liquidity_tip is not None:
@@ -154,6 +160,7 @@ class Cockpit:
                         f.update_from_signals(
                             altitude=lt.altitude,
                             tip_drawdown_from_high=lt.tip_drawdown_from_high if lt.tip_drawdown_from_high is not None else -0.001,
+                            daily_history_tip=getattr(lt, "daily_history_tip", ()),
                         )
                     )
                 else:
@@ -270,14 +277,6 @@ class Cockpit:
         """
         P, V, C, R, T, U, S の現在レベルを収集する。通知用。定義書「Phase 5 raw_metrics」参照。
         """
-        from .Instruments.c_factor import CFactor
-        from .Instruments.p_factor import PFactor
-        from .Instruments.r_factor import RFactor
-        from .Instruments.s_factor import SFactor
-        from .Instruments.t_factor import TFactor
-        from .Instruments.u_factor import UFactor
-        from .Instruments.v_factor import VFactor
-
         metrics: Dict[str, int] = {"P": 0, "V": 0, "C": 0, "R": 0, "T": 0, "U": 0, "S": 0}
         sym_factors = self._symbol_factors.get(symbol, [])
         for f in self._global_market_factors + self._global_capital_factors + sym_factors:
@@ -286,9 +285,10 @@ class Cockpit:
                 metrics[name] = max(metrics[name], f.level)
         return metrics
 
-    def _get_recovery_metrics(self, symbol: str) -> Dict[str, str]:
+    def _get_recovery_metrics(self, symbol: str, bundle: Optional[SignalBundle] = None) -> Dict[str, str]:
         """
         復帰ヒステリシス中の因子について「x/N日目」を収集する。Daily Report 用。
+        bundle を渡すとステートレス因子は get_recovery_progress_from_bundle でその場計算。未渡しなら recovery_confirm_progress（U/S 用）。
         """
         result: Dict[str, str] = {}
         sym_factors = self._symbol_factors.get(symbol, [])
@@ -296,14 +296,20 @@ class Cockpit:
             name = getattr(f, "name", None)
             if name is None or name not in ("P", "V", "C", "R", "T", "U", "S"):
                 continue
-            prog = getattr(f, "recovery_confirm_progress", None)
-            if callable(prog):
-                p = prog()
-                if p is not None:
-                    result[name] = f"{p[0]}/{p[1]}"
+            p = None
+            if bundle is not None:
+                from_bundle = getattr(f, "get_recovery_progress_from_bundle", None)
+                if callable(from_bundle):
+                    p = from_bundle(symbol, bundle)
+            if p is None:
+                prog = getattr(f, "recovery_confirm_progress", None)
+                if callable(prog):
+                    p = prog()
+            if p is not None:
+                result[name] = f"{p[0]}/{p[1]}"
         return result
 
-    async def get_cockpit_signal(self, symbol: str) -> CockpitSignal:
+    async def get_cockpit_signal(self, symbol: str, bundle: Optional[SignalBundle] = None) -> CockpitSignal:
         """
         指定銘柄の「計器の結論」を CockpitSignal として返す。
         FC の on_cockpit_signal へ渡す入力。定義書「Phase 5 CockpitSignal」参照。
@@ -315,7 +321,7 @@ class Cockpit:
         reason = self._build_reason(ind, syn, lim)
         is_critical = lim >= 2
         raw_metrics = await self._get_raw_metrics(symbol)
-        recovery_metrics = self._get_recovery_metrics(symbol)
+        recovery_metrics = self._get_recovery_metrics(symbol, bundle)
         return CockpitSignal(
             throttle_level=effective,
             reason=reason,

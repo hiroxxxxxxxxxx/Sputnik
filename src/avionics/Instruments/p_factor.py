@@ -9,14 +9,12 @@ P因子（Price Stress）：価格ストレス計器。
 
 from __future__ import annotations
 
-from typing import Literal, Optional, TYPE_CHECKING
-
-import ib_async  # noqa: F401
+from typing import Any, Literal, Optional, Sequence, TYPE_CHECKING
 
 from .base_factor import BaseFactor, LevelType
 
 if TYPE_CHECKING:
-    from .signals import PriceSignals
+    from .signals import PriceDailyRow, PriceSignals
 
 
 TrendType = Literal["up", "down", "flat"]
@@ -60,21 +58,60 @@ class PFactor(BaseFactor):
             cum5_change=0.0,
             downside_gap=-0.01,
             trend="up",
+            recovery_confirm_satisfied_days=0,
             cum2_change=None,
         )
+
+    def _count_recovery_satisfied_days(
+        self,
+        daily_history: Sequence[tuple],
+    ) -> int:
+        """基準日から遡り、P0 条件を満たす連続日数を返す。daily_history は newest first。"""
+        count = 0
+        for row in daily_history:
+            if len(row) < 6:
+                break
+            _date, daily_change, cum5_change, downside_gap, trend, cum2_change = (
+                row[0], row[1], row[2], row[3], row[4], row[5] if len(row) > 5 else None
+            )
+            if self._classify(
+                daily_change=daily_change,
+                cum5_change=cum5_change,
+                downside_gap=downside_gap,
+                trend=trend,
+                cum2_change=cum2_change,
+            ) == 0:
+                count += 1
+            else:
+                break
+        return count
+
+    def get_recovery_progress_from_bundle(self, symbol: str, bundle: Any) -> Optional[tuple[int, int]]:
+        """bundle の price_signals[symbol].daily_history から復帰 x/N を算出。"""
+        price = getattr(bundle, "price_signals", {}).get(symbol)
+        daily_history = getattr(price, "daily_history", ()) if price else ()
+        count = self._count_recovery_satisfied_days(daily_history) if daily_history else 0
+        confirm = int(self.thresholds["confirm_days"])
+        return (min(count, confirm), confirm)
 
     async def update_from_price_signals(self, signals: PriceSignals) -> LevelType:
         """
         Layer 2 の PriceSignals から P レベルを更新する。
 
         因子は Layer 2 の出力のみを入力とする（定義書 4-2）。
+        復帰連続日数は daily_history を基準日から遡って数える（ステートレス）。
         """
+        daily_history = getattr(signals, "daily_history", ())
+        recovery_satisfied = (
+            self._count_recovery_satisfied_days(daily_history) if daily_history else 0
+        )
         return await self.update_from_signals(
             daily_change=signals.daily_change,
             cum5_change=signals.cum5_change,
             downside_gap=signals.downside_gap,
             trend=signals.trend,
             cum2_change=signals.cum2_change,
+            recovery_confirm_satisfied_days=recovery_satisfied,
         )
 
     async def update_from_signals(
@@ -83,6 +120,7 @@ class PFactor(BaseFactor):
         cum5_change: float,
         downside_gap: float,
         trend: TrendType,
+        recovery_confirm_satisfied_days: int,
         cum2_change: Optional[float] = None,
     ) -> LevelType:
         """
@@ -104,7 +142,11 @@ class PFactor(BaseFactor):
             self.downgrade(new_level)
         elif new_level < self.level:
             confirm = int(self.thresholds["confirm_days"])
-            await self.upgrade(new_level, confirm_days=confirm)
+            await self.upgrade(
+                new_level,
+                confirm_days=confirm,
+                recovery_confirm_satisfied_days=recovery_confirm_satisfied_days,
+            )
         else:
             self.record_level()
 
