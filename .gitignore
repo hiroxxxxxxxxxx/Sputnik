@@ -6,7 +6,6 @@ htmlcov/
 **/__pycache__/
 .vscode/
 .cursorrules
-docs/
 
 # Docker: 認証情報と Gateway 設定
 .env
