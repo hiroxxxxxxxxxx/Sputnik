@@ -10,18 +10,18 @@ import asyncio
 
 import pytest
 
-from avionics import Cockpit, EmergencyProtocol, FlightController
+from cockpit.cockpit import Cockpit
+from avionics import EmergencyProtocol, FlightController
 from engines.engine import Engine
 from engines.factory import _default_blueprints, build_nq_engine
 
 
 @pytest.fixture
-def engine_with_fc() -> tuple[FlightController, Engine]:
-    """FlightController と 1 エンジン（Blueprint ベース）を返す。"""
-    cockpit = Cockpit(global_market_factors=[], global_capital_factors=[], symbol_factors={})
-    fc = FlightController(cockpit=cockpit, engines=[], initial_mode="Cruise")
+def engine_with_fc() -> tuple[Cockpit, Engine]:
+    """Cockpit（管制）と 1 エンジン（Blueprint ベース）を返す。"""
+    flight_controller = FlightController(global_market_factors=[], global_capital_factors=[], symbol_factors={})
+    fc = Cockpit(cockpit=flight_controller, engines=[], initial_mode="Cruise")
     engine = build_nq_engine(
-        fc,
         blueprints=_default_blueprints(),
         config={"base_unit": 1.0, "boost_ratio": 1.0},
     )
@@ -29,7 +29,7 @@ def engine_with_fc() -> tuple[FlightController, Engine]:
     return fc, engine
 
 
-def test_emergency_protocol_run_applies_emergency_to_engines(engine_with_fc: tuple[FlightController, Engine]) -> None:
+def test_emergency_protocol_run_applies_emergency_to_engines(engine_with_fc: tuple[Cockpit, Engine]) -> None:
     """EmergencyProtocol.run() で全エンジンに apply_mode("Emergency") が依頼され、完了する。"""
     _, engine = engine_with_fc
     messages = []
@@ -52,15 +52,15 @@ def test_emergency_protocol_empty_engines() -> None:
     assert "Emergency protocol complete" in messages
 
 
-def test_emergency_protocol_engines_property(engine_with_fc: tuple[FlightController, Engine]) -> None:
+def test_emergency_protocol_engines_property(engine_with_fc: tuple[Cockpit, Engine]) -> None:
     """protocol.engines で対象エンジン群を取得できる。"""
     _, engine = engine_with_fc
     protocol = EmergencyProtocol(engines=[engine])
     assert protocol.engines == [engine]
 
 
-def test_fc_pulse_entering_emergency_runs_protocol(engine_with_fc: tuple[FlightController, Engine]) -> None:
-    """FlightController.pulse で Emergency に遷移すると、コールバック未設定時は EmergencyProtocol が実行される。"""
+def test_fc_pulse_entering_emergency_runs_protocol(engine_with_fc: tuple[Cockpit, Engine]) -> None:
+    """Cockpit.pulse で Emergency に遷移すると、コールバック未設定時は EmergencyProtocol が実行される。"""
     fc, _ = engine_with_fc
     class MockEmergencyEvaluator:
         async def update_all(self, signal_bundle=None) -> None:

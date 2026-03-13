@@ -5,7 +5,8 @@ import asyncio
 
 import pytest
 
-from avionics import Cockpit, FlightController
+from cockpit.cockpit import Cockpit
+from avionics import FlightController
 from engines.blueprint import LayerBlueprint
 from engines.engine import Engine
 from engines.factory import _default_blueprints, build_nq_engine
@@ -13,10 +14,9 @@ from engines.factory import _default_blueprints, build_nq_engine
 
 @pytest.fixture
 def fc_with_engines():
-    cockpit = Cockpit(global_market_factors=[], global_capital_factors=[], symbol_factors={})
-    fc = FlightController(cockpit=cockpit, engines=[], initial_mode="Cruise")
+    flight_controller = FlightController(global_market_factors=[], global_capital_factors=[], symbol_factors={})
+    fc = Cockpit(cockpit=flight_controller, engines=[], initial_mode="Cruise")
     engine = build_nq_engine(
-        fc,
         blueprints=_default_blueprints(),
         config={"base_unit": 1.0, "boost_ratio": 1.0},
     )
@@ -24,10 +24,9 @@ def fc_with_engines():
     return fc, engine
 
 
-def test_engine_symbol_type_and_fc(fc_with_engines) -> None:
+def test_engine_symbol_type(fc_with_engines) -> None:
     fc, engine = fc_with_engines
     assert engine.symbol_type == "NQ"
-    assert engine.fc is fc
 
 
 def test_engine_apply_mode_collects_deltas(fc_with_engines) -> None:
@@ -47,10 +46,9 @@ def test_engine_instruction_for_default_base_unit(fc_with_engines) -> None:
 
 
 def test_engine_instruction_for_uses_config() -> None:
-    cockpit = Cockpit(global_market_factors=[], global_capital_factors=[], symbol_factors={})
-    fc = FlightController(cockpit=cockpit, engines=[], initial_mode="Cruise")
+    flight_controller = FlightController(global_market_factors=[], global_capital_factors=[], symbol_factors={})
+    fc = Cockpit(cockpit=flight_controller, engines=[], initial_mode="Cruise")
     engine = build_nq_engine(
-        fc,
         blueprints=_default_blueprints(),
         config={"base_unit": 2.0, "boost_ratio": 1.5},
     )

@@ -97,4 +97,44 @@ SPEC.md（マクロインカム戦略 完全運用定義書 2026年2月改訂）
 
 ---
 
+## 5. 定義書更新後の照合（プログラムとの齟齬チェック）
+
+SPEC.md（完全運用定義書 2026年2月改訂）を前提に、主要な実装との一致・齟齬を確認した結果。
+
+### 5-1. 一致している項目
+
+| 定義書 | 実装 | 備考 |
+|--------|------|------|
+| **0-3 / 4-2** ICL・SCL・LCL・Effective | `cockpit.py`: ICL = max(P,V,C/R), SCL = T相関, LCL = max(U,S), Effective = max(ICL, SCL, LCL) | 3層構造・公式どおり |
+| **4-2** Effective Level × スロットル | 0→Boost, 1→Cruise, 2→Emergency（`mode.py` / `get_throttle_mode`） | 対応表どおり |
+| **Layer2** Trend | Uptrend: 終値 > SMA20×1.005, Downtrend: < SMA20×0.995（`signals.py`） | 定義書 4-2 Layer2 表と一致 |
+| **Layer2** 清算値・RTH | `ib_data.py`: useRTH=True, 日足は清算値前提 | 定義書「前日比計算には清算値を使用」と整合 |
+| **P因子** NQ/GC 別閾値・判定ルール | `p_factor.py`: _classify は P0/P1/P2 条件。閾値は `factors.toml` で NQ.P / GC.P に分離 | 定義書の数値は toml で反映（P2_gap_trend NQ -5% / GC -4% 等） |
+| **V因子** 高・低高度・復帰確認日数・1hノックイン | `v_factor.py`: V2/V1 閾値・confirm_days・buffer_condition（1hノックイン） | 定義書 4-2-1-2 と一致 |
+| **R因子** TIP・高値比・2日確認 | `r_factor.py`: tip_drawdown_from_high, drawdown_L2/L0, confirm_days | 定義書 4-2-1-4 と一致 |
+| **T因子** 0/1/2・復帰確認 | `t_factor.py`: down→2, up/flat→0。復帰は confirm_days 連続 up/flat | 定義書「両安定/片Downtrend/両Downtrend」と一致 |
+| **U因子** 50%/45%（2日）、40%/38%（3日） | `factors.toml` [U]: C2_on/off, C1_on/off, C2/C1_confirm_days。`u_factor.py` で一段階ずつ復帰 | 定義書 4-2 U因子表と一致 |
+| **S因子** 1.3/1.2（2日）、1.1/1.05（3日） | `factors.toml` [S]: S2_on/off, S1_on/off, S2/S1_confirm_days。`s_factor.py` で一段階ずつ復帰 | 定義書 4-2 S因子表と一致 |
+| **復帰表示** ステートレス化 | 表示用キャッシュ廃止。bundle を渡して `get_recovery_progress_from_bundle` でその場計算 | STATEFUL_AUDIT 方針どおり |
+
+### 5-2. 齟齬あり（要対応 or 仕様確認）
+
+（C因子の HYG/LQD 2銘柄要件は **対応済み**。以下に実施内容を記載。）
+
+**C因子（4-2-1-3）【対応済み】**
+
+| 定義書 | 実装 |
+|--------|------|
+| C2発動: **HYG or LQD**がSMA20を下回る OR 前日比-2.5%以上 | `ib_data`: HYG 取得時に LQD も取得。`SignalBundle.liquidity_credit`（HYG）と `liquidity_credit_lqd`（LQD）を設定。`c_factor.update_from_signals`: `c2_triggered = c2_hyg or c2_lqd`。 |
+| C0復帰: **HYG AND LQDとも**SMA20以上を2日維持 | `c_factor._count_recovery_satisfied_days_two_symbols`: 日付で揃え、両方 C0 を満たす連続日数をカウント。`get_recovery_progress_from_bundle`: LQD あり時は両方で算出。 |
+
+LQD 未渡し（後方互換）の場合は従来どおり HYG のみで判定。
+
+### 5-3. その他（参照のみ）
+
+* **LAYER_CHARTER_COMPLIANCE.md** の「get_individual = max(P,V,L)」の「L」は、定義書の ICL における C（Credit）／R（Real-Rate）を指す旧表記。実装は NQ で max(P,V,C)、GC で max(P,V,R) で定義書と一致。
+* Emergency プロトコル（6-2）の実行順は `emergency_protocol.py` 側の実装次第。avionics 配下には 6-2 の執行コードはないため、別リポジトリ／wings があればそこで照合すること。
+
+---
+
 *このドキュメントは SPEC.md および .cursorrules を参照し、実装（avionics, core, wings 等）と照合した結果に基づく。*

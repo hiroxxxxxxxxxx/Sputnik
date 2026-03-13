@@ -7,13 +7,10 @@ StrategyBundle は廃止。Main/Attitude/Booster の各 LayerBlueprint を渡す
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from .blueprint import LayerBlueprint
 from .engine import Engine
-
-if TYPE_CHECKING:
-    from avionics import FlightController
 
 
 def _default_blueprints() -> Dict[str, LayerBlueprint]:
@@ -46,7 +43,6 @@ def _default_blueprints() -> Dict[str, LayerBlueprint]:
 
 
 def build_nq_engine(
-    flight_controller: "FlightController",
     *,
     blueprints: Optional[Dict[str, LayerBlueprint]] = None,
     config: Optional[Dict[str, Any]] = None,
@@ -54,7 +50,6 @@ def build_nq_engine(
     """
     NQ 用エンジンを1台組み立てる。Blueprint で設計図を確定。
 
-    :param flight_controller: 管制層
     :param blueprints: 層名→LayerBlueprint。必須。大元で _default_blueprints() を渡すか独自設計図を渡す。
     :param config: NQ 用銘柄固有設定（base_unit, boost_ratio 等）
     :raises ValueError: blueprints が None の場合。
@@ -64,11 +59,10 @@ def build_nq_engine(
         raise ValueError(
             "blueprints is required. Pass e.g. engines.factory._default_blueprints() or your own Dict[str, LayerBlueprint]."
         )
-    return Engine("NQ", blueprints, flight_controller, config=config)
+    return Engine("NQ", blueprints, config=config)
 
 
 def build_gc_engine(
-    flight_controller: "FlightController",
     *,
     blueprints: Optional[Dict[str, LayerBlueprint]] = None,
     config: Optional[Dict[str, Any]] = None,
@@ -76,7 +70,6 @@ def build_gc_engine(
     """
     GC 用エンジンを1台組み立てる。Blueprint で設計図を確定。
 
-    :param flight_controller: 管制層
     :param blueprints: 層名→LayerBlueprint。必須。大元で _default_blueprints() を渡すか独自設計図を渡す。
     :param config: GC 用銘柄固有設定
     :raises ValueError: blueprints が None の場合。
@@ -86,11 +79,10 @@ def build_gc_engine(
         raise ValueError(
             "blueprints is required. Pass e.g. engines.factory._default_blueprints() or your own Dict[str, LayerBlueprint]."
         )
-    return Engine("GC", blueprints, flight_controller, config=config)
+    return Engine("GC", blueprints, config=config)
 
 
 def build_engine_pair(
-    flight_controller: "FlightController",
     *,
     blueprints_nq: Optional[Dict[str, LayerBlueprint]] = None,
     blueprints_gc: Optional[Dict[str, LayerBlueprint]] = None,
@@ -100,7 +92,6 @@ def build_engine_pair(
     """
     NQ/GC 用のエンジンペアを生成する。呼び出し側で engines に extend する。
 
-    :param flight_controller: 管制層
     :param blueprints_nq: NQ 用設計図。未指定時はデフォルト
     :param blueprints_gc: GC 用設計図。未指定時はデフォルト
     :param nq_config: NQ 用銘柄固有設定
@@ -108,6 +99,6 @@ def build_engine_pair(
     :return: (engine_nq, engine_gc)
     定義書「1-3」参照。
     """
-    engine_nq = build_nq_engine(flight_controller, blueprints=blueprints_nq, config=nq_config)
-    engine_gc = build_gc_engine(flight_controller, blueprints=blueprints_gc, config=gc_config)
+    engine_nq = build_nq_engine(blueprints=blueprints_nq, config=nq_config)
+    engine_gc = build_gc_engine(blueprints=blueprints_gc, config=gc_config)
     return (engine_nq, engine_gc)

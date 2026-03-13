@@ -5,7 +5,7 @@ import asyncio
 import pytest
 
 from avionics import TFactor
-from avionics.factors_config import FactorsConfigError, get_t_thresholds, load_factors_config
+from avionics.Instruments import FactorsConfigError, get_t_thresholds, load_factors_config
 
 
 def _run(coro):

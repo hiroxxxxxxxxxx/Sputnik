@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 class EmergencyProtocol(BaseProtocol):
     """
     Emergency 時のみ実行。Protocol は Engine に apply_mode("Emergency") を依頼するだけ。
-    役割分離: Cockpit/FC が「何か」を決め、Engine が翻訳し、Part が目標値で実行する。
+    役割分離: FlightController/Cockpit が「何か」を決め、Engine が翻訳し、Part が目標値で実行する。
     """
 
     def __init__(

@@ -99,6 +99,9 @@ class SignalBundle:
     price_signals: dict[str, PriceSignals] = field(default_factory=dict)
     volatility_signals: dict[str, VolatilitySignal] = field(default_factory=dict)
     liquidity_credit: Optional[LiquiditySignals] = None
+    """C因子用。HYG のシグナル。定義書「HYG or LQD」の HYG 側。"""
+    liquidity_credit_lqd: Optional[LiquiditySignals] = None
+    """C因子用。LQD のシグナル。定義書「HYG AND LQD」の LQD 側。"""
     liquidity_tip: Optional[LiquiditySignals] = None
     capital_signals: Optional[CapitalSignals] = None
 
@@ -106,6 +109,12 @@ class SignalBundle:
 def _sorted_bars(provider: RawDataProvider, symbol: str, limit: int) -> list[PriceBar]:
     """get_price_series を日付昇順で返す。"""
     bars = provider.get_price_series(symbol, limit)
+    return sorted(bars, key=lambda b: b.date)
+
+
+def _sorted_credit_bars(provider: RawDataProvider, symbol: str, limit: int) -> list[PriceBar]:
+    """get_credit_series（HYG/LQD）を日付昇順で返す。"""
+    bars = provider.get_credit_series(symbol, limit)
     return sorted(bars, key=lambda b: b.date)
 
 
@@ -366,7 +375,7 @@ def compute_liquidity_signals_credit(
     altitude: AltitudeRegime,
 ) -> LiquiditySignals:
     """HYG/LQD 等の価格系列から L 因子 credit 用シグナルを算出する。as_of で当日足を特定。SMA20 のため 20+遡り日数本取得。"""
-    bars = _sorted_bars(raw_provider, symbol, limit=MIN_BARS_FOR_RECOVERY)
+    bars = _sorted_credit_bars(raw_provider, symbol, limit=MIN_BARS_FOR_RECOVERY)
     if len(bars) < 2:
         return LiquiditySignals(
             altitude=altitude,
@@ -463,7 +472,12 @@ def format_signal_bundle_breakdown(bundle: SignalBundle) -> str:
     if bundle.liquidity_credit:
         lc = bundle.liquidity_credit
         lines.append(
-            f"  C(credit): below_sma20={lc.below_sma20} daily_change={lc.daily_change!s} altitude={lc.altitude}"
+            f"  C(HYG): below_sma20={lc.below_sma20} daily_change={lc.daily_change!s} altitude={lc.altitude}"
+        )
+    lc_lqd = getattr(bundle, "liquidity_credit_lqd", None)
+    if lc_lqd:
+        lines.append(
+            f"  C(LQD): below_sma20={lc_lqd.below_sma20} daily_change={lc_lqd.daily_change!s} altitude={lc_lqd.altitude}"
         )
     if bundle.liquidity_tip:
         lt = bundle.liquidity_tip

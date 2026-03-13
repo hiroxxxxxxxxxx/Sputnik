@@ -48,6 +48,14 @@ def build_breakdown_report_context(bundle: "SignalBundle") -> dict[str, Any]:
             "daily_change": str(lc.daily_change),
             "altitude": lc.altitude,
         }
+    liquidity_credit_lqd: dict[str, Any] | None = None
+    lc_lqd = getattr(bundle, "liquidity_credit_lqd", None)
+    if lc_lqd:
+        liquidity_credit_lqd = {
+            "below_sma20": lc_lqd.below_sma20,
+            "daily_change": str(lc_lqd.daily_change),
+            "altitude": lc_lqd.altitude,
+        }
 
     liquidity_tip: dict[str, Any] | None = None
     if bundle.liquidity_tip:
@@ -69,6 +77,7 @@ def build_breakdown_report_context(bundle: "SignalBundle") -> dict[str, Any]:
         "price_rows": price_rows,
         "volatility_rows": volatility_rows,
         "liquidity_credit": liquidity_credit,
+        "liquidity_credit_lqd": liquidity_credit_lqd,
         "liquidity_tip": liquidity_tip,
         "capital_row": capital_row,
     }

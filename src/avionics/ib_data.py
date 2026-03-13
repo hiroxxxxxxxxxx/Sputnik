@@ -1,5 +1,5 @@
 """
-IB（Interactive Brokers）API 経由で Cockpit 用 Layer 1 データを取得し、SignalBundle を組み立てる。
+IB（Interactive Brokers）API 経由で FlightController 用 Layer 1 データを取得し、SignalBundle を組み立てる。
 
 ib_async を使用。非同期のみ。定義書「4-2 情報の階層構造」に従い、
 Raw 取得 → 既存の compute_*（Layer 2）で SignalBundle を生成。
@@ -142,7 +142,7 @@ def _contract_for_etf(symbol: str) -> Any:
 
 class IBDataFetcher:
     """
-    ib_async の IB インスタンスを使い、Cockpit 用 SignalBundle を非同期で取得する。
+    ib_async の IB インスタンスを使い、FlightController 用 SignalBundle を非同期で取得する。
 
     価格・ボラ・流動性・証拠金を IB から取得し、既存の Layer 2 計算で SignalBundle を組み立てる。
     定義書「4-2 情報の階層構造」参照。
@@ -314,6 +314,9 @@ class IBDataFetcher:
             coros.append(
                 self._fetch_bars(_contract_for_etf(liquidity_credit_symbol), as_of)
             )
+            # 定義書 4-2-1-3: C2 は HYG or LQD、C0復帰は HYG AND LQD。LQD を追加取得。
+            if liquidity_credit_symbol.upper() == "HYG":
+                coros.append(self._fetch_bars(_contract_for_etf("LQD"), as_of))
         if liquidity_tip:
             coros.append(self._fetch_bars(_contract_for_etf("TIP"), as_of))
         for sym in price_symbols:
@@ -336,6 +339,9 @@ class IBDataFetcher:
         if liquidity_credit_symbol:
             cache._credit_bars[liquidity_credit_symbol] = results[idx]
             idx += 1
+            if liquidity_credit_symbol.upper() == "HYG":
+                cache._credit_bars["LQD"] = results[idx]
+                idx += 1
         if liquidity_tip:
             cache._tip_bars = results[idx]
             idx += 1
@@ -363,10 +369,15 @@ class IBDataFetcher:
         cap_signals = compute_capital_signals(cache, as_of)
 
         liquidity_credit: Optional[LiquiditySignals] = None
+        liquidity_credit_lqd: Optional[LiquiditySignals] = None
         if liquidity_credit_symbol:
             liquidity_credit = compute_liquidity_signals_credit(
                 cache, liquidity_credit_symbol, as_of, c_altitude
             )
+            if liquidity_credit_symbol.upper() == "HYG" and "LQD" in cache._credit_bars:
+                liquidity_credit_lqd = compute_liquidity_signals_credit(
+                    cache, "LQD", as_of, c_altitude
+                )
 
         liquidity_tip_sig: Optional[LiquiditySignals] = None
         if liquidity_tip:
@@ -376,6 +387,7 @@ class IBDataFetcher:
             price_signals=price_signals,
             volatility_signals=vol_signals,
             liquidity_credit=liquidity_credit,
+            liquidity_credit_lqd=liquidity_credit_lqd,
             liquidity_tip=liquidity_tip_sig,
             capital_signals=cap_signals,
         )

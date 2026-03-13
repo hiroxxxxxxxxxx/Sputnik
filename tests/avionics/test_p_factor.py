@@ -5,7 +5,7 @@ import asyncio
 import pytest
 
 from avionics import PFactor
-from avionics.factors_config import FactorsConfigError, get_p_thresholds, load_factors_config
+from avionics.Instruments import FactorsConfigError, get_p_thresholds, load_factors_config
 
 try:
     _config = load_factors_config()

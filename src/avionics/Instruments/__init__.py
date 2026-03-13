@@ -1,13 +1,13 @@
 """
-コックピット層：因子（Factors）・シグナル・生データ・設定の実装。
+フライトコントローラー層：因子（Factors）・シグナル・生データ・設定の実装。
 
-Cockpit が参照する個別・同期・制限制御の算出はここで定義する。
-定義書「3.コックピット」「4-2」参照。
+FlightController が参照する個別・同期・制限制御の算出はここで定義する。
+定義書「3.フライトコントローラー」「4-2」参照。
 """
 
 from __future__ import annotations
 
-# サブモジュールをパッケージから参照できるようにする（avionics.factors_config 等の後方互換用）
+# サブモジュールをパッケージから参照できるようにする
 from . import factors_config
 from . import raw_data
 from . import signals

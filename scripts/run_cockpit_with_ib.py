@@ -30,7 +30,7 @@ if str(_scripts) not in sys.path:
 
 
 async def main() -> int:
-    parser = argparse.ArgumentParser(description="IB から Cockpit 用データを取得し計器シグナルを表示する")
+    parser = argparse.ArgumentParser(description="IB から FlightController 用データを取得し計器シグナルを表示する")
     parser.add_argument(
         "--host",
         default=os.environ.get("IBKR_HOST", "127.0.0.1"),
@@ -50,7 +50,7 @@ async def main() -> int:
     parser.add_argument("--breakdown", action="store_true", help="各因子の入力となる Layer 2 シグナル内訳を表示")
     args = parser.parse_args()
 
-    from avionics import Cockpit
+    from avionics import FlightController
     from avionics.ib_data import IBDataFetcher
 
     try:
@@ -59,10 +59,10 @@ async def main() -> int:
         print("ib_async がインストールされていません: pip install ib_async", file=sys.stderr)
         return 1
 
-    # Cockpit の因子登録（config があれば）
-    cockpit: Cockpit
+    # FlightController の因子登録（config があれば）
+    cockpit: FlightController
     try:
-        from avionics.factors_config import (
+        from avionics.Instruments import (
             FactorsConfigError,
             get_c_thresholds,
             get_p_thresholds,
@@ -108,20 +108,20 @@ async def main() -> int:
         except FactorsConfigError:
             pass
 
-        cockpit = Cockpit(
+        cockpit = FlightController(
             global_market_factors=global_market_factors,
             global_capital_factors=global_capital_factors,
             symbol_factors=symbol_factors,
         )
-        print("Cockpit: config/factors.toml に基づき因子を登録しました。")
+        print("FlightController: config/factors.toml に基づき因子を登録しました。")
     except FactorsConfigError as e:
         config = None
-        cockpit = Cockpit(
+        cockpit = FlightController(
             global_market_factors=[],
             global_capital_factors=[],
             symbol_factors={s: [] for s in args.symbols},
         )
-        print(f"Cockpit: 因子設定なしで起動（{e}）")
+        print(f"FlightController: 因子設定なしで起動（{e}）")
 
     # IB 接続
     ib = IB()
@@ -160,9 +160,9 @@ async def main() -> int:
             print(format_signal_bundle_breakdown(bundle))
             print("---")
 
-        print("--- Cockpit 計器シグナル ---")
+        print("--- FlightController 計器シグナル ---")
         for sym in args.symbols:
-            signal = await cockpit.get_cockpit_signal(sym, bundle)
+            signal = await cockpit.get_flight_controller_signal(sym, bundle)
             mode_str = {0: "Boost", 1: "Cruise", 2: "Emergency"}.get(signal.throttle_level, "?")
             print(f"  {sym}: throttle={signal.throttle_level} ({mode_str})")
             print(f"        reason={signal.reason}")

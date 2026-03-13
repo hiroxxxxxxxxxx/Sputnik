@@ -53,6 +53,10 @@ class CFactor(BaseFactor):
             daily_change=0.0,
         )
 
+    def _row_satisfies_c0(self, row: tuple, c2_th: float) -> bool:
+        """1日分 (date, below_sma20, daily_change) が C0 を満たすか。"""
+        return len(row) >= 3 and not row[1] and row[2] > c2_th
+
     def _count_recovery_satisfied_days(
         self,
         daily_history_credit: tuple,
@@ -62,19 +66,56 @@ class CFactor(BaseFactor):
         c2_th = float(th["daily_change_C2"])
         count = 0
         for row in daily_history_credit:
-            if len(row) >= 3 and not row[1] and row[2] > c2_th:
+            if self._row_satisfies_c0(row, c2_th):
+                count += 1
+            else:
+                break
+        return count
+
+    def _count_recovery_satisfied_days_two_symbols(
+        self,
+        daily_history_hyg: tuple,
+        daily_history_lqd: tuple,
+    ) -> int:
+        """HYG AND LQD とも C0 を満たす連続日数（newest first）。日付で揃えて両方満たす日のみカウント。"""
+        th = self.thresholds
+        c2_th = float(th["daily_change_C2"])
+        by_date: dict = {}
+        for row in daily_history_hyg:
+            if len(row) >= 1:
+                d = row[0]
+                by_date[d] = [self._row_satisfies_c0(row, c2_th), False]
+        for row in daily_history_lqd:
+            if len(row) >= 1:
+                d = row[0]
+                if d in by_date:
+                    by_date[d][1] = self._row_satisfies_c0(row, c2_th)
+                else:
+                    by_date[d] = [False, self._row_satisfies_c0(row, c2_th)]
+        count = 0
+        for row in daily_history_hyg:
+            if len(row) < 1:
+                break
+            d = row[0]
+            pair = by_date.get(d)
+            if pair and pair[0] and pair[1]:
                 count += 1
             else:
                 break
         return count
 
     def get_recovery_progress_from_bundle(self, symbol: str, bundle: Any) -> Optional[tuple[int, int]]:
-        """bundle の liquidity_credit から復帰 x/N を算出。"""
-        credit = getattr(bundle, "liquidity_credit", None)
-        if not credit:
+        """bundle の liquidity_credit（と liquidity_credit_lqd）から復帰 x/N を算出。定義書: HYG AND LQD とも維持。"""
+        credit_hyg = getattr(bundle, "liquidity_credit", None)
+        if not credit_hyg:
             return None
-        daily_history_credit = getattr(credit, "daily_history_credit", ()) or ()
-        count = self._count_recovery_satisfied_days(daily_history_credit) if daily_history_credit else 0
+        daily_hyg = getattr(credit_hyg, "daily_history_credit", ()) or ()
+        credit_lqd = getattr(bundle, "liquidity_credit_lqd", None)
+        if credit_lqd is not None:
+            daily_lqd = getattr(credit_lqd, "daily_history_credit", ()) or ()
+            count = self._count_recovery_satisfied_days_two_symbols(daily_hyg, daily_lqd)
+        else:
+            count = self._count_recovery_satisfied_days(daily_hyg) if daily_hyg else 0
         confirm = int(self.thresholds["confirm_days"])
         return (min(count, confirm), confirm)
 
@@ -84,25 +125,38 @@ class CFactor(BaseFactor):
         below_sma20: bool,
         daily_change: float,
         daily_history_credit: tuple = (),
+        *,
+        below_sma20_lqd: Optional[bool] = None,
+        daily_change_lqd: Optional[float] = None,
+        daily_history_credit_lqd: tuple = (),
     ) -> LevelType:
         """
         事前計算済みシグナル（LiquiditySignals 相当）から C レベルを更新する。
 
-        C2発動（即）: below_sma20 または daily_change <= daily_change_C2。
-        C0復帰: 上記を満たさない日が confirm_days 連続（ステートレス）。
-        定義書「0-4」「4-2-1-3」参照。
+        定義書 4-2-1-3: C2発動は HYG or LQD のいずれかが SMA20下 OR 前日比≦閾値。C0復帰は HYG AND LQD とも 2 日維持。
+        LQD 未渡しの場合は HYG のみで判定（後方互換）。
         """
         th = self.thresholds
         daily_change_C2 = float(th["daily_change_C2"])
         confirm_days = int(th["confirm_days"])
 
-        c2_triggered = below_sma20 or (daily_change <= daily_change_C2)
-        c0_condition_met = not c2_triggered
-        recovery_satisfied = (
-            self._count_recovery_satisfied_days(daily_history_credit)
-            if daily_history_credit
-            else 0
-        )
+        c2_hyg = below_sma20 or (daily_change <= daily_change_C2)
+        use_lqd = below_sma20_lqd is not None and daily_change_lqd is not None
+        if use_lqd:
+            c2_lqd = below_sma20_lqd or (daily_change_lqd <= daily_change_C2)
+            c2_triggered = c2_hyg or c2_lqd
+            c0_condition_met = not c2_hyg and not c2_lqd
+            recovery_satisfied = self._count_recovery_satisfied_days_two_symbols(
+                daily_history_credit, daily_history_credit_lqd
+            ) if (daily_history_credit or daily_history_credit_lqd) else 0
+        else:
+            c2_triggered = c2_hyg
+            c0_condition_met = not c2_hyg
+            recovery_satisfied = (
+                self._count_recovery_satisfied_days(daily_history_credit)
+                if daily_history_credit
+                else 0
+            )
 
         if c2_triggered:
             self.downgrade(2)

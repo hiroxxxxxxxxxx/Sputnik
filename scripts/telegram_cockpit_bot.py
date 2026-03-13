@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Telegram から /cockpit または /status で現在の Cockpit 計器内容を返すボット。
+Telegram から /cockpit または /status で現在の FlightController 計器内容を返すボット。
 
 コマンド: /start, /ping, /cockpit, /status, /breakdown, /daily, /schedule
   /schedule: 取引時間スキャン（夏冬・短縮・休場の事前通知）。毎朝のルーチンや週次で実行推奨。
@@ -33,10 +33,10 @@ if str(_scripts) not in sys.path:
 
 
 def _build_cockpit(symbols: list[str]):
-    """因子登録済み Cockpit を組み立てる。"""
-    from avionics import Cockpit
+    """因子登録済み FlightController を組み立てる。"""
+    from avionics import FlightController
     from avionics import CFactor, PFactor, RFactor, SFactor, TFactor, UFactor, VFactor
-    from avionics.factors_config import (
+    from avionics.Instruments import (
         FactorsConfigError,
         get_c_thresholds,
         get_p_thresholds,
@@ -79,13 +79,13 @@ def _build_cockpit(symbols: list[str]):
             global_capital_factors.extend([UFactor(thresholds=u_th), SFactor(thresholds=s_th)])
         except FactorsConfigError:
             pass
-        return Cockpit(
+        return FlightController(
             global_market_factors=global_market_factors,
             global_capital_factors=global_capital_factors,
             symbol_factors=symbol_factors,
         )
     except FactorsConfigError:
-        return Cockpit(
+        return FlightController(
             global_market_factors=[],
             global_capital_factors=[],
             symbol_factors={s: [] for s in symbols},
@@ -94,11 +94,11 @@ def _build_cockpit(symbols: list[str]):
 
 async def fetch_cockpit_report(host: str, port: int, symbols: list[str]) -> str:
     """
-    IB から SignalBundle を取得し Cockpit を更新したうえで、計器レポート文字列を返す。
+    IB から SignalBundle を取得し FlightController を更新したうえで、計器レポート文字列を返す。
     接続失敗時は例外を投げる。
     """
-    from avionics import Cockpit
-    from avionics.factors_config import (
+    from avionics import FlightController
+    from avionics.Instruments import (
         FactorsConfigError,
         get_v_thresholds,
         load_factors_config,
@@ -119,8 +119,8 @@ async def fetch_cockpit_report(host: str, port: int, symbols: list[str]) -> str:
         except (FactorsConfigError, KeyError):
             v_recovery_params = None
         fetcher = IBDataFetcher(ib)
-        from util import ny_date_now
-        as_of = ny_date_now()  # バー日付（NY Trade Date）と整合
+        from util import as_of_for_bundle
+        as_of = as_of_for_bundle()  # 場中なら前営業日（復帰 x/N を確定値のみで判定）
         bundle, _ = await fetcher.fetch_signal_bundle(
             as_of=as_of,
             price_symbols=symbols,
@@ -143,7 +143,7 @@ async def fetch_breakdown_report(host: str, port: int, symbols: list[str]) -> st
     IB から SignalBundle を取得し、各因子の入力となる Layer 2 シグナル内訳を返す。
     接続失敗時は例外を投げる。
     """
-    from avionics.factors_config import (
+    from avionics.Instruments import (
         FactorsConfigError,
         get_v_thresholds,
         load_factors_config,
@@ -164,8 +164,8 @@ async def fetch_breakdown_report(host: str, port: int, symbols: list[str]) -> st
         except (FactorsConfigError, KeyError):
             v_recovery_params = None
         fetcher = IBDataFetcher(ib)
-        from util import ny_date_now
-        as_of = ny_date_now()
+        from util import as_of_for_bundle
+        as_of = as_of_for_bundle()
         bundle, _ = await fetcher.fetch_signal_bundle(
             as_of=as_of,
             price_symbols=symbols,
@@ -181,10 +181,10 @@ async def fetch_breakdown_report(host: str, port: int, symbols: list[str]) -> st
 
 async def fetch_daily_report(host: str, port: int, symbols: list[str]) -> str:
     """
-    IB から SignalBundle と RawCapitalSnapshot を取得し、Cockpit を更新したうえで
+    IB から SignalBundle と RawCapitalSnapshot を取得し、FlightController を更新したうえで
     Daily Flight Log 形式のレポート文字列を返す。接続失敗時は例外を投げる。
     """
-    from avionics.factors_config import (
+    from avionics.Instruments import (
         FactorsConfigError,
         get_v_thresholds,
         load_factors_config,
@@ -205,8 +205,8 @@ async def fetch_daily_report(host: str, port: int, symbols: list[str]) -> str:
         except (FactorsConfigError, KeyError):
             v_recovery_params = None
         fetcher = IBDataFetcher(ib)
-        from util import ny_date_now
-        as_of = ny_date_now()
+        from util import as_of_for_bundle
+        as_of = as_of_for_bundle()
         bundle, capital_snapshot = await fetcher.fetch_signal_bundle(
             as_of=as_of,
             price_symbols=symbols,
@@ -226,18 +226,23 @@ async def fetch_daily_report(host: str, port: int, symbols: list[str]) -> str:
         ib.disconnect()
 
 
+# /start と起動完了通知で同じメッセージを使う
+COCKPIT_BOT_COMMANDS_MESSAGE = (
+    "Sputnik Cockpit Bot\n"
+    "/ping … 接続・設定確認\n"
+    "/cockpit または /status … 現在の計器（IB から取得）\n"
+    "/daily … Daily Flight Log（市場・資本・各層）\n"
+    "/breakdown … 各因子の計算内訳（Layer 2 シグナル）\n"
+    "/schedule … 取引時間スキャン（夏冬・短縮・休場の事前通知）"
+)
+
+
 async def start_command(update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """ /start で利用可能コマンドを表示。"""
     msg = update.effective_message
     if msg is None:
         return
-    await msg.reply_text(
-        "Sputnik Cockpit Bot\n"
-        "/ping … 接続・設定確認\n"
-        "/cockpit または /status … 現在の計器（IB から取得）\n"
-        "/daily … Daily Flight Log（市場・資本・各層）\n"
-        "/breakdown … 各因子の計算内訳（Layer 2 シグナル）"
-    )
+    await msg.reply_text(COCKPIT_BOT_COMMANDS_MESSAGE)
 
 
 async def ping_command(update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -451,7 +456,7 @@ async def _notify_gateway_ready(application: object) -> None:
             if bot:
                 await bot.send_message(
                     chat_id=chat_id,
-                    text="Sputnik 起動完了。API 利用可能です。",
+                    text="Sputnik 起動完了。\n\n" + COCKPIT_BOT_COMMANDS_MESSAGE,
                 )
             return
         except Exception:

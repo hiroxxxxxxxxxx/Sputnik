@@ -12,7 +12,7 @@ from datetime import date, timedelta
 import pytest
 
 from avionics import PFactor, SFactor, TFactor, UFactor, VFactor
-from avionics.factors_config import (
+from avionics.Instruments import (
     FactorsConfigError,
     get_p_thresholds,
     get_v_thresholds,
@@ -180,14 +180,14 @@ def test_compute_capital_signals_none_returns_defaults() -> None:
 
 def test_signal_bundle_update_all_distributes_to_factors() -> None:
     """update_all(signal_bundle) で P/V/T にシグナルが配布され、レベルが更新される。"""
-    from avionics import Cockpit
-    from avionics.factors_config import get_t_thresholds
+    from avionics import FlightController
+    from avionics.Instruments import get_t_thresholds
 
     p = PFactor(name="P_NQ", thresholds=get_p_thresholds(_config, "NQ"))
     v = VFactor(name="V_NQ", thresholds=get_v_thresholds(_config, "NQ"))
     t = TFactor(symbol="NQ", thresholds=get_t_thresholds(_config))
 
-    av = Cockpit(
+    av = FlightController(
         global_market_factors=[],
         global_capital_factors=[],
         symbol_factors={"NQ": [p, v, t]},
@@ -216,14 +216,14 @@ def test_signal_bundle_update_all_distributes_to_factors() -> None:
 
 def test_signal_bundle_update_all_capital_factors() -> None:
     """update_all(signal_bundle) で U/S に capital_signals が配布される。"""
-    from avionics import Cockpit
-    from avionics.factors_config import get_s_thresholds, get_u_thresholds
+    from avionics import FlightController
+    from avionics.Instruments import get_s_thresholds, get_u_thresholds
 
     u_th = get_u_thresholds(_config)
     s_th = get_s_thresholds(_config)
     u = UFactor(thresholds=u_th)
     s = SFactor(thresholds=s_th)
-    av = Cockpit(
+    av = FlightController(
         global_market_factors=[],
         global_capital_factors=[u, s],
         symbol_factors={},

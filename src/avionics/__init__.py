@@ -3,14 +3,13 @@ from __future__ import annotations
 """
 Macro Income Strategy 計器レイヤーの因子クラス群と管制層。
 
-Cockpit: 計器層。各因子は非対称ヒステリシスを備えたFSMとして実装され、
-Market Level / Capital Level を算出。FlightController: 管制層。スロットルモードの遷移・配布。
-定義書「3.コックピット」「4-2 OS構造」セクション参照。
+FlightController: 計器層（3層フレームワーク）。各因子は非対称ヒステリシスを備えたFSMとして実装され、
+Market Level / Capital Level を算出。Cockpit: 管制層。スロットルモードの遷移・配布と承認フローを担当。
+定義書「2.コックピット」「3.フライトコントローラー」「4-2 OS構造」セクション参照。
 """
 
 from protocols.emergency_protocol import EmergencyProtocol
-from .cockpit import Cockpit, CockpitSignal
-from .flight_controller import FlightController
+from .flight_controller import FlightController, FlightControllerSignal
 from .mode import BOOST, CRUISE, EMERGENCY, ModeType, MODES
 from .Instruments import (
     BaseFactor,
@@ -36,8 +35,7 @@ __all__ = [
     "BOOST",
     "BaseFactor",
     "CapitalSignals",
-    "Cockpit",
-    "CockpitSignal",
+    "FlightControllerSignal",
     "CRUISE",
     "EMERGENCY",
     "EmergencyProtocol",

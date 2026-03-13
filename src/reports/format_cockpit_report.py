@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, Optional
 from reports._render import render
 
 if TYPE_CHECKING:
-    from avionics.cockpit import Cockpit
+    from avionics import FlightController
     from avionics.Instruments.signals import SignalBundle
 
 MODE_STR = {0: "Boost", 1: "Cruise", 2: "Emergency"}
@@ -19,7 +19,7 @@ COCKPIT_TEMPLATE = "cockpit_report.txt"
 
 
 async def build_cockpit_report_context(
-    cockpit: "Cockpit",
+    cockpit: "FlightController",
     symbols: list[str],
     now_utc: str,
     bundle: Optional["SignalBundle"] = None,
@@ -31,7 +31,7 @@ async def build_cockpit_report_context(
     """
     symbol_blocks: list[dict[str, Any]] = []
     for sym in symbols:
-        sig = await cockpit.get_cockpit_signal(sym, bundle)
+        sig = await cockpit.get_flight_controller_signal(sym, bundle)
         m = sig.raw_metrics
         symbol_blocks.append({
             "symbol": sym,
@@ -51,7 +51,7 @@ async def build_cockpit_report_context(
 
 
 async def format_cockpit_report(
-    cockpit: "Cockpit",
+    cockpit: "FlightController",
     symbols: list[str],
     now_utc: str,
     template_name: str = COCKPIT_TEMPLATE,

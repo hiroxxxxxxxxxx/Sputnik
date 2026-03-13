@@ -41,8 +41,8 @@
 
 | ルール／制限 | 実装 | 適合 |
 |--------------|------|------|
-| 個別・同期・制限制御層の実装。実行レベルの算出 | `avionics/avionics.py`: get_individual_control_level(symbol)=max(P,V,L), get_synchronous_control_level()=T相関, get_limit_control_level()=max(U,S), get_effective_level(symbol)=三層の max。 | ✅ |
-| 個別: max(P,V,L) 銘柄ごと / 同期: T相関 / 制限: max(U,S) | 上記の通り実装。定義書 4-2 と一致。 | ✅ |
+| 個別・同期・制限制御層の実装。実行レベルの算出 | `avionics/cockpit.py`: get_individual_control_level(symbol)=max(P,V,C/R), get_synchronous_control_level()=T相関, get_limit_control_level()=max(U,S), get_effective_level(symbol)=三層の max。 | ✅ |
+| 個別: max(P,V,C/R) 銘柄ごと / 同期: T相関 / 制限: max(U,S) | 上記の通り実装。定義書 4-2 と一致。 | ✅ |
 | **実行レベル以外、OSCore は下位レイヤーを参照してはならない** | OSCore は `get_effective_level(symbol)` のみでモード決定。レガシー・サブスクリプションとも同一API。表示が必要なら呼び出し元が Avionics の get_individual_control_level / get_limit_control_level 等を参照。 | ✅ |
 
 ---
@@ -69,6 +69,64 @@
 2. **Layer 3** の該当因子の判定ロジックを、その Signal を参照するように書き換える。  
 
 **Layer 4（個別・同期・制限制御層）や OSCore のコードは触らない。**
+
+---
+
+## ファイル単位の対応と依存関係
+
+### 4層 ↔ ファイル対応
+
+| 層 | 責務 | ファイル | 備考 |
+|----|------|----------|------|
+| **Layer 1** | Raw Data（未加工の事実のみ） | `Instruments/raw_data.py` | PriceBar, PriceBar1h, RawCapitalSnapshot, RawDataProvider(Protocol)。計算・加工なし。 |
+| **Layer 2** | Signals（共通シグナル） | `Instruments/signals.py` | PriceSignals, VolatilitySignal, LiquiditySignals, CapitalSignals, SignalBundle。compute_* は RawDataProvider のみ入力。0/1/2 は持たない。 |
+| **Layer 3** | Factors（因子判定 0/1/2） | `Instruments/base_factor.py` + `*_factor.py` (p, v, c, r, t, u, s) | 閾値は factors_config から注入。update_from_* でシグナル（値）のみ受け取り .level を出力。raw_data を import しない。 |
+| **Layer 4** | Control Levels（制御レベル統合） | `cockpit.py` | ICL/SCL/LCL の算出、Effective Level、スロットルモード。SignalBundle と因子クラス（登録・isinstance 用）のみ参照。 |
+
+**境界外（層に属さない）**
+
+| 役割 | ファイル | 依存 |
+|------|----------|------|
+| データ取得・Bundle 組み立て | `ib_data.py` | L1（raw_data, CachedRawDataProvider）, L2（signals.compute_*）, factors_config。L3/L4 は import しない。 |
+| 閾値設定の読込 | `Instruments/factors_config.py` | ファイルシステム（TOML）のみ。raw_data / signals / 因子を import しない。 |
+| 管制・承認 | `flight_controller.py` | cockpit, mode, protocols。Instruments を直接 import しない。 |
+| モード定数 | `mode.py` | 他モジュールに依存しない。 |
+
+### 依存方向（import の流れ）
+
+```
+Layer 1 (raw_data.py)     ← 誰からも「制御用」では参照されない（L4 は触らない）
+     ↑
+Layer 2 (signals.py)      ← L1 のみ import。因子は TYPE_CHECKING で型のみ。
+     ↑
+Layer 3 (*_factor.py)     ← base_factor のみ。signals は型ヒント用のみ。raw_data は import しない。
+     ↑
+Layer 4 (cockpit.py)      ← L2 の SignalBundle、L3 の因子クラス（遅延 import）のみ。
+     ↑
+flight_controller.py      ← cockpit, mode のみ。Instruments を import しない。
+```
+
+**確認済み**
+
+- **cockpit.py**: `from .Instruments.signals import SignalBundle` のみトップレベル。因子はメソッド内で `from .Instruments.xxx_factor import XxxFactor`（isinstance と登録用）。raw_data は import していない。 ✅
+- **各因子**: raw_data を import していない。signals は `TYPE_CHECKING` 下で PriceSignals, LiquiditySignals 等の型のみ。 ✅
+- **signals.py**: `from .raw_data import PriceBar, RawCapitalSnapshot, RawDataProvider` のみ。因子は import しない。 ✅
+- **ib_data.py**: raw_data（実装・型）, signals（compute_*）, factors_config。cockpit や因子は import しない。 ✅
+
+### 公開範囲（avionics / Instruments の __all__）
+
+| 公開先 | 公開しているもの | 適切性 |
+|--------|------------------|--------|
+| **avionics** | Cockpit, CockpitSignal, FlightController, ModeType/MODES, SignalBundle, 各因子クラス, **RawDataProvider, PriceBar, PriceBar1h, RawCapitalSnapshot**, 各 Signal 型 | RawDataProvider / PriceBar 等は **注入・テスト用**（ib_data が Provider を実装し、Layer 2 に渡す）。制御ロジックが L1 を直接触る用途では使わない。 ✅ 意図どおり。 |
+| **Instruments** | raw_data, signals, factors_config, 全因子, 全 Signal 型 | パッケージが L1〜L3 を一括公開。cockpit は SignalBundle と因子クラスのみ利用。スクリプトが factors_config / 因子を直接使うのは「Cockpit 組み立て」用で許容。 ✅ |
+
+**注意**: 呼び出し元（FlightController, スクリプト）が「制御」に使うのは **Cockpit の API（get_effective_level, get_cockpit_signal, update_all）のみ** とする。RawDataProvider を渡すのは ib_data 等のデータ取得層に限定し、L4 や FC が raw_data を import しないようにする。現状その通り。 ✅
+
+### 改善提案（任意）
+
+1. **LAYER_CHARTER の表記**: 文中の「avionics/avionics.py」は実ファイル名に合わせ **cockpit.py** に統一済み。
+2. **Instruments のサブパッケージ化**: 現状は `Instruments/` に L1・L2・L3 が同居。将来的に `Instruments/raw_data.py`, `Instruments/signals.py`, `Instruments/factors/` のように分けてもよいが、現行の単一フォルダでも依存方向は守られており必須ではない。
+3. **reports の RawCapitalSnapshot**: `format_daily_report` が `RawCapitalSnapshot` を import しているのは「NLV 表示用」のデータ型参照。制御フローには使っておらず、表示用のため許容範囲。 ✅
 
 ---
 
