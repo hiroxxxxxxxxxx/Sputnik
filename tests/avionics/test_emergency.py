@@ -59,14 +59,26 @@ def test_emergency_protocol_engines_property(engine_with_fc: tuple[Cockpit, Engi
     assert protocol.engines == [engine]
 
 
+def test_cockpit_level_to_mode() -> None:
+    """Cockpit._level_to_mode は 0/1/2 を Boost/Cruise/Emergency に写す。定義書 4-2。"""
+    fc = Cockpit(
+        cockpit=FlightController(global_market_factors=[], global_capital_factors=[], symbol_factors={}),
+        engines=[],
+        initial_mode="Cruise",
+    )
+    assert fc._level_to_mode(0) == "Boost"
+    assert fc._level_to_mode(1) == "Cruise"
+    assert fc._level_to_mode(2) == "Emergency"
+
+
 def test_fc_pulse_entering_emergency_runs_protocol(engine_with_fc: tuple[Cockpit, Engine]) -> None:
     """Cockpit.pulse で Emergency に遷移すると、コールバック未設定時は EmergencyProtocol が実行される。"""
     fc, _ = engine_with_fc
     class MockEmergencyEvaluator:
         async def update_all(self, signal_bundle=None) -> None:
             pass
-        async def get_throttle_mode(self, symbol: str) -> str:
-            return "Emergency"
+        async def get_effective_level(self, symbol: str) -> int:
+            return 2
     fc.cockpit = MockEmergencyEvaluator()  # type: ignore[assignment]
     asyncio.run(fc.pulse())
     assert fc.current_mode == "Emergency"

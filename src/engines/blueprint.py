@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Literal, Tuple
 
-from avionics.mode import EMERGENCY, ModeType, MODES
+from cockpit.mode import EMERGENCY, ModeType, MODES
 
 # 層タイプ（Main=MINI, Attitude/Booster=MICRO）。発注先・重み算出に使用。
 LayerType = Literal["MINI", "MICRO"]

@@ -12,8 +12,9 @@ import asyncio
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, List, Literal, Optional
 
 from avionics.flight_controller import FlightController, FlightControllerSignal
-from avionics.mode import BOOST, CRUISE, EMERGENCY, ModeType
 from protocols.emergency_protocol import EmergencyProtocol
+
+from .mode import BOOST, CRUISE, EMERGENCY, ModeType
 
 if TYPE_CHECKING:
     from engines.engine import Engine
@@ -31,7 +32,7 @@ class Cockpit:
     """
     管制層：FlightController が返すスロットルモードを遷移・配布する。判定は FlightController に委譲。
 
-    エンジンは外からリストで注入する。get_throttle_mode の戻り値をそのまま受け、
+    エンジンは外からリストで注入する。get_effective_level の戻り値からスロットルモードを導き、
     遷移・プロトコル・全エンジンへの apply_mode に専念する。定義書「4-2」参照。
     """
 
@@ -155,18 +156,27 @@ class Cockpit:
     async def pulse(self) -> None:
         """
         管制サイクル。FlightController の三層方式で銘柄ごとにスロットルモード取得 → 遷移 → 全エンジンへ指令。
-        判定は行わず、get_throttle_mode の戻り値をそのまま適用する。定義書「0-4」「4-2」「0-1-Ⅲ」参照。
+        判定は行わず、get_effective_level の戻り値からスロットルモードを導き遷移・配布する。定義書「0-4」「4-2」「0-1-Ⅲ」参照。
         """
         await self._pulse_subscription()
 
+    def _level_to_mode(self, level: int) -> ModeType:
+        """実行レベル 0/1/2 をスロットルモード（Boost/Cruise/Emergency）に変換。定義書 4-2 対応表。"""
+        if level >= 2:
+            return EMERGENCY
+        if level == 1:
+            return CRUISE
+        return BOOST
+
     async def _pulse_subscription(self) -> None:
-        """サブスクリプション: get_throttle_mode で銘柄ごとのスロットルモードを取得し、遷移・配布。定義書 4-2。"""
+        """サブスクリプション: get_effective_level で銘柄ごとの実行レベルを取得し、モードに変換して遷移・配布。定義書 4-2。"""
         await self.cockpit.update_all()
         worst_mode: ModeType = BOOST  # 最小 severity から開始し、全エンジンで最悪のモードを集約
         any_emergency = False
         engine_modes: List[tuple["Engine", ModeType]] = []
         for engine in self.engines:
-            target_mode = await self.cockpit.get_throttle_mode(engine.symbol_type)
+            level = await self.cockpit.get_effective_level(engine.symbol_type)
+            target_mode = self._level_to_mode(level)
             engine_modes.append((engine, target_mode))
             if target_mode == EMERGENCY:
                 any_emergency = True

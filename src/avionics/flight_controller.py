@@ -13,7 +13,6 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from .Instruments.signals import SignalBundle
-from .mode import BOOST, CRUISE, EMERGENCY, ModeType
 
 
 @dataclass
@@ -242,18 +241,6 @@ class FlightController:
         syn = await self.get_synchronous_control_level()
         lim = await self.get_limit_control_level()
         return max(ind, syn, lim)
-
-    async def get_throttle_mode(self, symbol: str) -> ModeType:
-        """
-        実行レベルからスロットルモード（Boost / Cruise / Emergency）を返す。
-        定義書「4-2 Effective Level × スロットルモード対応表」。FlightController は判定せずこの戻り値をそのまま適用する。
-        """
-        effective = await self.get_effective_level(symbol)
-        if effective == 0:
-            return BOOST
-        if effective == 1:
-            return CRUISE
-        return EMERGENCY
 
     def _build_reason(self, ind: int, syn: int, lim: int) -> str:
         """

@@ -1,0 +1,2 @@
+# data/ は SQLite のデフォルト配置（SPUTNIK_DB_PATH 未設定時）。
+# *.db は .gitignore で無視する。

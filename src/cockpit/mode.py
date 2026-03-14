@@ -1,7 +1,8 @@
 """
 スロットルモードの単一定義。Boost / Cruise / Emergency の文字列定数と型。
 
-Cockpit・FlightController・Engine/Blueprint が同じ定義を参照し、文字列の二重定義を避ける。
+Cockpit が get_effective_level の 0/1/2 をこのモードに変換し、Engine へ apply_mode する。
+Engine / Blueprint も同じ定義を参照して get_ratios(mode) 等で使用する。
 定義書「4-2 Effective Level × スロットルモード対応表」参照。
 """
 

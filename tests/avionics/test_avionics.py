@@ -25,18 +25,6 @@ class _MockFactor:
         pass
 
 
-def test_avionics_get_throttle_mode_from_effective_level() -> None:
-    """get_throttle_mode は get_effective_level の 0/1/2 を Boost/Cruise/Emergency に写す。定義書 4-2。"""
-    av = FlightController(global_market_factors=[], global_capital_factors=[], symbol_factors={})
-    assert _run(av.get_throttle_mode("NQ")) == "Boost"
-    f1 = _MockFactor(1)
-    av_cruise = FlightController(global_capital_factors=[f1])
-    assert _run(av_cruise.get_throttle_mode("NQ")) == "Cruise"
-    f2 = _MockFactor(2)
-    av_emergency = FlightController(global_capital_factors=[f2])
-    assert _run(av_emergency.get_throttle_mode("NQ")) == "Emergency"
-
-
 def test_avionics_empty_factors_effective_zero() -> None:
     """因子が空のとき get_effective_level は 0 を返す。"""
     av = FlightController(global_market_factors=[], global_capital_factors=[], symbol_factors={})
