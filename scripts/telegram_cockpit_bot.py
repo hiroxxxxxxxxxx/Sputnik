@@ -434,33 +434,54 @@ async def schedule_command(update: object, context: ContextTypes.DEFAULT_TYPE) -
 
 async def _notify_gateway_ready(application: object) -> None:
     """
-    ボット起動後、Gateway が API 接続可能になるまで待ち、完了メッセージを送る。
-    post_init から create_task で呼ばれる。
+    ボット起動後、Gateway に接続を試みる。
+    成功したら「起動完了」、失敗したら「接続できませんでした」をすぐに Telegram で通知する。
+    待ち時間は短め（約2分で成否が決まる）。
     """
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
     if not chat_id:
+        print("TELEGRAM_CHAT_ID が未設定のため、起動完了メッセージは送信しません。", file=sys.stderr)
         return
     host = os.environ.get("IBKR_HOST", "127.0.0.1").strip()
     port_str = os.environ.get("IBKR_PORT", "").strip()
     port = int(port_str) if port_str.isdigit() else 8888
     client_id = int(os.environ.get("IBKR_CLIENT_ID", "3"))
-    await asyncio.sleep(15)
+    await asyncio.sleep(30)
     from ib_async import IB
 
-    for _ in range(6):
+    for attempt in range(3):
         try:
             ib = IB()
-            await ib.connectAsync(host=host, port=port, clientId=client_id, timeout=15)
+            await ib.connectAsync(host=host, port=port, clientId=client_id, timeout=30)
             ib.disconnect()
             bot = getattr(application, "bot", None)
             if bot:
                 await bot.send_message(
                     chat_id=chat_id,
-                    text="Sputnik 起動完了。\n\n" + COCKPIT_BOT_COMMANDS_MESSAGE,
+                    text="Sputnik 起動完了。API 利用可能です。\n\n" + COCKPIT_BOT_COMMANDS_MESSAGE,
                 )
             return
-        except Exception:
-            await asyncio.sleep(15)
+        except Exception as e:
+            print(
+                f"Gateway 接続試行 {attempt + 1}/3 失敗: {host}:{port} clientId={client_id} → {type(e).__name__}: {e}",
+                file=sys.stderr,
+            )
+            await asyncio.sleep(5)
+
+    bot = getattr(application, "bot", None)
+    if bot:
+        try:
+            await bot.send_message(
+                chat_id=chat_id,
+                text=(
+                    "Sputnik ボットは起動していますが、Gateway に接続できませんでした。\n"
+                    "しばらくしてから /cockpit を試すか、Gateway とログを確認してください。\n\n"
+                    + COCKPIT_BOT_COMMANDS_MESSAGE
+                ),
+            )
+        except Exception as e:
+            print(f"接続失敗の通知送信に失敗: {e}", file=sys.stderr)
+    print(f"Gateway に接続できませんでした: {host}:{port}", file=sys.stderr)
 
 
 def main() -> int:
