@@ -60,7 +60,7 @@ services:
     volumes:
       - ../src:/app/src:ro
       - ../scripts:/app/scripts:ro
-      - ../src/config:/app/config:ro
+      - ../config:/app/config:ro
       - ../tests:/app/tests:ro
     depends_on:
       - ib-gateway
@@ -93,7 +93,7 @@ services:
     volumes:
       - ../src:/app/src:ro
       - ../scripts:/app/scripts:ro
-      - ../src/config:/app/config:ro
+      - ../config:/app/config:ro
     depends_on:
       - ib-gateway
     # 起動時に Telegram 通知（TELEGRAM_TOKEN/CHAT_ID があれば）してからボット開始

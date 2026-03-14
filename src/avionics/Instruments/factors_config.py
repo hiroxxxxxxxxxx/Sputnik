@@ -4,10 +4,16 @@
 config/factors.toml を読み、銘柄別・因子別のしきい値を返す。
 設定がない（ファイル未読込・該当キーなし）場合は例外を上げる。フォールバックは持たない。
 EngineFactory または Cockpit の組み立て時に利用する。
+
+設定の探し方（path=None 時）:
+  1) 環境変数 SPUTNIK_CONFIG_DIR が設定されていればそのディレクトリ内の factors.toml
+  2) プロジェクトルートの config/factors.toml（推奨）
+  3) プロジェクトルートの src/config/factors.toml（旧位置・後方互換）
 """
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any, Dict
 
@@ -179,20 +185,24 @@ def load_factors_config(path: str | Path | None = None) -> Dict[str, Any]:
     :raises FactorsConfigError: ファイルが見つからない、または path がファイルでない場合。
     """
     if path is None:
-        base = Path(__file__).resolve().parent  # avionics/cockpit
-        root = base.parent.parent  # プロジェクトルート
-        for candidate in (
-            root / "config" / "factors.toml",
-            base.parent / "config" / "factors.toml",
-            base / "config" / "factors.toml",
-        ):
+        # __file__ = .../src/avionics/Instruments/factors_config.py -> project_root = .../Sputnik
+        project_root = Path(__file__).resolve().parent.parent.parent.parent
+        env_dir = os.environ.get("SPUTNIK_CONFIG_DIR")
+        candidates = []
+        if env_dir:
+            candidates.append(Path(env_dir).resolve() / "factors.toml")
+        candidates.extend([
+            project_root / "config" / "factors.toml",
+            project_root / "src" / "config" / "factors.toml",
+        ])
+        for candidate in candidates:
             if candidate.is_file():
                 path = candidate
                 break
         else:
             raise FactorsConfigError(
                 "factors config file not found. "
-                "Provide config/factors.toml at project root or pass path= to load_factors_config(path)."
+                "Provide config/factors.toml at project root or set SPUTNIK_CONFIG_DIR or pass path= to load_factors_config(path)."
             )
 
     path = Path(path)

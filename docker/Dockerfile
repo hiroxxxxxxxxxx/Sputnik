@@ -12,10 +12,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # テスト用（コンテナ内で pytest を回す場合）
 RUN pip install --no-cache-dir pytest pytest-cov
 
-# アプリ本体（config は src/config に格納されている）
+# アプリ本体（config はプロジェクトルートの config/）
 COPY src ./src
 COPY scripts ./scripts
-COPY src/config ./config
+COPY config ./config
 COPY tests ./tests
 COPY pyproject.toml .
 
