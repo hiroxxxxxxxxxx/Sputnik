@@ -2,7 +2,7 @@
 BaseProtocol：執行の安全装置と共通の作法を担う基底クラス。
 
 個別の執行ロジックは子クラスの run() に記述し、本クラスは事前・事後チェック、
-タイムアウト・リトライ、ロギングの枠組みを提供する。ARCHITECTURE.md 参照。
+タイムアウト・リトライ、ロギングの枠組みを提供する。docs/spec/ARCHITECTURE.md 参照。
 """
 
 from __future__ import annotations

@@ -9,47 +9,30 @@ Market Level / Capital Level を算出。Cockpit: 管制層。スロットルモ
 """
 
 from protocols.emergency_protocol import EmergencyProtocol
-from .flight_controller import FlightController, FlightControllerSignal
+from .assembly import build_flight_controller
+from .flight_controller import FlightController
 from .Instruments import (
     BaseFactor,
-    CapitalSignals,
     CFactor,
-    LiquiditySignals,
     PFactor,
-    PriceBar,
-    PriceBar1h,
-    PriceSignals,
-    RawCapitalSnapshot,
-    RawDataProvider,
     RFactor,
     SFactor,
-    SignalBundle,
     TFactor,
     UFactor,
     VFactor,
-    VolatilitySignal,
 )
 
 __all__ = [
     "BaseFactor",
-    "CapitalSignals",
-    "FlightControllerSignal",
-    "EmergencyProtocol",
+    "build_flight_controller",
     "CFactor",
     "FlightController",
-    "LiquiditySignals",
+    "EmergencyProtocol",
     "PFactor",
-    "PriceBar",
-    "PriceBar1h",
-    "PriceSignals",
-    "RawCapitalSnapshot",
-    "RawDataProvider",
     "RFactor",
     "SFactor",
-    "SignalBundle",
     "TFactor",
     "UFactor",
     "VFactor",
-    "VolatilitySignal",
 ]
 

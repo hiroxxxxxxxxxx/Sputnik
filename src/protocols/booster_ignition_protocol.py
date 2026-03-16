@@ -1,5 +1,5 @@
 """
-Booster Ignition プロトコル。全エンジンに Boost を適用。ARCHITECTURE.md 参照。
+Booster Ignition プロトコル。全エンジンに Boost を適用。docs/spec/ARCHITECTURE.md 参照。
 """
 
 from __future__ import annotations

@@ -14,7 +14,7 @@ from typing import Any, Literal, Optional, TYPE_CHECKING
 from .base_factor import BaseFactor, BufferCondition, LevelType
 
 if TYPE_CHECKING:
-    from .signals import VolatilitySignal
+    from avionics.data.signals import SignalBundle, VolatilitySignal
 
 
 AltitudeRegime = Literal["high_mid", "low"]
@@ -71,6 +71,15 @@ class VFactor(BaseFactor):
             return (min(satisfied, required), required)
         return None
 
+    async def update_from_signal_bundle(
+        self, symbol: Optional[str], bundle: "SignalBundle"
+    ) -> None:
+        vol = getattr(bundle, "volatility_signals", {}).get(symbol) if symbol else None
+        if vol is not None:
+            await self.update_from_volatility_signal(vol)
+        else:
+            await self.update()
+
     async def update_from_volatility_signal(
         self,
         signal: VolatilitySignal,
@@ -104,7 +113,7 @@ class VFactor(BaseFactor):
         """
         VXN/GVZ 相当の指数値（Layer 2 出力）から V レベルを更新する。ステートレス専用。
 
-        復帰はシグナル由来の連続日数で一発判定（docs/recovery_confirm_spec_options.md）。
+        復帰はシグナル由来の連続日数で一発判定（docs/archive/recovery_confirm_spec_options.md）。
         recovery_confirm_satisfied_days_* は呼び出し元（Layer 2 算出結果）で必ず渡すこと。
         """
         thresholds = self._get_thresholds(altitude)

@@ -11,6 +11,7 @@
 
 - **effective_level**: 銘柄ごとに異なるため、`effective_nq` / `effective_gc` で保持する。
 - **altitude**: 3値（高/中/低）。6ヶ月ルール・閾値切り替え用。
+- **高度変更日時**: state には持たない。`altitude_changes` の最新行 `changed_at` で取得する。
 - 目標枚数は **target_futures** テーブルで管理（案B）。
 
 ```sql
@@ -19,31 +20,41 @@ CREATE TABLE state (
     effective_nq INTEGER NOT NULL CHECK (effective_nq IN (0, 1, 2)),
     effective_gc INTEGER NOT NULL CHECK (effective_gc IN (0, 1, 2)),
     altitude TEXT NOT NULL CHECK (altitude IN ('high', 'mid', 'low')),
-    altitude_changed_at TEXT,
     updated_at TEXT
 );
 ```
 
 ---
 
-## 2. target_futures（目標先物枚数・銘柄×part）
+## 2. target_futures（目標先物枚数・銘柄×Part×契約）
 
-**役割**: 運用開始時に決める「銘柄×Part ごとの目標先物枚数」。NQ は NQ/MNQ の組み合わせ、GC は別定義。
+**役割**: 運用開始時に決める「銘柄側×Part×契約シンボルごとの目標枚数」。Mini（NQ/GC）と Micro（MNQ/MGC）を区別する。
 
-- 例: NASDAQ の Main = NQ 1枚 + MNQ 2枚 → 同じ Part でも銘柄ごとに別行。
-- 主キー: `(symbol, part_name)`。symbol = 'NQ' | 'GC'、part_name = 'Main' | 'Attitude' | 'Booster'。
+### symbol と contract の使い分け
+
+| 項目 | 意味 | とりうる値 | 用途 |
+|------|------|------------|------|
+| **symbol** | **銘柄側（エンジン）**。どちらの「エンジン」に属するか。計器・Blueprint・運用上のグルーピング。 | `NQ` \| `GC` | どの Engine（NQ 用 / GC 用）の目標か。FlightController の get_flight_controller_signal(symbol).throttle_level や Engine の symbol_type と対応。 |
+| **contract** | **取引所の契約銘柄**。実際に発注するときの銘柄。Mini と Micro を区別する。 | `NQ` \| `MNQ` \| `GC` \| `MGC` | 注文・ポジション照会で使うシンボル。contract_symbol(symbol_type, layer_type) の結果と対応。 |
+
+- **symbol** が「NQ」の行は、すべて NASDAQ 側の目標。そのうち **contract** が `NQ` なら Mini 1枚分、`MNQ` なら Micro 1枚分を表す。
+- **symbol** が「GC」の行は、すべて Gold 側の目標。**contract** は `GC`（Mini）または `MGC`（Micro）。
+- 通常は NQ 側で contract が NQ/MNQ、GC 側で contract が GC/MGC のみ（他側の契約は持たない）。PK で (symbol, part_name, contract) としているので、同じ part で Mini と Micro を両方持つ場合も行を分けて表現できる。
+
+- **part_name**: 'Main' | 'Attitude' | 'Booster'。
+- **contracts**: 目標枚数（整数）。
+- 例: NASDAQ の Main = NQ 1枚 + MNQ 2枚 → (NQ, Main, NQ, 1), (NQ, Main, MNQ, 2)。GC 側は (GC, Main, GC, 1), (GC, Attitude, MGC, 2) など。
 
 ```sql
 CREATE TABLE target_futures (
     symbol TEXT NOT NULL CHECK (symbol IN ('NQ', 'GC')),
     part_name TEXT NOT NULL CHECK (part_name IN ('Main', 'Attitude', 'Booster')),
-    target_futures INTEGER NOT NULL,
+    contract TEXT NOT NULL CHECK (contract IN ('NQ', 'MNQ', 'GC', 'MGC')),
+    contracts INTEGER NOT NULL,
     updated_at TEXT NOT NULL,
-    PRIMARY KEY (symbol, part_name)
+    PRIMARY KEY (symbol, part_name, contract)
 );
 ```
-
-- 契約種別（Mini/Micro）は Engine/Blueprint の設計図で決まる。ここでは「目標枚数」のみ保持。
 
 ---
 
@@ -105,10 +116,10 @@ CREATE TABLE signal_daily (
 
 ---
 
-## 6. コード方針: get_throttle_mode 廃止・Cockpit で get_effective_level
+## 6. コード方針: get_throttle_mode 廃止・Cockpit で get_flight_controller_signal
 
-- **effective_level を DB で持つ** ため、**FlightController の get_throttle_mode** は廃止する。
-- **Cockpit** から **get_effective_level(symbol)** を直接使い、取得した level (0/1/2) をスロットルモード（Boost/Cruise/Emergency）に変換して Engine へ **apply_mode** する。
+- **effective_level を DB で持つ** ため、**FlightController の get_throttle_mode** は廃止済み。
+- **Cockpit** から **get_flight_controller_signal(symbol).throttle_level** で level (0/1/2) を取得し、スロットルモード（Boost/Cruise/Emergency）に変換して Engine へ **apply_mode** する。get_effective_level は廃止済み。
 - 変換は Cockpit 内で行う（`level 0 → Boost`, `1 → Cruise`, `2 → Emergency`）。  
   **cockpit/mode.py** に定数（BOOST, CRUISE, EMERGENCY, ModeType）を置き、Engine / Blueprint / Protocol が参照する。FlightController は mode を参照しない。
 
@@ -118,8 +129,8 @@ CREATE TABLE signal_daily (
 
 | テーブル | 内容 |
 |----------|------|
-| **state** | 1行。effective_nq, effective_gc, altitude, altitude_changed_at。 |
-| **target_futures** | 銘柄×Part の目標先物枚数。(symbol, part_name) PK。 |
+| **state** | 1行。effective_nq, effective_gc, altitude。高度変更日時は altitude_changes から取得。 |
+| **target_futures** | 銘柄×Part×契約の目標枚数。(symbol, part_name, contract) PK。contracts で枚数を保持。Mini/Micro 対応。 |
 | **altitude_changes** | 高度変更履歴。INSERT のみ。 |
 | **mode** | 1行。auto_pilot_mode (Manual/Semi/Full), execution_lock。 |
 | **signal_daily** | 日次 1 行。Layer4 のみ: icl_nq, icl_gc, scl, lcl, effective_nq, effective_gc。 |

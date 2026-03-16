@@ -13,7 +13,7 @@ from typing import Any, Literal, Optional, TYPE_CHECKING
 from .base_factor import BaseFactor, LevelType
 
 if TYPE_CHECKING:
-    from .signals import LiquiditySignals
+    from avionics.data.signals import LiquiditySignals, SignalBundle
 
 
 AltitudeRegime = Literal["high_mid", "low"]
@@ -90,6 +90,19 @@ class RFactor(BaseFactor):
         count = self._count_recovery_satisfied_days(daily_history_tip, altitude) if daily_history_tip else 0
         confirm = int(self.thresholds["confirm_days"])
         return (min(count, confirm), confirm)
+
+    async def update_from_signal_bundle(
+        self, symbol: Optional[str], bundle: "SignalBundle"
+    ) -> None:
+        lt = getattr(bundle, "liquidity_tip", None)
+        if lt is not None:
+            await self.update_from_signals(
+                altitude=lt.altitude,
+                tip_drawdown_from_high=lt.tip_drawdown_from_high if lt.tip_drawdown_from_high is not None else -0.001,
+                daily_history_tip=getattr(lt, "daily_history_tip", ()),
+            )
+        else:
+            await self.update()
 
     async def update_from_signals(
         self,

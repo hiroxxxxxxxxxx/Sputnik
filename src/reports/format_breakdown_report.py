@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 from reports._render import render
 
 if TYPE_CHECKING:
-    from avionics.Instruments.signals import SignalBundle
+    from avionics.data.signals import SignalBundle
 
 BREAKDOWN_TEMPLATE = "breakdown_report.txt"
 

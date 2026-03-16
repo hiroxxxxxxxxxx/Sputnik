@@ -50,8 +50,9 @@ async def main() -> int:
     parser.add_argument("--breakdown", action="store_true", help="各因子の入力となる Layer 2 シグナル内訳を表示")
     args = parser.parse_args()
 
-    from avionics import FlightController
+    from cockpit.stack import build_cockpit_stack
     from avionics.ib_data import IBDataFetcher
+    from avionics.Instruments import FactorsConfigError, get_v_thresholds, load_factors_config
 
     try:
         from ib_async import IB
@@ -59,69 +60,14 @@ async def main() -> int:
         print("ib_async がインストールされていません: pip install ib_async", file=sys.stderr)
         return 1
 
-    # FlightController の因子登録（config があれば）
-    cockpit: FlightController
+    # FC と Engine は同一 symbols で build_cockpit_stack で取得（本スクリプトは FC のみ使用）
+    fc, _engines = build_cockpit_stack(args.symbols)
     try:
-        from avionics.Instruments import (
-            FactorsConfigError,
-            get_c_thresholds,
-            get_p_thresholds,
-            get_r_thresholds,
-            get_s_thresholds,
-            get_t_thresholds,
-            get_u_thresholds,
-            get_v_thresholds,
-            load_factors_config,
-        )
-        from avionics import CFactor, PFactor, RFactor, SFactor, TFactor, UFactor, VFactor
-
-        config: dict | None = load_factors_config()
-        global_market_factors: list = []
-        global_capital_factors: list = []
-        symbol_factors: dict = {s: [] for s in args.symbols}
-
-        for sym in args.symbols:
-            try:
-                p_th = get_p_thresholds(config, sym)
-                v_th = get_v_thresholds(config, sym)
-                t_th = get_t_thresholds(config)
-                symbol_factors[sym].append(PFactor(name="P", thresholds=p_th))
-                symbol_factors[sym].append(VFactor(name="V", thresholds=v_th))
-                symbol_factors[sym].append(TFactor(symbol=sym, thresholds=t_th))
-            except FactorsConfigError:
-                pass
-            try:
-                c_th = get_c_thresholds(config, sym)
-                symbol_factors[sym].append(CFactor(name="C", thresholds=c_th))
-            except FactorsConfigError:
-                pass
-            try:
-                r_th = get_r_thresholds(config, sym)
-                symbol_factors[sym].append(RFactor(name="R", thresholds=r_th))
-            except FactorsConfigError:
-                pass
-
-        try:
-            u_th = get_u_thresholds(config)
-            s_th = get_s_thresholds(config)
-            global_capital_factors.extend([UFactor(thresholds=u_th), SFactor(thresholds=s_th)])
-        except FactorsConfigError:
-            pass
-
-        cockpit = FlightController(
-            global_market_factors=global_market_factors,
-            global_capital_factors=global_capital_factors,
-            symbol_factors=symbol_factors,
-        )
+        config = load_factors_config()
         print("FlightController: config/factors.toml に基づき因子を登録しました。")
-    except FactorsConfigError as e:
+    except FactorsConfigError:
         config = None
-        cockpit = FlightController(
-            global_market_factors=[],
-            global_capital_factors=[],
-            symbol_factors={s: [] for s in args.symbols},
-        )
-        print(f"FlightController: 因子設定なしで起動（{e}）")
+        print("FlightController: 因子設定なしで起動（config/factors.toml なし）")
 
     # IB 接続
     ib = IB()
@@ -153,7 +99,7 @@ async def main() -> int:
             base_density=args.base_density,
             v_recovery_params=v_recovery_params,
         )
-        await cockpit.update_all(signal_bundle=bundle)
+        await fc.update_all(signal_bundle=bundle)
 
         if args.breakdown:
             from avionics.Instruments.signals import format_signal_bundle_breakdown
@@ -161,12 +107,18 @@ async def main() -> int:
             print("---")
 
         print("--- FlightController 計器シグナル ---")
+        from reports.format_fc_signal import build_reason, get_raw_metrics
+        signal = await fc.get_flight_controller_signal(bundle=bundle)
         for sym in args.symbols:
-            signal = await cockpit.get_flight_controller_signal(sym, bundle)
-            mode_str = {0: "Boost", 1: "Cruise", 2: "Emergency"}.get(signal.throttle_level, "?")
-            print(f"  {sym}: throttle={signal.throttle_level} ({mode_str})")
-            print(f"        reason={signal.reason}")
-            print(f"        is_critical={signal.is_critical}, raw_metrics={signal.raw_metrics}")
+            sym_sig = signal.by_symbol.get(sym)
+            if sym_sig is None:
+                continue
+            mode_str = {0: "Boost", 1: "Cruise", 2: "Emergency"}.get(sym_sig.throttle_level, "?")
+            reason = build_reason(sym_sig.icl, signal.scl, signal.lcl)
+            raw_metrics = get_raw_metrics(fc.mapping, sym)
+            print(f"  {sym}: throttle={sym_sig.throttle_level} ({mode_str})")
+            print(f"        reason={reason}")
+            print(f"        is_critical={sym_sig.is_critical}, raw_metrics={raw_metrics}")
         return 0
     finally:
         ib.disconnect()

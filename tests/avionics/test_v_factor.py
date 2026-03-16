@@ -186,7 +186,7 @@ def test_vfactor_update_from_volatility_signal_uses_1h_knock_in() -> None:
     update_from_volatility_signal で v1_to_v0_knock_in_ok が False のときは V1→V0 復帰しない、
     True のときは復帰することを確認する（SPEC 4-2-1-2 1hノックイン）。
     """
-    from avionics import VolatilitySignal
+    from avionics.data.signals import VolatilitySignal
 
     vf = VFactor(name="V_NQ", thresholds=_v_nq())
     vf.level = 1

@@ -18,13 +18,16 @@ from avionics.Instruments import (
     get_v_thresholds,
     load_factors_config,
 )
-from avionics.Instruments.raw_data import PriceBar, PriceBar1h, RawCapitalSnapshot, RawDataProvider
-from avionics.Instruments.signals import (
+from avionics.data.raw import PriceBar, PriceBar1h, RawCapitalSnapshot, RawDataProvider
+from avionics.data.signals import (
     CapitalSignals,
     LiquiditySignals,
     PriceSignals,
     SignalBundle,
     VolatilitySignal,
+)
+from avionics.Instruments.signals import format_signal_bundle_breakdown
+from avionics.process.layer2.compute import (
     _settlement_bar_indices_from_date,
     compute_capital_signals,
     compute_price_signals,

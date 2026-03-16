@@ -5,12 +5,12 @@ U因子（Gメーター：MM/NLV）。入力は Layer 2 の出力（シグナル
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from .base_factor import BaseFactor, LevelType
 
 if TYPE_CHECKING:
-    from .signals import CapitalSignals
+    from avionics.data.signals import CapitalSignals, SignalBundle
 
 
 class UFactor(BaseFactor):
@@ -44,6 +44,15 @@ class UFactor(BaseFactor):
         定義書「3-1 PFD」「4-2-2-1 U因子」参照。
         """
         await self.update_from_ratio(0.3)
+
+    async def update_from_signal_bundle(
+        self, symbol: Optional[str], bundle: "SignalBundle"
+    ) -> None:
+        cap = getattr(bundle, "capital_signals", None)
+        if cap is not None:
+            await self.update_from_ratio(cap.mm_over_nlv)
+        else:
+            await self.update()
 
     async def update_from_capital_signals(self, signals: CapitalSignals) -> LevelType:
         """

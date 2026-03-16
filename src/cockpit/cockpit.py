@@ -11,7 +11,9 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, List, Literal, Optional
 
-from avionics.flight_controller import FlightController, FlightControllerSignal
+from avionics.data.fc_signals import FlightControllerSignal
+from avionics.flight_controller import FlightController
+from reports.format_fc_signal import build_summary_reason
 from protocols.emergency_protocol import EmergencyProtocol
 
 from .mode import BOOST, CRUISE, EMERGENCY, ModeType
@@ -32,13 +34,13 @@ class Cockpit:
     """
     管制層：FlightController が返すスロットルモードを遷移・配布する。判定は FlightController に委譲。
 
-    エンジンは外からリストで注入する。get_effective_level の戻り値からスロットルモードを導き、
+    エンジンは外からリストで注入する。get_flight_controller_signal の throttle_level からスロットルモードを導き、
     遷移・プロトコル・全エンジンへの apply_mode に専念する。定義書「4-2」参照。
     """
 
     def __init__(
         self,
-        cockpit: FlightController,
+        fc: FlightController,
         engines: List["Engine"],
         *,
         initial_mode: ModeType,
@@ -49,7 +51,7 @@ class Cockpit:
         """
         FlightController を初期化する。
 
-        :param cockpit: 計器層（実行レベル・スロットルモード算出）。レイヤー混合を避けるため必須注入
+        :param fc: 計器層（実行レベル・スロットルモード算出）。レイヤー混合を避けるため必須注入
         :param engines: 外で生成したエンジンのリスト（NQ/GC 等）。空リストで生成し後から extend しても可
         :param initial_mode: 初期スロットルモード（必須。大元で指定）
         :param approval_mode: 「Manual」で Telegram 承認待ち、「Auto」で即時プロトコル発火。Phase 5 用
@@ -57,7 +59,7 @@ class Cockpit:
         :param telegram: Phase 5 用。未注入時は request_telegram_approval は no-op、タイムアウト時も送信しない
         定義書「4-2」「Phase 5」参照。
         """
-        self.cockpit: FlightController = cockpit
+        self.fc: FlightController = fc
         self.engines: List["Engine"] = list(engines)
         self._on_emergency_entered: Optional[Callable[[], Awaitable[None]]] = on_emergency_entered
         self._current_mode: ModeType = initial_mode
@@ -93,7 +95,7 @@ class Cockpit:
         承認待ち中に新たな信号が届いた場合は既存の待機をスーパーセードし、古い待機は dispatch しない。
         定義書「Phase 5 検知と保留 / 承認待ち / プロトコル起動」参照。
         """
-        if signal.is_critical or self._approval_mode == "Auto":
+        if signal.any_critical or self._approval_mode == "Auto":
             await self.dispatch_protocol(signal)
             return
         if self._pending_approval_signal is not None:
@@ -130,7 +132,7 @@ class Cockpit:
             return
         if hasattr(self._telegram, "send"):
             await self._telegram.send(
-                f"[承認待ち] {signal.reason} (throttle={signal.throttle_level})"
+                f"[承認待ち] {build_summary_reason(signal)} (throttle={signal.worst_throttle_level})"
             )
 
     async def dispatch_protocol(self, signal: FlightControllerSignal) -> None:
@@ -141,10 +143,10 @@ class Cockpit:
         """
         target_mode: ModeType = (
             EMERGENCY
-            if signal.throttle_level >= 2
-            else (CRUISE if signal.throttle_level == 1 else BOOST)
+            if signal.worst_throttle_level >= 2
+            else (CRUISE if signal.worst_throttle_level == 1 else BOOST)
         )
-        if signal.throttle_level >= 2:
+        if signal.worst_throttle_level >= 2:
             if self._on_emergency_entered is not None:
                 await self._on_emergency_entered()
             protocol = EmergencyProtocol(self.engines)
@@ -156,7 +158,7 @@ class Cockpit:
     async def pulse(self) -> None:
         """
         管制サイクル。FlightController の三層方式で銘柄ごとにスロットルモード取得 → 遷移 → 全エンジンへ指令。
-        判定は行わず、get_effective_level の戻り値からスロットルモードを導き遷移・配布する。定義書「0-4」「4-2」「0-1-Ⅲ」参照。
+        判定は行わず、get_flight_controller_signal の throttle_level からスロットルモードを導き遷移・配布する。定義書「0-4」「4-2」「0-1-Ⅲ」参照。
         """
         await self._pulse_subscription()
 
@@ -169,14 +171,17 @@ class Cockpit:
         return BOOST
 
     async def _pulse_subscription(self) -> None:
-        """サブスクリプション: get_effective_level で銘柄ごとの実行レベルを取得し、モードに変換して遷移・配布。定義書 4-2。"""
-        await self.cockpit.update_all()
+        """サブスクリプション: get_flight_controller_signal で全銘柄の計器結論を取得し、銘柄ごとにモードに変換して遷移・配布。定義書 4-2。"""
+        await self.fc.update_all()
+        signal = await self.fc.get_flight_controller_signal()
         worst_mode: ModeType = BOOST  # 最小 severity から開始し、全エンジンで最悪のモードを集約
         any_emergency = False
         engine_modes: List[tuple["Engine", ModeType]] = []
         for engine in self.engines:
-            level = await self.cockpit.get_effective_level(engine.symbol_type)
-            target_mode = self._level_to_mode(level)
+            sym_sig = signal.by_symbol.get(engine.symbol_type)
+            if sym_sig is None:
+                continue
+            target_mode = self._level_to_mode(sym_sig.throttle_level)
             engine_modes.append((engine, target_mode))
             if target_mode == EMERGENCY:
                 any_emergency = True

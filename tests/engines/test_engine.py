@@ -15,7 +15,7 @@ from engines.factory import _default_blueprints, build_nq_engine
 @pytest.fixture
 def fc_with_engines():
     flight_controller = FlightController(global_market_factors=[], global_capital_factors=[], symbol_factors={})
-    fc = Cockpit(cockpit=flight_controller, engines=[], initial_mode="Cruise")
+    fc = Cockpit(fc=flight_controller, engines=[], initial_mode="Cruise")
     engine = build_nq_engine(
         blueprints=_default_blueprints(),
         config={"base_unit": 1.0, "boost_ratio": 1.0},
@@ -47,7 +47,7 @@ def test_engine_instruction_for_default_base_unit(fc_with_engines) -> None:
 
 def test_engine_instruction_for_uses_config() -> None:
     flight_controller = FlightController(global_market_factors=[], global_capital_factors=[], symbol_factors={})
-    fc = Cockpit(cockpit=flight_controller, engines=[], initial_mode="Cruise")
+    fc = Cockpit(fc=flight_controller, engines=[], initial_mode="Cruise")
     engine = build_nq_engine(
         blueprints=_default_blueprints(),
         config={"base_unit": 2.0, "boost_ratio": 1.5},

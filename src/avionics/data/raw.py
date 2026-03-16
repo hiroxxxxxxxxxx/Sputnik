@@ -1,8 +1,7 @@
 """
-Layer 1（Raw Data）：未加工データの型と取得インターフェース。
+Data: Layer 1 の型と取得インターフェース（RawDataProvider）。
 
-終値・出来高・IV・証拠金・VIX 等の未加工データを保持または取得する責務を定義する。
-加工（変動率・トレンド・SMA・比率など）は行わない。実装は DB/API/CSV 等に委譲。
+未加工データの形と取得方法の Protocol のみ定義。加工・計算は行わない。
 定義書「4-2 情報の階層構造」参照。
 """
 
@@ -20,7 +19,6 @@ VolatilitySeriesPoint = Tuple[date, float]
 class PriceBar:
     """
     1本の価格（終値・高値・出来高など）。Layer 1 の最小単位。
-
     定義書「4-2 Layer 1 Raw Data」参照。
     """
     date: date
@@ -33,11 +31,9 @@ class PriceBar:
 class PriceBar1h:
     """
     1本の1h足価格。NY現物時間（ET 09:30〜16:00）に合わせて取得する用。
-
     SPEC 4-2-1-2（1hノックイン）・Layer2「1h足陽線判定」参照。
-    陽線判定は close > open で行う。
     """
-    bar_end: datetime  # バー確定時刻（現物クローズに合わせる場合は ET）
+    bar_end: datetime
     open: float
     close: float
     high: float
@@ -48,9 +44,6 @@ class PriceBar1h:
 class RawCapitalSnapshot:
     """
     証拠金・NLV 等の内部 Raw。U/S 用シグナル計算の元。
-
-    S 因子用: current_density = mm / (current_value * futures_multiplier),
-    span_ratio = current_density / base_density は Layer 2 で算出。
     定義書「4-2-3 LCL」「4-2-3-1 U因子」「4-2-3-2 S因子」参照。
     """
     as_of: date
@@ -64,7 +57,6 @@ class RawCapitalSnapshot:
 class RawDataProvider(Protocol):
     """
     Layer 1 の取得窓口。実装は DB/API/CSV 等で差し替え可能。
-
     定義書「4-2 情報の階層構造」参照。
     """
 
@@ -73,7 +65,7 @@ class RawDataProvider(Protocol):
         ...
 
     def get_price_series_1h(self, symbol: str, limit: int) -> List[PriceBar1h]:
-        """銘柄の1h足系列（直近 limit 本）。NY現物時間（ET 09:30〜16:00）に合わせる。未実装なら []。"""
+        """銘柄の1h足系列（直近 limit 本）。未実装なら []。"""
         ...
 
     def get_volatility_index(self, symbol: str, as_of: date) -> Optional[float]:
@@ -81,7 +73,7 @@ class RawDataProvider(Protocol):
         ...
 
     def get_volatility_series(self, symbol: str, limit: int) -> List[VolatilitySeriesPoint]:
-        """直近 limit 営業日分の (日付, 指数値)。復帰確認の連続日数算出用。未実装なら []。"""
+        """直近 limit 営業日分の (日付, 指数値)。復帰確認用。未実装なら []。"""
         ...
 
     def get_capital_snapshot(self, as_of: date) -> Optional[RawCapitalSnapshot]:

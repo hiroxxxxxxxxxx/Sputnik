@@ -32,66 +32,6 @@ if str(_scripts) not in sys.path:
     sys.path.insert(0, str(_scripts))
 
 
-def _build_cockpit(symbols: list[str]):
-    """因子登録済み FlightController を組み立てる。"""
-    from avionics import FlightController
-    from avionics import CFactor, PFactor, RFactor, SFactor, TFactor, UFactor, VFactor
-    from avionics.Instruments import (
-        FactorsConfigError,
-        get_c_thresholds,
-        get_p_thresholds,
-        get_r_thresholds,
-        get_s_thresholds,
-        get_t_thresholds,
-        get_u_thresholds,
-        get_v_thresholds,
-        load_factors_config,
-    )
-
-    try:
-        config = load_factors_config()
-        global_market_factors = []
-        global_capital_factors = []
-        symbol_factors = {s: [] for s in symbols}
-        for sym in symbols:
-            try:
-                p_th = get_p_thresholds(config, sym)
-                v_th = get_v_thresholds(config, sym)
-                t_th = get_t_thresholds(config)
-                symbol_factors[sym].append(PFactor(name="P", thresholds=p_th))
-                symbol_factors[sym].append(VFactor(name="V", thresholds=v_th))
-                symbol_factors[sym].append(TFactor(symbol=sym, thresholds=t_th))
-            except FactorsConfigError:
-                pass
-            try:
-                c_th = get_c_thresholds(config, sym)
-                symbol_factors[sym].append(CFactor(name="C", thresholds=c_th))
-            except FactorsConfigError:
-                pass
-            try:
-                r_th = get_r_thresholds(config, sym)
-                symbol_factors[sym].append(RFactor(name="R", thresholds=r_th))
-            except FactorsConfigError:
-                pass
-        try:
-            u_th = get_u_thresholds(config)
-            s_th = get_s_thresholds(config)
-            global_capital_factors.extend([UFactor(thresholds=u_th), SFactor(thresholds=s_th)])
-        except FactorsConfigError:
-            pass
-        return FlightController(
-            global_market_factors=global_market_factors,
-            global_capital_factors=global_capital_factors,
-            symbol_factors=symbol_factors,
-        )
-    except FactorsConfigError:
-        return FlightController(
-            global_market_factors=[],
-            global_capital_factors=[],
-            symbol_factors={s: [] for s in symbols},
-        )
-
-
 async def fetch_cockpit_report(host: str, port: int, symbols: list[str]) -> str:
     """
     IB から SignalBundle を取得し FlightController を更新したうえで、計器レポート文字列を返す。
@@ -129,11 +69,12 @@ async def fetch_cockpit_report(host: str, port: int, symbols: list[str]) -> str:
             base_density=1.0,
             v_recovery_params=v_recovery_params,
         )
-        cockpit = _build_cockpit(symbols)
-        await cockpit.update_all(signal_bundle=bundle)
+        from cockpit.stack import build_cockpit_stack
+        fc, _ = build_cockpit_stack(symbols)
+        await fc.update_all(signal_bundle=bundle)
         now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         from reports.format_cockpit_report import format_cockpit_report
-        return await format_cockpit_report(cockpit, symbols, now_utc, bundle=bundle)
+        return await format_cockpit_report(fc, symbols, now_utc, bundle=bundle)
     finally:
         ib.disconnect()
 
@@ -215,10 +156,11 @@ async def fetch_daily_report(host: str, port: int, symbols: list[str]) -> str:
             base_density=1.0,
             v_recovery_params=v_recovery_params,
         )
-        cockpit = _build_cockpit(symbols)
-        await cockpit.update_all(signal_bundle=bundle)
+        from cockpit.stack import build_cockpit_stack
+        fc, _ = build_cockpit_stack(symbols)
+        await fc.update_all(signal_bundle=bundle)
         return await format_daily_flight_log(
-            cockpit, bundle, symbols,
+            fc, bundle, symbols,
             capital_snapshot=capital_snapshot,
             as_of=as_of,
         )

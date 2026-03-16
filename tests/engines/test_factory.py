@@ -19,7 +19,7 @@ from engines.factory import (
 def cockpit():
     """空のエンジンリストで Cockpit（管制）を用意。"""
     fc = FlightController(global_market_factors=[], global_capital_factors=[], symbol_factors={})
-    return Cockpit(cockpit=fc, engines=[], initial_mode="Cruise")
+    return Cockpit(fc=fc, engines=[], initial_mode="Cruise")
 
 
 def test_build_nq_engine_returns_engine(cockpit) -> None:

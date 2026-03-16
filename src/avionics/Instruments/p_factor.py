@@ -14,7 +14,7 @@ from typing import Any, Literal, Optional, Sequence, TYPE_CHECKING
 from .base_factor import BaseFactor, LevelType
 
 if TYPE_CHECKING:
-    from .signals import PriceDailyRow, PriceSignals
+    from avionics.data.signals import PriceDailyRow, PriceSignals, SignalBundle
 
 
 TrendType = Literal["up", "down", "flat"]
@@ -61,6 +61,15 @@ class PFactor(BaseFactor):
             recovery_confirm_satisfied_days=0,
             cum2_change=None,
         )
+
+    async def update_from_signal_bundle(
+        self, symbol: Optional[str], bundle: "SignalBundle"
+    ) -> None:
+        price = getattr(bundle, "price_signals", {}).get(symbol) if symbol else None
+        if price is not None:
+            await self.update_from_price_signals(price)
+        else:
+            await self.update()
 
     def _count_recovery_satisfied_days(
         self,

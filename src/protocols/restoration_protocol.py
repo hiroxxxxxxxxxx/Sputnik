@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 class RestorationProtocol(BaseProtocol):
     """
     異常事態から通常へ復旧するプロトコル。
-    執行の性格: 慎重・再構築。ARCHITECTURE.md 参照。
+    執行の性格: 慎重・再構築。docs/spec/ARCHITECTURE.md 参照。
     """
 
     def __init__(

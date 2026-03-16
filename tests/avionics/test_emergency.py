@@ -20,7 +20,7 @@ from engines.factory import _default_blueprints, build_nq_engine
 def engine_with_fc() -> tuple[Cockpit, Engine]:
     """Cockpit（管制）と 1 エンジン（Blueprint ベース）を返す。"""
     flight_controller = FlightController(global_market_factors=[], global_capital_factors=[], symbol_factors={})
-    fc = Cockpit(cockpit=flight_controller, engines=[], initial_mode="Cruise")
+    fc = Cockpit(fc=flight_controller, engines=[], initial_mode="Cruise")
     engine = build_nq_engine(
         blueprints=_default_blueprints(),
         config={"base_unit": 1.0, "boost_ratio": 1.0},
@@ -62,7 +62,7 @@ def test_emergency_protocol_engines_property(engine_with_fc: tuple[Cockpit, Engi
 def test_cockpit_level_to_mode() -> None:
     """Cockpit._level_to_mode は 0/1/2 を Boost/Cruise/Emergency に写す。定義書 4-2。"""
     fc = Cockpit(
-        cockpit=FlightController(global_market_factors=[], global_capital_factors=[], symbol_factors={}),
+        fc=FlightController(global_market_factors=[], global_capital_factors=[], symbol_factors={}),
         engines=[],
         initial_mode="Cruise",
     )
@@ -73,12 +73,22 @@ def test_cockpit_level_to_mode() -> None:
 
 def test_fc_pulse_entering_emergency_runs_protocol(engine_with_fc: tuple[Cockpit, Engine]) -> None:
     """Cockpit.pulse で Emergency に遷移すると、コールバック未設定時は EmergencyProtocol が実行される。"""
-    fc, _ = engine_with_fc
+    from avionics.data.fc_signals import FlightControllerSignal, SymbolSignal
+
+    fc, engine = engine_with_fc
+    sym = engine.symbol_type
     class MockEmergencyEvaluator:
         async def update_all(self, signal_bundle=None) -> None:
             pass
-        async def get_effective_level(self, symbol: str) -> int:
-            return 2
-    fc.cockpit = MockEmergencyEvaluator()  # type: ignore[assignment]
+        async def get_flight_controller_signal(self, bundle=None):
+            return FlightControllerSignal(
+                by_symbol={
+                    sym: SymbolSignal(
+                        throttle_level=2, icl=0, is_critical=True,
+                    )
+                },
+                scl=0, lcl=2,
+            )
+    fc.fc = MockEmergencyEvaluator()  # type: ignore[assignment]
     asyncio.run(fc.pulse())
     assert fc.current_mode == "Emergency"

@@ -11,12 +11,13 @@ from __future__ import annotations
 from datetime import date
 from typing import TYPE_CHECKING, Any, Optional
 
+from reports.format_fc_signal import get_raw_metrics, get_recovery_metrics
+from reports._render import render
+
 if TYPE_CHECKING:
     from avionics import FlightController
-    from avionics.Instruments.raw_data import RawCapitalSnapshot
-    from avionics.Instruments.signals import SignalBundle
-
-from reports._render import render
+    from avionics.data.raw import RawCapitalSnapshot
+    from avionics.data.signals import SignalBundle
 
 MODE_STR = {0: "Boost", 1: "Cruise", 2: "Emergency"}
 # Level は数値のみ（ICL/SCL/LCL の層で区別するため M/C 接頭辞は廃止）
@@ -37,16 +38,16 @@ def render_daily_flight_log(context: dict[str, Any], template_name: str = _DEFAU
 
 
 async def build_daily_flight_log_context(
-    cockpit: "FlightController",
+    fc: "FlightController",
     bundle: "SignalBundle",
     symbols: list[str],
     capital_snapshot: Optional["RawCapitalSnapshot"] = None,
     as_of: Optional[date] = None,
 ) -> dict[str, Any]:
     """
-    Cockpit と SignalBundle から Daily Flight Log 用のテンプレートコンテキストを組み立てる。
+    FlightController と SignalBundle から Daily Flight Log 用のテンプレートコンテキストを組み立てる。
 
-    :param cockpit: update_all 済みの Cockpit。
+    :param fc: update_all 済みの FlightController。
     :param bundle: Layer 2 の SignalBundle。
     :param symbols: 銘柄リスト（例: ["NQ", "GC"]）。
     :param capital_snapshot: 証拠金 Raw（任意）。あると NLV / ExcessLiq を表示。
@@ -55,22 +56,26 @@ async def build_daily_flight_log_context(
     """
     d = as_of or date.today()
 
+    signal = await fc.get_flight_controller_signal(bundle)
     worst_level = 0
     for sym in symbols:
-        sig = await cockpit.get_flight_controller_signal(sym, bundle)
-        worst_level = max(worst_level, sig.throttle_level)
+        sig = signal.by_symbol.get(sym)
+        if sig is not None:
+            worst_level = max(worst_level, sig.throttle_level)
     mode = MODE_STR.get(worst_level, "?")
 
+    mapping = fc.mapping
     p_lv = v_lv = t_lv = 0
     trend_str = "—"
     gap_str = "—"
     vol_str = "—"
     for sym in symbols:
-        sig = await cockpit.get_flight_controller_signal(sym, bundle)
-        m = sig.raw_metrics
-        p_lv = max(p_lv, m.get("P", 0))
-        v_lv = max(v_lv, m.get("V", 0))
-        t_lv = max(t_lv, m.get("T", 0))
+        sig = signal.by_symbol.get(sym)
+        if sig is not None:
+            m = get_raw_metrics(mapping, sym)
+            p_lv = max(p_lv, m.get("P", 0))
+            v_lv = max(v_lv, m.get("V", 0))
+            t_lv = max(t_lv, m.get("T", 0))
     if symbols:
         ps = bundle.price_signals.get(symbols[0])
         vs = bundle.volatility_signals.get(symbols[0])
@@ -83,10 +88,12 @@ async def build_daily_flight_log_context(
     u_lv = s_lv = 0
     first_sig_recovery: dict[str, str] = {}
     if symbols:
-        first_sig = await cockpit.get_flight_controller_signal(symbols[0], bundle)
-        u_lv = first_sig.raw_metrics.get("U", 0)
-        s_lv = first_sig.raw_metrics.get("S", 0)
-        first_sig_recovery = first_sig.recovery_metrics
+        first_sig = signal.by_symbol.get(symbols[0])
+        if first_sig is not None:
+            m0 = get_raw_metrics(mapping, symbols[0])
+            u_lv = m0.get("U", 0)
+            s_lv = m0.get("S", 0)
+            first_sig_recovery = get_recovery_metrics(mapping, symbols[0], bundle)
     u_pct = f"{cap.mm_over_nlv * 100:.1f}" if cap else "0.0"
     s_val = f"{cap.span_ratio:.2f}" if cap else "1.00"
 
@@ -107,8 +114,10 @@ async def build_daily_flight_log_context(
     if bundle.liquidity_tip and bundle.liquidity_tip.tip_drawdown_from_high is not None:
         r_val = f"{bundle.liquidity_tip.tip_drawdown_from_high * 100:.1f}%"
     for idx, sym in enumerate(symbols):
-        sig = await cockpit.get_flight_controller_signal(sym, bundle)
-        m = sig.raw_metrics
+        sig = signal.by_symbol.get(sym)
+        if sig is None:
+            continue
+        m = get_raw_metrics(mapping, sym)
         p_lv = m.get("P", 0)
         v_lv = m.get("V", 0)
         c_lv = m.get("C", 0)
@@ -119,7 +128,7 @@ async def build_daily_flight_log_context(
         price_str = f"{ps.last_close:,.2f}" if ps else "—"
         p_trend = ps.trend if ps else "—"
         sym_vol = f"{vs.index_value:.1f}" if vs else "—"
-        rec = sig.recovery_metrics
+        rec = get_recovery_metrics(mapping, sym, bundle)
         if sym == "NQ":
             icl_level = max(p_lv, v_lv, c_lv)
             rows = [
@@ -163,7 +172,7 @@ async def build_daily_flight_log_context(
 
 
 async def format_daily_flight_log(
-    cockpit: "FlightController",
+    fc: "FlightController",
     bundle: "SignalBundle",
     symbols: list[str],
     capital_snapshot: Optional["RawCapitalSnapshot"] = None,
@@ -171,10 +180,10 @@ async def format_daily_flight_log(
     template_name: str = _DEFAULT_TEMPLATE,
 ) -> str:
     """
-    Cockpit と SignalBundle から Daily Flight Log 形式のレポート文字列を生成する。
+    FlightController と SignalBundle から Daily Flight Log 形式のレポート文字列を生成する。
     レイアウトはテンプレート（templates/daily_flight_log.txt）で管理する。
 
-    :param cockpit: update_all 済みの Cockpit。
+    :param fc: update_all 済みの FlightController。
     :param bundle: Layer 2 の SignalBundle。
     :param symbols: 銘柄リスト（例: ["NQ", "GC"]）。
     :param capital_snapshot: 証拠金 Raw（任意）。あると NLV / ExcessLiq を表示。
@@ -183,6 +192,6 @@ async def format_daily_flight_log(
     :return: Telegram 送信用のテキスト。
     """
     context = await build_daily_flight_log_context(
-        cockpit, bundle, symbols, capital_snapshot=capital_snapshot, as_of=as_of
+        fc, bundle, symbols, capital_snapshot=capital_snapshot, as_of=as_of
     )
     return render_daily_flight_log(context, template_name=template_name)

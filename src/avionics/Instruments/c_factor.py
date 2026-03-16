@@ -13,7 +13,7 @@ from typing import Any, Optional, TYPE_CHECKING
 from .base_factor import BaseFactor, LevelType
 
 if TYPE_CHECKING:
-    from .signals import LiquiditySignals
+    from avionics.data.signals import LiquiditySignals, SignalBundle
 
 
 class CFactor(BaseFactor):
@@ -118,6 +118,24 @@ class CFactor(BaseFactor):
             count = self._count_recovery_satisfied_days(daily_hyg) if daily_hyg else 0
         confirm = int(self.thresholds["confirm_days"])
         return (min(count, confirm), confirm)
+
+    async def update_from_signal_bundle(
+        self, symbol: Optional[str], bundle: "SignalBundle"
+    ) -> None:
+        lc = getattr(bundle, "liquidity_credit", None)
+        if lc is not None:
+            lc_lqd = getattr(bundle, "liquidity_credit_lqd", None)
+            await self.update_from_signals(
+                altitude=lc.altitude,
+                below_sma20=lc.below_sma20 is True,
+                daily_change=lc.daily_change if lc.daily_change is not None else 0.0,
+                daily_history_credit=getattr(lc, "daily_history_credit", ()),
+                below_sma20_lqd=lc_lqd.below_sma20 if lc_lqd is not None else None,
+                daily_change_lqd=lc_lqd.daily_change if lc_lqd and lc_lqd.daily_change is not None else None,
+                daily_history_credit_lqd=getattr(lc_lqd, "daily_history_credit", ()) if lc_lqd else (),
+            )
+        else:
+            await self.update()
 
     async def update_from_signals(
         self,

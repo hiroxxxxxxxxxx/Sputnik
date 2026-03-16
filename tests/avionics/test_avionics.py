@@ -26,29 +26,29 @@ class _MockFactor:
 
 
 def test_avionics_empty_factors_effective_zero() -> None:
-    """因子が空のとき get_effective_level は 0 を返す。"""
-    av = FlightController(global_market_factors=[], global_capital_factors=[], symbol_factors={})
-    effective = _run(av.get_effective_level("NQ"))
-    assert effective == 0
+    """因子が空のとき get_flight_controller_signal().by_symbol[sym].throttle_level は 0 を返す。"""
+    av = FlightController(global_market_factors=[], global_capital_factors=[], symbol_factors={"NQ": []})
+    sig = _run(av.get_flight_controller_signal())
+    assert sig.by_symbol["NQ"].throttle_level == 0
 
 
 def test_avionics_effective_is_max_of_three_layers() -> None:
-    """get_effective_level は個別・同期・制限の三層の最大値。"""
+    """get_flight_controller_signal().by_symbol[sym].throttle_level は個別・同期・制限の三層の最大値。"""
     f0 = _MockFactor(0)
     f1 = _MockFactor(1)
     f2 = _MockFactor(2)
-    av = FlightController(global_capital_factors=[f0, f1, f2])
-    effective = _run(av.get_effective_level("NQ"))
-    assert effective == 2
+    av = FlightController(global_capital_factors=[f0, f1, f2], symbol_factors={"NQ": []})
+    sig = _run(av.get_flight_controller_signal())
+    assert sig.by_symbol["NQ"].throttle_level == 2
 
 
 def test_avionics_limit_layer_only() -> None:
-    """制限制御層（global_capital_factors）のみでも get_effective_level が動く。"""
+    """制限制御層（global_capital_factors）のみでも throttle_level が動く。"""
     u = _MockFactor(0)
     s = _MockFactor(1)
-    av = FlightController(global_capital_factors=[u, s])
-    effective = _run(av.get_effective_level("NQ"))
-    assert effective == 1
+    av = FlightController(global_capital_factors=[u, s], symbol_factors={"NQ": []})
+    sig = _run(av.get_flight_controller_signal())
+    assert sig.by_symbol["NQ"].throttle_level == 1
 
 
 def test_avionics_use_subscription_always_true() -> None:
@@ -71,16 +71,17 @@ def test_avionics_subscription_mode_use_subscription_true() -> None:
 
 
 def test_avionics_subscription_effective_per_symbol() -> None:
-    """サブスクリプション時、get_effective_level(symbol) は銘柄ごとに三層の max。"""
+    """サブスクリプション時、get_flight_controller_signal().by_symbol[sym].throttle_level は銘柄ごとに三層の max。"""
     av = FlightController(
         global_market_factors=[],
         global_capital_factors=[_MockFactor(0)],
         symbol_factors={"NQ": [_MockFactor(1)], "GC": [_MockFactor(2)]},
     )
     _run(av.update_all())
+    sig = _run(av.get_flight_controller_signal())
     # _MockFactor は P/V/L/T ではないため個別・同期は 0。制限も 0 で effective=0。
-    assert _run(av.get_effective_level("NQ")) == 0
-    assert _run(av.get_effective_level("GC")) == 0
+    assert sig.by_symbol["NQ"].throttle_level == 0
+    assert sig.by_symbol["GC"].throttle_level == 0
 
 
 def test_avionics_subscription_limit_control_level() -> None:
@@ -108,7 +109,8 @@ def test_avionics_register_factor_subscription() -> None:
     av.register_factor("NQ", f)
     _run(av.update_all())
     # _MockFactor は P/V/L/T ではないため個別・同期・制限は 0。effective=0 で正常。
-    assert _run(av.get_effective_level("NQ")) >= 0
+    sig = _run(av.get_flight_controller_signal())
+    assert sig.by_symbol["NQ"].throttle_level >= 0
 
 
 def test_avionics_get_individual_control_level_excludes_t() -> None:
@@ -160,7 +162,7 @@ def test_avionics_get_synchronous_control_level_from_t_factors() -> None:
 
 
 def test_avionics_get_effective_level_is_max_of_three_layers() -> None:
-    """get_effective_level(symbol) = max(個別制御層, 同期制御層, 制限制御層)。"""
+    """get_flight_controller_signal().by_symbol[sym].throttle_level = max(個別制御層, 同期制御層, 制限制御層)。"""
     from avionics import PFactor, TFactor, VFactor
     from avionics.Instruments import (
         get_p_thresholds,
@@ -184,8 +186,8 @@ def test_avionics_get_effective_level_is_max_of_three_layers() -> None:
         symbol_factors={"NQ": [p, v, t]},
     )
     _run(av.update_all())
-    effective = _run(av.get_effective_level("NQ"))
+    sig = _run(av.get_flight_controller_signal())
     ind = _run(av.get_individual_control_level("NQ"))
     syn = _run(av.get_synchronous_control_level())
     lim = _run(av.get_limit_control_level())
-    assert effective == max(ind, syn, lim)
+    assert sig.by_symbol["NQ"].throttle_level == max(ind, syn, lim)

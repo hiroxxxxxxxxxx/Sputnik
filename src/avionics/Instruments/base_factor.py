@@ -3,9 +3,12 @@ from __future__ import annotations
 import datetime as dt
 from collections import deque
 from collections.abc import Awaitable, Callable
-from typing import Any, Optional, Deque
+from typing import TYPE_CHECKING, Any, Optional, Deque
 
 from transitions import Machine
+
+if TYPE_CHECKING:
+    from avionics.data.signals import SignalBundle
 
 
 LevelType = int
@@ -70,6 +73,18 @@ class BaseFactor:
         定義書「3-1 PFD（主計器）」参照。
         """
         raise NotImplementedError
+
+    async def update_from_signal_bundle(
+        self, symbol: Optional[str], bundle: "SignalBundle"
+    ) -> None:
+        """
+        Layer 2 の SignalBundle から自身の入力を取り出し更新する。
+
+        銘柄別因子は symbol で bundle 内の該当シグナルを参照する。
+        制限因子（U/S）や global_market は symbol=None。各因子でオーバーライドする。
+        定義書「4-2 情報の階層構造」参照。
+        """
+        await self.update()
 
     def record_level(self) -> None:
         """

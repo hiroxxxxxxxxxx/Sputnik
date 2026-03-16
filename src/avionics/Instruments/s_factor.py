@@ -5,12 +5,12 @@ S因子（タコメーター：SPAN乖離率）。入力は Layer 2 の出力（
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from .base_factor import BaseFactor, LevelType
 
 if TYPE_CHECKING:
-    from .signals import CapitalSignals
+    from avionics.data.signals import CapitalSignals, SignalBundle
 
 
 class SFactor(BaseFactor):
@@ -44,6 +44,15 @@ class SFactor(BaseFactor):
         定義書「3-1 PFD」「4-2-2-2 S因子」参照。
         """
         await self.update_from_ratio(1.0)
+
+    async def update_from_signal_bundle(
+        self, symbol: Optional[str], bundle: "SignalBundle"
+    ) -> None:
+        cap = getattr(bundle, "capital_signals", None)
+        if cap is not None:
+            await self.update_from_ratio(cap.span_ratio)
+        else:
+            await self.update()
 
     async def update_from_capital_signals(self, signals: CapitalSignals) -> LevelType:
         """
