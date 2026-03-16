@@ -39,8 +39,12 @@ def get_raw_metrics(mapping: EngineFactorMapping, symbol: str) -> Dict[str, Any]
     sym_factors = mapping.symbol_factors.get(symbol, [])
     for f in mapping.global_market_factors + mapping.limit_factors + sym_factors:
         name = getattr(f, "name", None)
-        if name in metrics and hasattr(f, "level"):
+        if not name or not hasattr(f, "level"):
+            continue
+        if name in metrics:
             metrics[name] = max(metrics[name], f.level)
+        elif name.startswith("T_"):
+            metrics["T"] = max(metrics["T"], f.level)
     return metrics
 
 
@@ -57,7 +61,10 @@ def get_recovery_metrics(
     sym_factors = mapping.symbol_factors.get(symbol, [])
     for f in mapping.global_market_factors + mapping.limit_factors + sym_factors:
         name = getattr(f, "name", None)
-        if name is None or name not in ("P", "V", "C", "R", "T", "U", "S"):
+        if name is None:
+            continue
+        key = "T" if (name.startswith("T_")) else name
+        if key not in ("P", "V", "C", "R", "T", "U", "S"):
             continue
         p = None
         if bundle is not None:
@@ -69,7 +76,7 @@ def get_recovery_metrics(
             if callable(prog):
                 p = prog()
         if p is not None:
-            result[name] = f"{p[0]}/{p[1]}"
+            result[key] = f"{p[0]}/{p[1]}"
     return result
 
 

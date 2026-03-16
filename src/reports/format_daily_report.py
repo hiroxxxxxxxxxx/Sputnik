@@ -66,7 +66,6 @@ async def build_daily_flight_log_context(
 
     mapping = fc.mapping
     p_lv = v_lv = t_lv = 0
-    trend_str = "—"
     gap_str = "—"
     vol_str = "—"
     for sym in symbols:
@@ -75,12 +74,18 @@ async def build_daily_flight_log_context(
             p_lv = max(p_lv, m.get("P", 0))
             v_lv = max(v_lv, m.get("V", 0))
             t_lv = max(t_lv, m.get("T", 0))
+    scl_value = "—"
     if symbols:
-        ps = bundle.price_signals.get(symbols[0])
+        scl_trend_parts = []
+        for sym in symbols:
+            ps = bundle.price_signals.get(sym)
+            if ps:
+                scl_trend_parts.append(f"{sym} {ps.trend}")
+        scl_value = " x ".join(scl_trend_parts) if scl_trend_parts else "—"
+        ps0 = bundle.price_signals.get(symbols[0])
         vs = bundle.volatility_signals.get(symbols[0])
-        if ps:
-            trend_str = ps.trend
-            gap_str = f"Gap: {ps.downside_gap*100:.1f}%" if ps.downside_gap != -0.01 else "—"
+        if ps0:
+            gap_str = f"Gap: {ps0.downside_gap*100:.1f}%" if ps0.downside_gap != -0.01 else "—"
         if vs:
             vol_str = f"{vs.index_value:.1f}"
     cap = bundle.capital_signals
@@ -141,8 +146,8 @@ async def build_daily_flight_log_context(
             ]
         icl_sections.append({"section_id": section_id, "symbol": sym, "level": LEVEL_STR.get(icl_level, "?"), "rows": rows})
 
-    scl_level = LEVEL_STR.get(t_lv, "?")
-    scl_rows = [{"factor": "T", "lv": LEVEL_STR.get(t_lv, "?"), "value": f"Sync (MNQ/MGC) / {trend_str}", "recovery": first_sig_recovery.get("T", "")}]
+    scl_level = LEVEL_STR.get(signal.scl, "?")
+    scl_rows = [{"factor": "T", "lv": LEVEL_STR.get(signal.scl, "?"), "value": scl_value, "recovery": first_sig_recovery.get("T", "")}]
 
     lcl_level = LEVEL_STR.get(max(u_lv, s_lv), "?")
     lcl_rows = [
