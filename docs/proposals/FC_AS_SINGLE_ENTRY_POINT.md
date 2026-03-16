@@ -1,7 +1,7 @@
 # FlightController を単一窓口とする案（論点洗い出し・評価）
 
 **実施済み: 第1段階**（1A, 2C, 3A, 4A, 5B）。FC.refresh / get_last_bundle / DataSource / BundleBuildOptions、with_ib_fetcher → IBRawFetcher、reports は FC.refresh 経由。ドキュメントは DATA_FLOW_API_TO_FC.md を更新済み。  
-**実施済み: 残ステップ**。formatter は fc のみ受け取り（bundle は内部で fc.get_last_bundle()）、fetch_* の format 呼び出しから bundle 削除。IBSignalBundleFetcher 廃止（signal_bundle.py 削除、ib_data は IBRawFetcher を IBDataFetcher として re-export）。test_ib_data は FC.refresh + モック DataSource に書き換え済み。
+**実施済み: 残ステップ**。formatter は fc のみ受け取り（bundle は内部で fc.get_last_bundle()）、fetch_* の format 呼び出しから bundle 削除。IBSignalBundleFetcher 廃止（signal_bundle.py 削除）。ib_data は廃止し、IBRawFetcher は avionics.ib から直接利用（re-export 禁止のため ib_data は削除）。test_ib_data は FC.refresh + モック DataSource に書き換え済み。
 
 ---
 

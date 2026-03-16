@@ -8,7 +8,6 @@ Market Level / Capital Level を算出。Cockpit: 管制層。スロットルモ
 定義書「2.コックピット」「3.フライトコントローラー」「4-2 OS構造」セクション参照。
 """
 
-from protocols.emergency_protocol import EmergencyProtocol
 from .assembly import build_flight_controller
 from .flight_controller import FlightController
 from .Instruments import (
@@ -27,7 +26,6 @@ __all__ = [
     "build_flight_controller",
     "CFactor",
     "FlightController",
-    "EmergencyProtocol",
     "PFactor",
     "RFactor",
     "SFactor",

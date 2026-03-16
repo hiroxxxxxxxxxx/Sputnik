@@ -11,7 +11,8 @@ import asyncio
 import pytest
 
 from cockpit.cockpit import Cockpit
-from avionics import EmergencyProtocol, FlightController
+from avionics import FlightController
+from protocols.emergency_protocol import EmergencyProtocol
 from engines.engine import Engine
 from engines.factory import _default_blueprints, build_nq_engine
 

@@ -35,7 +35,7 @@ def ny_date_now(utc_now: datetime | None = None) -> date:
 def is_ny_rth(utc_now: datetime | None = None) -> bool:
     """
     NY 現物の RTH（9:30–16:00 ET）場中かどうか。
-    土日は False。定義書・ib_data の useRTH と合わせる。
+    土日は False。定義書・avionics.ib の useRTH と合わせる。
     """
     if utc_now is None:
         utc_now = datetime.now(timezone.utc)
