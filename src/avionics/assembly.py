@@ -8,6 +8,7 @@ scripts（telegram_cockpit_bot, run_cockpit_with_ib）やテストは build_flig
 from __future__ import annotations
 
 from .data.fc_signals import EngineFactorMapping
+from .data.source import BundleBuildOptions
 from .flight_controller import FlightController
 from .Instruments import (
     CFactor,
@@ -44,7 +45,14 @@ def build_flight_controller(symbols: list[str]) -> FlightController:
             limit_factors=[],
             global_market_factors=[],
         )
-        return FlightController(mapping=mapping)
+        return FlightController(mapping=mapping, bundle_build_options=BundleBuildOptions())
+
+    v_recovery_params: dict | None = None
+    try:
+        v_recovery_params = {s: get_v_thresholds(config, s)["high_mid"] for s in symbols}
+    except (FactorsConfigError, KeyError):
+        pass
+    bundle_build_options = BundleBuildOptions(v_recovery_params=v_recovery_params)
 
     global_market_factors: list = []
     limit_factors: list = []
@@ -83,4 +91,4 @@ def build_flight_controller(symbols: list[str]) -> FlightController:
         limit_factors=limit_factors,
         global_market_factors=global_market_factors,
     )
-    return FlightController(mapping=mapping)
+    return FlightController(mapping=mapping, bundle_build_options=bundle_build_options)

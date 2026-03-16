@@ -2,6 +2,7 @@
 Layer 2 シグナル内訳（breakdown / detail）レポートのテンプレートレンダリング。
 
 責務: フォーマット後の値のみ渡す。表示文言はテンプレートに記載。
+bundle は FC から get_last_bundle() で取得する。
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 from reports._render import render
 
 if TYPE_CHECKING:
+    from avionics import FlightController
     from avionics.data.signals import SignalBundle
 
 BREAKDOWN_TEMPLATE = "breakdown_report.txt"
@@ -84,15 +86,19 @@ def build_breakdown_report_context(bundle: "SignalBundle") -> dict[str, Any]:
 
 
 def format_breakdown_report(
-    bundle: "SignalBundle",
+    fc: "FlightController",
     template_name: str = BREAKDOWN_TEMPLATE,
 ) -> str:
     """
     Layer 2 シグナル内訳レポート文字列をテンプレートで生成する。
+    bundle は fc.get_last_bundle() から取得する（refresh 済みの FC を渡すこと）。
 
-    :param bundle: SignalBundle。
+    :param fc: refresh 済みの FlightController。
     :param template_name: テンプレートファイル名。
     :return: レポート文字列。
     """
+    bundle = fc.get_last_bundle()
+    if bundle is None:
+        raise ValueError("format_breakdown_report requires fc.refresh() to have been called first")
     context = build_breakdown_report_context(bundle)
     return render(template_name, context)

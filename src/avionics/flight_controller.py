@@ -1,18 +1,21 @@
 """
 FlightController（計器層）：三層制御（個別・同期・制限）の算出に特化。レイヤー混合を避ける。
 
-個別制御層(ICL)・同期制御層(SCL)・制限制御層(LCL)を算出し、get_flight_controller_signal().by_symbol[symbol].throttle_level = max(ICL,SCL,LCL) で実行レベルを返す。
+個別制御層(ICL)・同期制御層(SCL)・制限制御層(LCL)を算出し、get_flight_controller_signal().throttle_level(symbol) = max(ICL,SCL,LCL) で実行レベルを返す。
 FlightControllerSignal は全銘柄分の「計器の結論」を内包し、Cockpit（管制層）の承認ゲートへ渡す。
+DataSource を注入して refresh すると、内部で fetch_raw → build_signal_bundle → update_all を実行し、最後の bundle を保持する。
 定義書「3.フライトコントローラー」「4-2」「0-1-Ⅲ」参照。
 """
 
 from __future__ import annotations
 
 import asyncio
+from datetime import date
 from typing import Any, Dict, List, Optional
 
-from .data.fc_signals import EngineFactorMapping, FlightControllerSignal, SymbolSignal
+from .data.fc_signals import EngineFactorMapping, FlightControllerSignal
 from .data.signals import SignalBundle
+from .data.source import BundleBuildOptions, DataSource
 
 
 class FlightController:
@@ -21,7 +24,7 @@ class FlightController:
 
     global_capital_factors（U,S）, symbol_factors（銘柄別 P,V,T,C/R）を登録し、
     get_flight_controller_signal() で全銘柄分の計器結論を返す。銘柄ごとの実行レベルは
-    .by_symbol[symbol].throttle_level = max(ICL, SCL, LCL)。
+    .throttle_level(symbol) = max(ICL, SCL, LCL)。
     定義書「4-2」計器・「0-1-Ⅲ」抽象構造参照。
     """
 
@@ -32,6 +35,7 @@ class FlightController:
         global_market_factors: Optional[List[Any]] = None,
         global_capital_factors: Optional[List[Any]] = None,
         symbol_factors: Optional[Dict[str, List[Any]]] = None,
+        bundle_build_options: Optional[BundleBuildOptions] = None,
     ) -> None:
         """
         計器を初期化する。EngineFactorMapping を渡すか、従来の三リストで渡す。
@@ -40,6 +44,7 @@ class FlightController:
         :param global_market_factors: mapping 未指定時用。全エンジン共通の個別制御用因子
         :param global_capital_factors: mapping 未指定時用。制限制御層(LCL)因子（U, S）
         :param symbol_factors: mapping 未指定時用。銘柄別因子。{"NQ": [P,V,T,C], "GC": [P,V,T,R]} 等
+        :param bundle_build_options: refresh 時に build_signal_bundle へ渡すオプション。未指定時はデフォルトで組み立てる。
         定義書「4-2」「0-1-Ⅲ」参照。
         """
         if mapping is not None:
@@ -50,6 +55,9 @@ class FlightController:
                 limit_factors=list(global_capital_factors or []),
                 global_market_factors=list(global_market_factors or []),
             )
+        self._bundle_build_options = bundle_build_options or BundleBuildOptions()
+        self._last_bundle: Optional[SignalBundle] = None
+        self._last_capital_snapshot: Optional[Any] = None
 
     @property
     def use_subscription(self) -> bool:
@@ -75,6 +83,57 @@ class FlightController:
     def mapping(self) -> EngineFactorMapping:
         """表示用ヘルパー（raw_metrics / recovery_metrics 等）に渡すマッピング。読み取り専用。"""
         return self._mapping
+
+    async def refresh(
+        self,
+        data_source: DataSource,
+        as_of: date,
+        symbols: List[str],
+    ) -> None:
+        """
+        DataSource から Raw を取得し、build_signal_bundle → update_all で最新状態に更新する。
+        取得した bundle と capital_snapshot は内部に保持し、get_last_bundle() / get_last_capital_snapshot() で参照できる。
+        """
+        opts = self._bundle_build_options
+        cache, capital_snapshot = await data_source.fetch_raw(
+            as_of,
+            symbols,
+            volatility_symbols=opts.volatility_symbols,
+            liquidity_credit_symbol=opts.liquidity_credit_symbol,
+            liquidity_tip=opts.liquidity_tip,
+            account=opts.account,
+            base_density=opts.base_density,
+            v_recovery_params=opts.v_recovery_params,
+        )
+        lqd_symbol: Optional[str] = None
+        if (opts.liquidity_credit_symbol or "").upper() == "HYG" and "LQD" in cache._credit_bars:
+            lqd_symbol = "LQD"
+        from .process.layer2.bundle_builder import build_signal_bundle
+
+        bundle = build_signal_bundle(
+            cache,
+            as_of,
+            symbols,
+            volatility_symbols=opts.volatility_symbols,
+            liquidity_credit_symbol=opts.liquidity_credit_symbol,
+            liquidity_credit_lqd_symbol=lqd_symbol,
+            liquidity_tip=opts.liquidity_tip,
+            v_altitude=opts.v_altitude,
+            c_altitude=opts.c_altitude,
+            r_altitude=opts.r_altitude,
+            v_recovery_params=opts.v_recovery_params,
+        )
+        self._last_bundle = bundle
+        self._last_capital_snapshot = capital_snapshot
+        await self._update_all_from_signals(bundle)
+
+    def get_last_bundle(self) -> Optional[SignalBundle]:
+        """最後に refresh した SignalBundle。未 refresh の場合は None。"""
+        return self._last_bundle
+
+    def get_last_capital_snapshot(self) -> Optional[Any]:
+        """最後に refresh した RawCapitalSnapshot。未 refresh の場合は None。"""
+        return self._last_capital_snapshot
 
     async def update_all(
         self,
@@ -136,23 +195,17 @@ class FlightController:
         from .control_levels import compute_lcl
         return compute_lcl(self._mapping)
 
-    async def get_flight_controller_signal(self, bundle: Optional[SignalBundle] = None) -> FlightControllerSignal:
+    async def get_flight_controller_signal(self) -> FlightControllerSignal:
         """
         全銘柄分の「計器の結論」を 1 つの FlightControllerSignal として返す。
-        by_symbol[symbol] で銘柄ごとの SymbolSignal（throttle_level / icl / is_critical）を参照する。
+        現在の因子の level から算出する（refresh 済みならその bundle で更新された状態）。
+        icl_by_symbol のみ銘柄別に保持。throttle_level(symbol) = max(ICL, SCL, LCL)。
         表示用（reason / raw_metrics / recovery_metrics）は reports.format_fc_signal ヘルパーから取得。
         Cockpit の承認ゲートや Protocol 起動の入力。定義書「Phase 5 Signal」参照。
         """
-        by_symbol: Dict[str, SymbolSignal] = {}
         scl = await self.get_synchronous_control_level()
         lcl = await self.get_limit_control_level()
+        icl_by_symbol: Dict[str, int] = {}
         for symbol in self._mapping.symbol_factors:
-            icl = await self.get_individual_control_level(symbol)
-            effective = max(icl, scl, lcl)
-            is_critical = lcl >= 2
-            by_symbol[symbol] = SymbolSignal(
-                throttle_level=effective,
-                icl=icl,
-                is_critical=is_critical,
-            )
-        return FlightControllerSignal(by_symbol=by_symbol, scl=scl, lcl=lcl)
+            icl_by_symbol[symbol] = await self.get_individual_control_level(symbol)
+        return FlightControllerSignal(icl_by_symbol=icl_by_symbol, scl=scl, lcl=lcl)

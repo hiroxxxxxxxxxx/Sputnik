@@ -99,7 +99,7 @@ def test_check_upcoming_schedule_dst_shift() -> None:
 @pytest.mark.asyncio
 async def test_fetch_trading_hours_async_no_connection_returns_empty() -> None:
     """接続失敗時は [] を返す（例外は握りつぶす）。"""
-    from avionics.trading_hours import _contract_for_symbol, fetch_trading_hours_async
+    from avionics.ib.schedule_scan import _contract_for_symbol, fetch_trading_hours_async
 
     ib = MagicMock()
     ib.reqContractDetailsAsync = AsyncMock(side_effect=ConnectionError())
@@ -111,7 +111,7 @@ async def test_fetch_trading_hours_async_no_connection_returns_empty() -> None:
 @pytest.mark.asyncio
 async def test_fetch_trading_hours_async_parses_trading_hours() -> None:
     """ContractDetails の tradingHours をパースして返す。"""
-    from avionics.trading_hours import _contract_for_symbol, fetch_trading_hours_async
+    from avionics.ib.schedule_scan import _contract_for_symbol, fetch_trading_hours_async
 
     today = date.today()
     raw = f"{today.strftime('%Y%m%d')}:0930-1600"

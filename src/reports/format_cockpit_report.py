@@ -6,14 +6,13 @@ Cockpit 計器レポートのテンプレートレンダリング。
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from reports.format_fc_signal import build_reason, get_raw_metrics
 from reports._render import render
 
 if TYPE_CHECKING:
     from avionics import FlightController
-    from avionics.data.signals import SignalBundle
 
 MODE_STR = {0: "Boost", 1: "Cruise", 2: "Emergency"}
 COCKPIT_TEMPLATE = "cockpit_report.txt"
@@ -23,28 +22,27 @@ async def build_fc_report_context(
     fc: "FlightController",
     symbols: list[str],
     now_utc: str,
-    bundle: Optional["SignalBundle"] = None,
 ) -> dict[str, Any]:
     """
     FlightController 計器レポート用のテンプレートコンテキストを組み立てる。
-    フォーマット後の値のみ渡し、表示文言はテンプレート側で組み立てる。
-    bundle を渡すと復帰 x/N が bundle から算出される。
+    bundle は fc.get_last_bundle() から取得。表示文言はテンプレート側で組み立てる。
     """
-    signal = await fc.get_flight_controller_signal(bundle)
+    signal = await fc.get_flight_controller_signal()
     mapping = fc.mapping
     symbol_blocks: list[dict[str, Any]] = []
     for sym in symbols:
-        sig = signal.by_symbol.get(sym)
-        if sig is None:
+        if sym not in signal.icl_by_symbol:
             continue
         m = get_raw_metrics(mapping, sym)
-        reason = build_reason(sig.icl, signal.scl, signal.lcl)
+        icl = signal.icl_by_symbol[sym]
+        reason = build_reason(icl, signal.scl, signal.lcl)
+        throttle = signal.throttle_level(sym)
         symbol_blocks.append({
             "symbol": sym,
-            "mode": MODE_STR.get(sig.throttle_level, "?"),
-            "throttle_level": sig.throttle_level,
+            "mode": MODE_STR.get(throttle, "?"),
+            "throttle_level": throttle,
             "reason": reason,
-            "is_critical": sig.is_critical,
+            "is_critical": signal.any_critical,
             "p": m.get("P", 0),
             "v": m.get("V", 0),
             "c": m.get("C", 0),
@@ -61,17 +59,16 @@ async def format_cockpit_report(
     symbols: list[str],
     now_utc: str,
     template_name: str = COCKPIT_TEMPLATE,
-    bundle: Optional["SignalBundle"] = None,
 ) -> str:
     """
     Cockpit 計器レポート文字列をテンプレートで生成する。
+    bundle は fc.get_last_bundle() から取得する（refresh 済みの FC を渡すこと）。
 
-    :param fc: update_all 済みの FlightController。
+    :param fc: refresh 済みの FlightController。
     :param symbols: 銘柄リスト。
     :param now_utc: 取得時刻（UTC 文字列）。
     :param template_name: テンプレートファイル名。
-    :param bundle: 未指定可。渡すと復帰 x/N を bundle から算出。
     :return: レポート文字列。
     """
-    context = await build_fc_report_context(fc, symbols, now_utc, bundle)
+    context = await build_fc_report_context(fc, symbols, now_utc)
     return render(template_name, context)

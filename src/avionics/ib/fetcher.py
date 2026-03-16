@@ -1,8 +1,8 @@
 """
-Acquisition: IB（Interactive Brokers）API 経由で Raw を取得する。
+IB（ib_async）経由で Raw のみ取得する（Layer 1）。
 
-data.cache.CachedRawDataProvider に詰めて返すだけ。SignalBundle の計算は行わない。
-定義書「4-2 情報の階層構造」・案B B-2 参照。
+IBRawFetcher は CachedRawDataProvider に詰めて返すだけ。SignalBundle は作らない。
+SignalBundle は FC.refresh 経由で get_last_bundle() から取得する。
 """
 
 from __future__ import annotations
@@ -77,10 +77,10 @@ def _contract_for_etf(symbol: str) -> Any:
     return Stock(symbol=symbol, exchange="SMART", currency="USD")
 
 
-class IBDataFetcher:
+class IBRawFetcher:
     """
-    ib_async の IB インスタンスを使い、Raw を非同期で取得する。
-    CachedRawDataProvider に詰めて返すだけ。Layer 2 計算は行わない。
+    ib_async の IB インスタンスを使い、Raw を非同期で取得する（Layer 1 のみ）。
+    CachedRawDataProvider に詰めて返すだけ。SignalBundle は作らない。
     """
 
     def __init__(self, ib: Any) -> None:
@@ -274,7 +274,7 @@ async def fetch_raw(
     """
     利便関数: IB インスタンスとパラメータから Raw を取得する。
     """
-    fetcher = IBDataFetcher(ib)
+    fetcher = IBRawFetcher(ib)
     return await fetcher.fetch_raw(
         as_of,
         price_symbols,

@@ -39,29 +39,29 @@ def render_daily_flight_log(context: dict[str, Any], template_name: str = _DEFAU
 
 async def build_daily_flight_log_context(
     fc: "FlightController",
-    bundle: "SignalBundle",
     symbols: list[str],
-    capital_snapshot: Optional["RawCapitalSnapshot"] = None,
     as_of: Optional[date] = None,
 ) -> dict[str, Any]:
     """
-    FlightController と SignalBundle から Daily Flight Log 用のテンプレートコンテキストを組み立てる。
+    FlightController から Daily Flight Log 用のテンプレートコンテキストを組み立てる。
+    bundle と capital_snapshot は fc.get_last_bundle() / fc.get_last_capital_snapshot() から取得。
 
-    :param fc: update_all 済みの FlightController。
-    :param bundle: Layer 2 の SignalBundle。
+    :param fc: refresh 済みの FlightController。
     :param symbols: 銘柄リスト（例: ["NQ", "GC"]）。
-    :param capital_snapshot: 証拠金 Raw（任意）。あると NLV / ExcessLiq を表示。
     :param as_of: 基準日。未指定なら date.today()。
     :return: render_daily_flight_log に渡す context 辞書。
     """
+    bundle = fc.get_last_bundle()
+    if bundle is None:
+        raise ValueError("build_daily_flight_log_context requires fc.refresh() to have been called first")
+    capital_snapshot = fc.get_last_capital_snapshot()
     d = as_of or date.today()
 
-    signal = await fc.get_flight_controller_signal(bundle)
+    signal = await fc.get_flight_controller_signal()
     worst_level = 0
     for sym in symbols:
-        sig = signal.by_symbol.get(sym)
-        if sig is not None:
-            worst_level = max(worst_level, sig.throttle_level)
+        if sym in signal.icl_by_symbol:
+            worst_level = max(worst_level, signal.throttle_level(sym))
     mode = MODE_STR.get(worst_level, "?")
 
     mapping = fc.mapping
@@ -70,8 +70,7 @@ async def build_daily_flight_log_context(
     gap_str = "—"
     vol_str = "—"
     for sym in symbols:
-        sig = signal.by_symbol.get(sym)
-        if sig is not None:
+        if sym in signal.icl_by_symbol:
             m = get_raw_metrics(mapping, sym)
             p_lv = max(p_lv, m.get("P", 0))
             v_lv = max(v_lv, m.get("V", 0))
@@ -87,13 +86,11 @@ async def build_daily_flight_log_context(
     cap = bundle.capital_signals
     u_lv = s_lv = 0
     first_sig_recovery: dict[str, str] = {}
-    if symbols:
-        first_sig = signal.by_symbol.get(symbols[0])
-        if first_sig is not None:
-            m0 = get_raw_metrics(mapping, symbols[0])
-            u_lv = m0.get("U", 0)
-            s_lv = m0.get("S", 0)
-            first_sig_recovery = get_recovery_metrics(mapping, symbols[0], bundle)
+    if symbols and symbols[0] in signal.icl_by_symbol:
+        m0 = get_raw_metrics(mapping, symbols[0])
+        u_lv = m0.get("U", 0)
+        s_lv = m0.get("S", 0)
+        first_sig_recovery = get_recovery_metrics(mapping, symbols[0], bundle)
     u_pct = f"{cap.mm_over_nlv * 100:.1f}" if cap else "0.0"
     s_val = f"{cap.span_ratio:.2f}" if cap else "1.00"
 
@@ -114,8 +111,7 @@ async def build_daily_flight_log_context(
     if bundle.liquidity_tip and bundle.liquidity_tip.tip_drawdown_from_high is not None:
         r_val = f"{bundle.liquidity_tip.tip_drawdown_from_high * 100:.1f}%"
     for idx, sym in enumerate(symbols):
-        sig = signal.by_symbol.get(sym)
-        if sig is None:
+        if sym not in signal.icl_by_symbol:
             continue
         m = get_raw_metrics(mapping, sym)
         p_lv = m.get("P", 0)
@@ -173,25 +169,20 @@ async def build_daily_flight_log_context(
 
 async def format_daily_flight_log(
     fc: "FlightController",
-    bundle: "SignalBundle",
     symbols: list[str],
-    capital_snapshot: Optional["RawCapitalSnapshot"] = None,
     as_of: Optional[date] = None,
     template_name: str = _DEFAULT_TEMPLATE,
 ) -> str:
     """
-    FlightController と SignalBundle から Daily Flight Log 形式のレポート文字列を生成する。
+    FlightController から Daily Flight Log 形式のレポート文字列を生成する。
+    bundle と capital_snapshot は fc から取得する（refresh 済みの FC を渡すこと）。
     レイアウトはテンプレート（templates/daily_flight_log.txt）で管理する。
 
-    :param fc: update_all 済みの FlightController。
-    :param bundle: Layer 2 の SignalBundle。
+    :param fc: refresh 済みの FlightController。
     :param symbols: 銘柄リスト（例: ["NQ", "GC"]）。
-    :param capital_snapshot: 証拠金 Raw（任意）。あると NLV / ExcessLiq を表示。
     :param as_of: 基準日。未指定なら date.today()。
     :param template_name: 使用するテンプレートファイル名。
     :return: Telegram 送信用のテキスト。
     """
-    context = await build_daily_flight_log_context(
-        fc, bundle, symbols, capital_snapshot=capital_snapshot, as_of=as_of
-    )
+    context = await build_daily_flight_log_context(fc, symbols, as_of=as_of)
     return render_daily_flight_log(context, template_name=template_name)

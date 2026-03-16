@@ -15,7 +15,6 @@ import argparse
 import asyncio
 import os
 import sys
-from datetime import date
 from pathlib import Path
 
 # プロジェクトルートと scripts を path に追加
@@ -50,78 +49,58 @@ async def main() -> int:
     parser.add_argument("--breakdown", action="store_true", help="各因子の入力となる Layer 2 シグナル内訳を表示")
     args = parser.parse_args()
 
-    from cockpit.stack import build_cockpit_stack
-    from avionics.ib_data import IBDataFetcher
-    from avionics.Instruments import FactorsConfigError, get_v_thresholds, load_factors_config
-
     try:
-        from ib_async import IB
+        from avionics.ib import with_ib_fetcher
     except ImportError:
         print("ib_async がインストールされていません: pip install ib_async", file=sys.stderr)
         return 1
 
-    # FC と Engine は同一 symbols で build_cockpit_stack で取得（本スクリプトは FC のみ使用）
+    from avionics.Instruments import FactorsConfigError, load_factors_config
+    from cockpit.stack import build_cockpit_stack
+    from util import ny_date_now
+
     fc, _engines = build_cockpit_stack(args.symbols)
     try:
-        config = load_factors_config()
+        load_factors_config()
         print("FlightController: config/factors.toml に基づき因子を登録しました。")
     except FactorsConfigError:
-        config = None
         print("FlightController: 因子設定なしで起動（config/factors.toml なし）")
 
-    # IB 接続
-    ib = IB()
     try:
-        await ib.connectAsync(host=args.host, port=args.port, clientId=args.client_id)
+        async with with_ib_fetcher(
+            args.host,
+            args.port,
+            client_id=args.client_id,
+            timeout=75.0,
+        ) as fetcher:
+            as_of = ny_date_now()
+            print(f"取得中（as_of={as_of}, symbols={args.symbols}）...")
+            await fc.refresh(fetcher, as_of, args.symbols)
+            bundle = fc.get_last_bundle()
+
+            if args.breakdown and bundle:
+                from avionics.Instruments.signals import format_signal_bundle_breakdown
+                print(format_signal_bundle_breakdown(bundle))
+                print("---")
+
+            print("--- FlightController 計器シグナル ---")
+            from reports.format_fc_signal import build_reason, get_raw_metrics
+            signal = await fc.get_flight_controller_signal()
+            for sym in args.symbols:
+                if sym not in signal.icl_by_symbol:
+                    continue
+                throttle = signal.throttle_level(sym)
+                icl = signal.icl_by_symbol[sym]
+                mode_str = {0: "Boost", 1: "Cruise", 2: "Emergency"}.get(throttle, "?")
+                reason = build_reason(icl, signal.scl, signal.lcl)
+                raw_metrics = get_raw_metrics(fc.mapping, sym)
+                print(f"  {sym}: throttle={throttle} ({mode_str})")
+                print(f"        reason={reason}")
+                print(f"        is_critical={signal.any_critical}, raw_metrics={raw_metrics}")
+        return 0
     except Exception as e:
         print(f"IB 接続失敗: {e}", file=sys.stderr)
         return 1
-
-    try:
-        from util import ny_date_now
-        fetcher = IBDataFetcher(ib)
-        as_of = ny_date_now()  # バー日付（NY Trade Date）と整合
-        v_recovery_params = None
-        if config:
-            try:
-                v_recovery_params = {
-                    s: get_v_thresholds(config, s)["high_mid"]
-                    for s in args.symbols
-                }
-            except (FactorsConfigError, KeyError):
-                pass
-        print(f"SignalBundle 取得中（as_of={as_of}, symbols={args.symbols}）...")
-        bundle, _ = await fetcher.fetch_signal_bundle(
-            as_of=as_of,
-            price_symbols=args.symbols,
-            liquidity_credit_symbol="HYG",
-            liquidity_tip=True,
-            base_density=args.base_density,
-            v_recovery_params=v_recovery_params,
-        )
-        await fc.update_all(signal_bundle=bundle)
-
-        if args.breakdown:
-            from avionics.Instruments.signals import format_signal_bundle_breakdown
-            print(format_signal_bundle_breakdown(bundle))
-            print("---")
-
-        print("--- FlightController 計器シグナル ---")
-        from reports.format_fc_signal import build_reason, get_raw_metrics
-        signal = await fc.get_flight_controller_signal(bundle=bundle)
-        for sym in args.symbols:
-            sym_sig = signal.by_symbol.get(sym)
-            if sym_sig is None:
-                continue
-            mode_str = {0: "Boost", 1: "Cruise", 2: "Emergency"}.get(sym_sig.throttle_level, "?")
-            reason = build_reason(sym_sig.icl, signal.scl, signal.lcl)
-            raw_metrics = get_raw_metrics(fc.mapping, sym)
-            print(f"  {sym}: throttle={sym_sig.throttle_level} ({mode_str})")
-            print(f"        reason={reason}")
-            print(f"        is_critical={sym_sig.is_critical}, raw_metrics={raw_metrics}")
-        return 0
-    finally:
-        ib.disconnect()
 
 
 if __name__ == "__main__":

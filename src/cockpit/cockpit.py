@@ -178,10 +178,10 @@ class Cockpit:
         any_emergency = False
         engine_modes: List[tuple["Engine", ModeType]] = []
         for engine in self.engines:
-            sym_sig = signal.by_symbol.get(engine.symbol_type)
-            if sym_sig is None:
+            if engine.symbol_type not in signal.icl_by_symbol:
                 continue
-            target_mode = self._level_to_mode(sym_sig.throttle_level)
+            level = signal.throttle_level(engine.symbol_type)
+            target_mode = self._level_to_mode(level)
             engine_modes.append((engine, target_mode))
             if target_mode == EMERGENCY:
                 any_emergency = True

@@ -15,7 +15,6 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
-from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -31,141 +30,23 @@ if str(_root / "src") not in sys.path:
 if str(_scripts) not in sys.path:
     sys.path.insert(0, str(_scripts))
 
-
-async def fetch_cockpit_report(host: str, port: int, symbols: list[str]) -> str:
-    """
-    IB から SignalBundle を取得し FlightController を更新したうえで、計器レポート文字列を返す。
-    接続失敗時は例外を投げる。
-    """
-    from avionics import FlightController
-    from avionics.Instruments import (
-        FactorsConfigError,
-        get_v_thresholds,
-        load_factors_config,
-    )
-    from avionics.ib_data import IBDataFetcher
-    from ib_async import IB
-
-    ib = IB()
-    client_id = int(os.environ.get("IBKR_CLIENT_ID", "3"))  # 2 は競合しやすいためデフォルト 3
-    # Gateway 起動直後は約60秒かかるため、接続タイムアウトを長めに（デフォルト2〜4秒では即失敗する）
-    await ib.connectAsync(host=host, port=port, clientId=client_id, timeout=75)
-    try:
-        try:
-            config = load_factors_config()
-            v_recovery_params = {
-                s: get_v_thresholds(config, s)["high_mid"] for s in symbols
-            }
-        except (FactorsConfigError, KeyError):
-            v_recovery_params = None
-        fetcher = IBDataFetcher(ib)
-        from util import as_of_for_bundle
-        as_of = as_of_for_bundle()  # 場中なら前営業日（復帰 x/N を確定値のみで判定）
-        bundle, _ = await fetcher.fetch_signal_bundle(
-            as_of=as_of,
-            price_symbols=symbols,
-            liquidity_credit_symbol="HYG",
-            liquidity_tip=True,
-            base_density=1.0,
-            v_recovery_params=v_recovery_params,
-        )
-        from cockpit.stack import build_cockpit_stack
-        fc, _ = build_cockpit_stack(symbols)
-        await fc.update_all(signal_bundle=bundle)
-        now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-        from reports.format_cockpit_report import format_cockpit_report
-        return await format_cockpit_report(fc, symbols, now_utc, bundle=bundle)
-    finally:
-        ib.disconnect()
+from reports.fetch_cockpit_reports import (
+    fetch_breakdown_report,
+    fetch_cockpit_report,
+    fetch_daily_report,
+)
 
 
-async def fetch_breakdown_report(host: str, port: int, symbols: list[str]) -> str:
-    """
-    IB から SignalBundle を取得し、各因子の入力となる Layer 2 シグナル内訳を返す。
-    接続失敗時は例外を投げる。
-    """
-    from avionics.Instruments import (
-        FactorsConfigError,
-        get_v_thresholds,
-        load_factors_config,
-    )
-    from avionics.ib_data import IBDataFetcher
-    from reports.format_breakdown_report import format_breakdown_report
-    from ib_async import IB
-
-    ib = IB()
+def _env_host_port_symbols() -> tuple[str, int, list[str], int, float]:
+    """env から host, port, symbols, client_id, timeout を読み、レポート取得 API に渡す値として返す。"""
+    host = os.environ.get("IBKR_HOST", "127.0.0.1").strip()
+    port_str = os.environ.get("IBKR_PORT", "").strip()
+    port = int(port_str) if port_str.isdigit() else 4002
+    symbols_str = os.environ.get("TELEGRAM_COCKPIT_SYMBOLS", "NQ,GC").strip()
+    symbols = [s.strip() for s in symbols_str.split(",") if s.strip()] or ["NQ", "GC"]
     client_id = int(os.environ.get("IBKR_CLIENT_ID", "3"))
-    await ib.connectAsync(host=host, port=port, clientId=client_id, timeout=75)
-    try:
-        try:
-            config = load_factors_config()
-            v_recovery_params = {
-                s: get_v_thresholds(config, s)["high_mid"] for s in symbols
-            }
-        except (FactorsConfigError, KeyError):
-            v_recovery_params = None
-        fetcher = IBDataFetcher(ib)
-        from util import as_of_for_bundle
-        as_of = as_of_for_bundle()
-        bundle, _ = await fetcher.fetch_signal_bundle(
-            as_of=as_of,
-            price_symbols=symbols,
-            liquidity_credit_symbol="HYG",
-            liquidity_tip=True,
-            base_density=1.0,
-            v_recovery_params=v_recovery_params,
-        )
-        return format_breakdown_report(bundle)
-    finally:
-        ib.disconnect()
-
-
-async def fetch_daily_report(host: str, port: int, symbols: list[str]) -> str:
-    """
-    IB から SignalBundle と RawCapitalSnapshot を取得し、FlightController を更新したうえで
-    Daily Flight Log 形式のレポート文字列を返す。接続失敗時は例外を投げる。
-    """
-    from avionics.Instruments import (
-        FactorsConfigError,
-        get_v_thresholds,
-        load_factors_config,
-    )
-    from reports.format_daily_report import format_daily_flight_log
-    from avionics.ib_data import IBDataFetcher
-    from ib_async import IB
-
-    ib = IB()
-    client_id = int(os.environ.get("IBKR_CLIENT_ID", "3"))
-    await ib.connectAsync(host=host, port=port, clientId=client_id, timeout=75)
-    try:
-        try:
-            config = load_factors_config()
-            v_recovery_params = {
-                s: get_v_thresholds(config, s)["high_mid"] for s in symbols
-            }
-        except (FactorsConfigError, KeyError):
-            v_recovery_params = None
-        fetcher = IBDataFetcher(ib)
-        from util import as_of_for_bundle
-        as_of = as_of_for_bundle()
-        bundle, capital_snapshot = await fetcher.fetch_signal_bundle(
-            as_of=as_of,
-            price_symbols=symbols,
-            liquidity_credit_symbol="HYG",
-            liquidity_tip=True,
-            base_density=1.0,
-            v_recovery_params=v_recovery_params,
-        )
-        from cockpit.stack import build_cockpit_stack
-        fc, _ = build_cockpit_stack(symbols)
-        await fc.update_all(signal_bundle=bundle)
-        return await format_daily_flight_log(
-            fc, bundle, symbols,
-            capital_snapshot=capital_snapshot,
-            as_of=as_of,
-        )
-    finally:
-        ib.disconnect()
+    timeout = 75.0  # Gateway 起動直後は約60秒かかることがある
+    return host, port, symbols, client_id, timeout
 
 
 # /start と起動完了通知で同じメッセージを使う
@@ -192,9 +73,7 @@ async def ping_command(update, context: ContextTypes.DEFAULT_TYPE) -> None:
     msg = update.effective_message
     if msg is None:
         return
-    host = os.environ.get("IBKR_HOST", "127.0.0.1").strip()
-    port_str = os.environ.get("IBKR_PORT", "").strip()
-    port = port_str if port_str.isdigit() else "4002"
+    host, port, symbols, _cid, _timeout = _env_host_port_symbols()
     await msg.reply_text(
         f"接続OK\nIB: {host}:{port}\n（/cockpit はここに接続して取得します）"
     )
@@ -209,18 +88,14 @@ async def cockpit_command(update, context: ContextTypes.DEFAULT_TYPE) -> None:
     msg = update.effective_message
     if msg is None:
         return
-    host = os.environ.get("IBKR_HOST", "127.0.0.1").strip()
-    port_str = os.environ.get("IBKR_PORT", "").strip()
-    port = int(port_str) if port_str.isdigit() else 4002
-    symbols_str = os.environ.get("TELEGRAM_COCKPIT_SYMBOLS", "NQ,GC").strip()
-    symbols = [s.strip() for s in symbols_str.split(",") if s.strip()] or ["NQ", "GC"]
+    host, port, symbols, client_id, ib_timeout = _env_host_port_symbols()
     try:
         await msg.reply_text("計器取得中…")
     except Exception:
         pass
     try:
         report = await asyncio.wait_for(
-            fetch_cockpit_report(host, port, symbols),
+            fetch_cockpit_report(host, port, symbols, client_id=client_id, timeout=ib_timeout),
             timeout=COCKPIT_FETCH_TIMEOUT,
         )
         await msg.reply_text(report)
@@ -257,18 +132,14 @@ async def breakdown_command(update: object, context: ContextTypes.DEFAULT_TYPE) 
     msg = getattr(update, "effective_message", None)
     if msg is None:
         return
-    host = os.environ.get("IBKR_HOST", "127.0.0.1").strip()
-    port_str = os.environ.get("IBKR_PORT", "").strip()
-    port = int(port_str) if port_str.isdigit() else 4002
-    symbols_str = os.environ.get("TELEGRAM_COCKPIT_SYMBOLS", "NQ,GC").strip()
-    symbols = [s.strip() for s in symbols_str.split(",") if s.strip()] or ["NQ", "GC"]
+    host, port, symbols, client_id, ib_timeout = _env_host_port_symbols()
     try:
         await msg.reply_text("内訳取得中…")
     except Exception:
         pass
     try:
         report = await asyncio.wait_for(
-            fetch_breakdown_report(host, port, symbols),
+            fetch_breakdown_report(host, port, symbols, client_id=client_id, timeout=ib_timeout),
             timeout=COCKPIT_FETCH_TIMEOUT,
         )
         await msg.reply_text(report[:4000])
@@ -289,18 +160,14 @@ async def daily_command(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
     msg = getattr(update, "effective_message", None)
     if msg is None:
         return
-    host = os.environ.get("IBKR_HOST", "127.0.0.1").strip()
-    port_str = os.environ.get("IBKR_PORT", "").strip()
-    port = int(port_str) if port_str.isdigit() else 4002
-    symbols_str = os.environ.get("TELEGRAM_COCKPIT_SYMBOLS", "NQ,GC").strip()
-    symbols = [s.strip() for s in symbols_str.split(",") if s.strip()] or ["NQ", "GC"]
+    host, port, symbols, client_id, ib_timeout = _env_host_port_symbols()
     try:
         await msg.reply_text("Daily Log 取得中…")
     except Exception:
         pass
     try:
         report = await asyncio.wait_for(
-            fetch_daily_report(host, port, symbols),
+            fetch_daily_report(host, port, symbols, client_id=client_id, timeout=ib_timeout),
             timeout=COCKPIT_FETCH_TIMEOUT,
         )
         await msg.reply_text(report[:4000])
@@ -320,16 +187,11 @@ async def fetch_schedule_alerts(host: str, port: int, symbols: list[str]) -> str
     """
     IB から取引時間を取得し、翌日以降の DST・短縮・休場の通知文を組み立てて返す。
     """
-    from avionics.trading_hours import run_daily_schedule_scan
-    from ib_async import IB
+    from avionics.ib import run_daily_schedule_scan, with_ib_connection
 
-    ib = IB()
     client_id = int(os.environ.get("IBKR_CLIENT_ID", "3"))
-    await ib.connectAsync(host=host, port=port, clientId=client_id, timeout=30)
-    try:
+    async with with_ib_connection(host, port, client_id=client_id, timeout=30.0) as ib:
         results = await run_daily_schedule_scan(ib, symbols)
-    finally:
-        ib.disconnect()
 
     lines = ["【取引時間スキャン】"]
     for symbol, messages in results:
@@ -389,13 +251,12 @@ async def _notify_gateway_ready(application: object) -> None:
     port = int(port_str) if port_str.isdigit() else 8888
     client_id = int(os.environ.get("IBKR_CLIENT_ID", "3"))
     await asyncio.sleep(30)
-    from ib_async import IB
+
+    from avionics.ib import check_ib_connection
 
     for attempt in range(3):
-        try:
-            ib = IB()
-            await ib.connectAsync(host=host, port=port, clientId=client_id, timeout=30)
-            ib.disconnect()
+        ok = await check_ib_connection(host, port, client_id=client_id, timeout=30.0)
+        if ok:
             bot = getattr(application, "bot", None)
             if bot:
                 await bot.send_message(
@@ -403,12 +264,11 @@ async def _notify_gateway_ready(application: object) -> None:
                     text="Sputnik 起動完了。API 利用可能です。\n\n" + COCKPIT_BOT_COMMANDS_MESSAGE,
                 )
             return
-        except Exception as e:
-            print(
-                f"Gateway 接続試行 {attempt + 1}/3 失敗: {host}:{port} clientId={client_id} → {type(e).__name__}: {e}",
-                file=sys.stderr,
-            )
-            await asyncio.sleep(5)
+        print(
+            f"Gateway 接続試行 {attempt + 1}/3 失敗: {host}:{port} clientId={client_id}",
+            file=sys.stderr,
+        )
+        await asyncio.sleep(5)
 
     bot = getattr(application, "bot", None)
     if bot:

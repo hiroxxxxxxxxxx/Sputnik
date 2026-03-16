@@ -73,7 +73,7 @@ def test_cockpit_level_to_mode() -> None:
 
 def test_fc_pulse_entering_emergency_runs_protocol(engine_with_fc: tuple[Cockpit, Engine]) -> None:
     """Cockpit.pulse で Emergency に遷移すると、コールバック未設定時は EmergencyProtocol が実行される。"""
-    from avionics.data.fc_signals import FlightControllerSignal, SymbolSignal
+    from avionics.data.fc_signals import FlightControllerSignal
 
     fc, engine = engine_with_fc
     sym = engine.symbol_type
@@ -81,14 +81,7 @@ def test_fc_pulse_entering_emergency_runs_protocol(engine_with_fc: tuple[Cockpit
         async def update_all(self, signal_bundle=None) -> None:
             pass
         async def get_flight_controller_signal(self, bundle=None):
-            return FlightControllerSignal(
-                by_symbol={
-                    sym: SymbolSignal(
-                        throttle_level=2, icl=0, is_critical=True,
-                    )
-                },
-                scl=0, lcl=2,
-            )
+            return FlightControllerSignal(icl_by_symbol={sym: 0}, scl=0, lcl=2)
     fc.fc = MockEmergencyEvaluator()  # type: ignore[assignment]
     asyncio.run(fc.pulse())
     assert fc.current_mode == "Emergency"

@@ -26,20 +26,20 @@ class _MockFactor:
 
 
 def test_avionics_empty_factors_effective_zero() -> None:
-    """因子が空のとき get_flight_controller_signal().by_symbol[sym].throttle_level は 0 を返す。"""
+    """因子が空のとき get_flight_controller_signal().throttle_level(sym) は 0 を返す。"""
     av = FlightController(global_market_factors=[], global_capital_factors=[], symbol_factors={"NQ": []})
     sig = _run(av.get_flight_controller_signal())
-    assert sig.by_symbol["NQ"].throttle_level == 0
+    assert sig.throttle_level("NQ") == 0
 
 
 def test_avionics_effective_is_max_of_three_layers() -> None:
-    """get_flight_controller_signal().by_symbol[sym].throttle_level は個別・同期・制限の三層の最大値。"""
+    """get_flight_controller_signal().throttle_level(sym) は個別・同期・制限の三層の最大値。"""
     f0 = _MockFactor(0)
     f1 = _MockFactor(1)
     f2 = _MockFactor(2)
     av = FlightController(global_capital_factors=[f0, f1, f2], symbol_factors={"NQ": []})
     sig = _run(av.get_flight_controller_signal())
-    assert sig.by_symbol["NQ"].throttle_level == 2
+    assert sig.throttle_level("NQ") == 2
 
 
 def test_avionics_limit_layer_only() -> None:
@@ -48,7 +48,7 @@ def test_avionics_limit_layer_only() -> None:
     s = _MockFactor(1)
     av = FlightController(global_capital_factors=[u, s], symbol_factors={"NQ": []})
     sig = _run(av.get_flight_controller_signal())
-    assert sig.by_symbol["NQ"].throttle_level == 1
+    assert sig.throttle_level("NQ") == 1
 
 
 def test_avionics_use_subscription_always_true() -> None:
@@ -71,7 +71,7 @@ def test_avionics_subscription_mode_use_subscription_true() -> None:
 
 
 def test_avionics_subscription_effective_per_symbol() -> None:
-    """サブスクリプション時、get_flight_controller_signal().by_symbol[sym].throttle_level は銘柄ごとに三層の max。"""
+    """サブスクリプション時、get_flight_controller_signal().throttle_level(sym) は銘柄ごとに三層の max。"""
     av = FlightController(
         global_market_factors=[],
         global_capital_factors=[_MockFactor(0)],
@@ -80,8 +80,8 @@ def test_avionics_subscription_effective_per_symbol() -> None:
     _run(av.update_all())
     sig = _run(av.get_flight_controller_signal())
     # _MockFactor は P/V/L/T ではないため個別・同期は 0。制限も 0 で effective=0。
-    assert sig.by_symbol["NQ"].throttle_level == 0
-    assert sig.by_symbol["GC"].throttle_level == 0
+    assert sig.throttle_level("NQ") == 0
+    assert sig.throttle_level("GC") == 0
 
 
 def test_avionics_subscription_limit_control_level() -> None:
@@ -110,7 +110,7 @@ def test_avionics_register_factor_subscription() -> None:
     _run(av.update_all())
     # _MockFactor は P/V/L/T ではないため個別・同期・制限は 0。effective=0 で正常。
     sig = _run(av.get_flight_controller_signal())
-    assert sig.by_symbol["NQ"].throttle_level >= 0
+    assert sig.throttle_level("NQ") >= 0
 
 
 def test_avionics_get_individual_control_level_excludes_t() -> None:
@@ -162,7 +162,7 @@ def test_avionics_get_synchronous_control_level_from_t_factors() -> None:
 
 
 def test_avionics_get_effective_level_is_max_of_three_layers() -> None:
-    """get_flight_controller_signal().by_symbol[sym].throttle_level = max(個別制御層, 同期制御層, 制限制御層)。"""
+    """get_flight_controller_signal().throttle_level(sym) = max(個別制御層, 同期制御層, 制限制御層)。"""
     from avionics import PFactor, TFactor, VFactor
     from avionics.Instruments import (
         get_p_thresholds,
@@ -190,4 +190,4 @@ def test_avionics_get_effective_level_is_max_of_three_layers() -> None:
     ind = _run(av.get_individual_control_level("NQ"))
     syn = _run(av.get_synchronous_control_level())
     lim = _run(av.get_limit_control_level())
-    assert sig.by_symbol["NQ"].throttle_level == max(ind, syn, lim)
+    assert sig.throttle_level("NQ") == max(ind, syn, lim)

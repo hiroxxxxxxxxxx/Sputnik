@@ -76,7 +76,7 @@ def get_recovery_metrics(
 def build_summary_reason(signal: FlightControllerSignal) -> str:
     """銘柄ごとの reason を連結した文字列。承認待ちメッセージ用。"""
     parts = [
-        f"{sym}: {build_reason(s.icl, signal.scl, signal.lcl)}"
-        for sym, s in sorted(signal.by_symbol.items())
+        f"{sym}: {build_reason(icl, signal.scl, signal.lcl)}"
+        for sym, icl in sorted(signal.icl_by_symbol.items())
     ]
     return "; ".join(parts)
