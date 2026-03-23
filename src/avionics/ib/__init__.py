@@ -2,6 +2,7 @@
 IB（ib_async）依存を集約するパッケージ。
 
 - IBRawFetcher / fetch_raw: Layer 1 のみ（Raw 取得）。with_ib_fetcher が yield する型。FC.refresh に渡す。
+fetch_raw の戻りは RawMarketSnapshot（NQ/GC固定DTO）+ Optional[RawCapitalSnapshot]。
 SignalBundle は FC.refresh(data_source, as_of, symbols) のあと fc.get_last_bundle() で取得する。
 reports / scripts は avionics.ib のみ import し、ib_async は直接 import しない。
 """

@@ -58,7 +58,9 @@ def get_recovery_metrics(
 ) -> Dict[str, str]:
     """
     復帰ヒステリシス中の因子について「x/N日目」を収集する。Daily Report 用。
-    bundle を渡すとステートレス因子は get_recovery_progress_from_bundle でその場計算。未渡しなら recovery_confirm_progress（U/S 用）。
+    bundle を渡すときは原則 get_recovery_progress_from_bundle を優先する。
+    未実装（None）の場合のみ recovery_confirm_progress にフォールバックする（主に U/S の stateful 経路）。
+    bundle 未指定時は recovery_confirm_progress のみ。
     """
     result: Dict[str, str] = {}
     sym_factors = mapping.symbol_factors.get(symbol, [])
@@ -74,7 +76,11 @@ def get_recovery_metrics(
             from_bundle = getattr(f, "get_recovery_progress_from_bundle", None)
             if callable(from_bundle):
                 p = from_bundle(symbol, bundle)
-        if p is None:
+            if p is None:
+                prog = getattr(f, "recovery_confirm_progress", None)
+                if callable(prog):
+                    p = prog()
+        else:
             prog = getattr(f, "recovery_confirm_progress", None)
             if callable(prog):
                 p = prog()

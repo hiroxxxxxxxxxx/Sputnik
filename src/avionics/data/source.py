@@ -12,11 +12,8 @@ from datetime import date
 from typing import Dict, List, Optional, Protocol, Tuple
 
 from .raw import RawCapitalSnapshot
+from .raw_market_snapshot import RawMarketSnapshot
 from .signals import AltitudeRegime
-
-# CachedRawDataProvider は cache モジュールにあるが、Protocol は型だけ参照する
-# 実装で import するためここでは TYPE_CHECKING または str で遅延参照しない
-from .cache import CachedRawDataProvider
 
 
 class DataSource(Protocol):
@@ -36,9 +33,9 @@ class DataSource(Protocol):
         account: str = "",
         base_density: float = 1.0,
         v_recovery_params: Optional[Dict[str, dict]] = None,
-    ) -> Tuple[CachedRawDataProvider, Optional[RawCapitalSnapshot]]:
+    ) -> Tuple[RawMarketSnapshot, Optional[RawCapitalSnapshot]]:
         ...
-        """Layer 1 の Raw を取得し、CachedRawDataProvider と Optional[RawCapitalSnapshot] を返す。"""
+        """Layer 1 の Raw を取得し、RawMarketSnapshot と Optional[RawCapitalSnapshot] を返す。"""
 
 
 @dataclass(frozen=True)

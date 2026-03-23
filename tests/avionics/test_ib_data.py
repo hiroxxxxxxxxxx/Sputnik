@@ -17,6 +17,7 @@ import pytest
 from avionics.data.cache import CachedRawDataProvider
 from avionics.data.fc_signals import EngineFactorMapping
 from avionics.data.raw import PriceBar, RawCapitalSnapshot
+from avionics.data.raw_market_snapshot import RawMarketSnapshot
 from avionics.data.source import BundleBuildOptions, DataSource
 from avionics.flight_controller import FlightController
 from avionics.ib.fetcher import _bar_to_price_bar
@@ -115,7 +116,7 @@ def test_cached_raw_data_provider_credit_and_tip() -> None:
 
 
 class MockDataSource:
-    """テスト用: 事前に用意した CachedRawDataProvider と RawCapitalSnapshot を返す DataSource。"""
+    """テスト用: 事前に用意した CachedRawDataProvider を RawMarketSnapshot に変換して返す DataSource。"""
 
     def __init__(
         self,
@@ -124,6 +125,20 @@ class MockDataSource:
     ) -> None:
         self._cache = cache
         self._capital_snapshot = capital_snapshot
+
+    def _snapshot(self, as_of: date) -> RawMarketSnapshot:
+        return RawMarketSnapshot(
+            as_of=as_of,
+            nq_price_bars=list(self._cache._price_bars.get("NQ", [])),
+            gc_price_bars=list(self._cache._price_bars.get("GC", [])),
+            nq_price_bars_1h=list(self._cache._price_bars_1h.get("NQ", [])),
+            gc_price_bars_1h=list(self._cache._price_bars_1h.get("GC", [])),
+            nq_volatility_series=list(self._cache._volatility_series.get("NQ", [])),
+            gc_volatility_series=list(self._cache._volatility_series.get("GC", [])),
+            capital_snapshot=self._capital_snapshot,
+            credit_bars={k: list(v) for k, v in self._cache._credit_bars.items()},
+            tip_bars=list(self._cache._tip_bars),
+        )
 
     async def fetch_raw(
         self,
@@ -136,8 +151,8 @@ class MockDataSource:
         account: str = "",
         base_density: float = 1.0,
         v_recovery_params: Optional[Dict[str, dict]] = None,
-    ) -> Tuple[CachedRawDataProvider, Optional[RawCapitalSnapshot]]:
-        return (self._cache, self._capital_snapshot)
+    ) -> Tuple[RawMarketSnapshot, Optional[RawCapitalSnapshot]]:
+        return (self._snapshot(as_of), self._capital_snapshot)
 
 
 def _make_fc(symbols: List[str], options: Optional[BundleBuildOptions] = None) -> FlightController:

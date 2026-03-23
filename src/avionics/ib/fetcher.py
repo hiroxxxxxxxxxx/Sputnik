@@ -1,7 +1,8 @@
 """
 IB（ib_async）経由で Raw のみ取得する（Layer 1）。
 
-IBRawFetcher は CachedRawDataProvider に詰めて返すだけ。SignalBundle は作らない。
+IBRawFetcher は IB から Raw を取得し RawMarketSnapshot（NQ/GC固定DTO）として返す。SignalBundle は作らない。
+内部実装の都合で一時的に CachedRawDataProvider に詰めるが、外部へはスナップショットを返す。
 SignalBundle は FC.refresh 経由で get_last_bundle() から取得する。
 """
 
@@ -18,6 +19,7 @@ from ..data.raw import (
     RawCapitalSnapshot,
     VolatilitySeriesPoint,
 )
+from ..data.raw_market_snapshot import RawMarketSnapshot
 
 
 def _bar_to_price_bar(bar: Any) -> PriceBar:
@@ -80,7 +82,7 @@ def _contract_for_etf(symbol: str) -> Any:
 class IBRawFetcher:
     """
     ib_async の IB インスタンスを使い、Raw を非同期で取得する（Layer 1 のみ）。
-    CachedRawDataProvider に詰めて返すだけ。SignalBundle は作らない。
+    IB から Raw を取得し RawMarketSnapshot として返す。SignalBundle は作らない。
     """
 
     def __init__(self, ib: Any) -> None:
@@ -188,12 +190,12 @@ class IBRawFetcher:
         account: str = "",
         base_density: float = 1.0,
         v_recovery_params: Optional[Dict[str, dict]] = None,
-    ) -> Tuple[CachedRawDataProvider, Optional[RawCapitalSnapshot]]:
+    ) -> Tuple[RawMarketSnapshot, Optional[RawCapitalSnapshot]]:
         """
-        IB から Raw を取得し、CachedRawDataProvider に詰めて返す。
+        IB から Raw を取得し、RawMarketSnapshot（NQ/GC固定DTO）として返す。
         Layer 2 計算は行わない。SignalBundle が欲しい場合は呼び出し側で build_signal_bundle を呼ぶ。
 
-        :return: (CachedRawDataProvider, Optional[RawCapitalSnapshot])
+        :return: (RawMarketSnapshot, Optional[RawCapitalSnapshot])
         """
         cache = CachedRawDataProvider()
         vol_map = volatility_symbols or {s: "VXN" if s == "NQ" else "GVZ" for s in price_symbols}
@@ -256,7 +258,27 @@ class IBRawFetcher:
             cache._price_bars_1h[sym] = results[idx]
             idx += 1
 
-        return cache, cache._capital_snapshot
+        nq_bars = list(cache._price_bars.get("NQ", []))
+        gc_bars = list(cache._price_bars.get("GC", []))
+        nq_1h = list(cache._price_bars_1h.get("NQ", []))
+        gc_1h = list(cache._price_bars_1h.get("GC", []))
+        nq_vol = list(cache._volatility_series.get("NQ", []))
+        gc_vol = list(cache._volatility_series.get("GC", []))
+        credit_map: Dict[str, List[PriceBar]] = {k: list(v) for k, v in cache._credit_bars.items()}
+
+        snapshot = RawMarketSnapshot(
+            as_of=as_of,
+            nq_price_bars=nq_bars,
+            gc_price_bars=gc_bars,
+            nq_price_bars_1h=nq_1h,
+            gc_price_bars_1h=gc_1h,
+            nq_volatility_series=nq_vol,
+            gc_volatility_series=gc_vol,
+            capital_snapshot=cache._capital_snapshot,
+            credit_bars=credit_map,
+            tip_bars=list(cache._tip_bars),
+        )
+        return snapshot, snapshot.capital_snapshot
 
 
 async def fetch_raw(
@@ -270,7 +292,7 @@ async def fetch_raw(
     account: str = "",
     base_density: float = 1.0,
     v_recovery_params: Optional[Dict[str, dict]] = None,
-) -> Tuple[CachedRawDataProvider, Optional[RawCapitalSnapshot]]:
+) -> Tuple[RawMarketSnapshot, Optional[RawCapitalSnapshot]]:
     """
     利便関数: IB インスタンスとパラメータから Raw を取得する。
     """

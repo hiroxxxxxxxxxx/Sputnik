@@ -14,6 +14,7 @@ from datetime import date
 from typing import Any, Dict, List, Optional
 
 from .data.fc_signals import EngineFactorMapping, FlightControllerSignal
+from .data.raw_market_snapshot import RawMarketSnapshot
 from .data.signals import SignalBundle
 from .data.source import BundleBuildOptions, DataSource
 
@@ -58,6 +59,7 @@ class FlightController:
         self._bundle_build_options = bundle_build_options or BundleBuildOptions()
         self._last_bundle: Optional[SignalBundle] = None
         self._last_capital_snapshot: Optional[Any] = None
+        self._last_raw_snapshot: Optional[RawMarketSnapshot] = None
 
     @property
     def use_subscription(self) -> bool:
@@ -95,7 +97,7 @@ class FlightController:
         取得した bundle と capital_snapshot は内部に保持し、get_last_bundle() / get_last_capital_snapshot() で参照できる。
         """
         opts = self._bundle_build_options
-        cache, capital_snapshot = await data_source.fetch_raw(
+        raw_snapshot, capital_snapshot = await data_source.fetch_raw(
             as_of,
             symbols,
             volatility_symbols=opts.volatility_symbols,
@@ -106,12 +108,12 @@ class FlightController:
             v_recovery_params=opts.v_recovery_params,
         )
         lqd_symbol: Optional[str] = None
-        if (opts.liquidity_credit_symbol or "").upper() == "HYG" and "LQD" in cache._credit_bars:
+        if (opts.liquidity_credit_symbol or "").upper() == "HYG" and "LQD" in raw_snapshot.credit_bars:
             lqd_symbol = "LQD"
         from .process.layer2.bundle_builder import build_signal_bundle
 
         bundle = build_signal_bundle(
-            cache,
+            raw_snapshot,
             as_of,
             symbols,
             volatility_symbols=opts.volatility_symbols,
@@ -125,6 +127,7 @@ class FlightController:
         )
         self._last_bundle = bundle
         self._last_capital_snapshot = capital_snapshot
+        self._last_raw_snapshot = raw_snapshot
         await self._update_all_from_signals(bundle)
 
     def get_last_bundle(self) -> Optional[SignalBundle]:
@@ -134,6 +137,10 @@ class FlightController:
     def get_last_capital_snapshot(self) -> Optional[Any]:
         """最後に refresh した RawCapitalSnapshot。未 refresh の場合は None。"""
         return self._last_capital_snapshot
+
+    def get_last_raw_snapshot(self) -> Optional[RawMarketSnapshot]:
+        """最後に refresh した RawMarketSnapshot。未 refresh の場合は None。"""
+        return self._last_raw_snapshot
 
     async def update_all(
         self,
