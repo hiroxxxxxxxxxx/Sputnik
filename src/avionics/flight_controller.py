@@ -199,13 +199,62 @@ class FlightController:
         """
         全銘柄分の「計器の結論」を 1 つの FlightControllerSignal として返す。
         現在の因子の level から算出する（refresh 済みならその bundle で更新された状態）。
-        icl_by_symbol のみ銘柄別に保持。throttle_level(symbol) = max(ICL, SCL, LCL)。
-        表示用（reason / raw_metrics / recovery_metrics）は reports.format_fc_signal ヘルパーから取得。
+        NQ/GC 固定のフィールドに ICL/SCL/LCL と因子レベル（P,V,C,R,T,U,S）を包含する。
         Cockpit の承認ゲートや Protocol 起動の入力。定義書「Phase 5 Signal」参照。
         """
+        def _collect_symbol_metrics(symbol: str) -> Dict[str, int]:
+            metrics: Dict[str, int] = {"P": 0, "V": 0, "C": 0, "R": 0, "T": 0}
+            sym_factors = self._mapping.symbol_factors.get(symbol, [])
+            for f in self._mapping.global_market_factors + sym_factors:
+                name = getattr(f, "name", None)
+                if not name or not hasattr(f, "level"):
+                    continue
+                if name in metrics:
+                    metrics[name] = max(metrics[name], int(f.level))
+                elif isinstance(name, str) and name.startswith("T_"):
+                    metrics["T"] = max(metrics["T"], int(f.level))
+            return metrics
+
+        def _collect_limit_metrics() -> Dict[str, int]:
+            metrics: Dict[str, int] = {"U": 0, "S": 0}
+            for f in self._mapping.limit_factors:
+                name = getattr(f, "name", None)
+                if not name or not hasattr(f, "level"):
+                    continue
+                if name in metrics:
+                    metrics[name] = max(metrics[name], int(f.level))
+            return metrics
+
         scl = await self.get_synchronous_control_level()
         lcl = await self.get_limit_control_level()
-        icl_by_symbol: Dict[str, int] = {}
-        for symbol in self._mapping.symbol_factors:
-            icl_by_symbol[symbol] = await self.get_individual_control_level(symbol)
-        return FlightControllerSignal(icl_by_symbol=icl_by_symbol, scl=scl, lcl=lcl)
+
+        has_nq = "NQ" in self._mapping.symbol_factors
+        has_gc = "GC" in self._mapping.symbol_factors
+        nq_icl = await self.get_individual_control_level("NQ") if has_nq else 0
+        gc_icl = await self.get_individual_control_level("GC") if has_gc else 0
+
+        nq_m = _collect_symbol_metrics("NQ") if has_nq else {"P": 0, "V": 0, "C": 0, "R": 0, "T": 0}
+        gc_m = _collect_symbol_metrics("GC") if has_gc else {"P": 0, "V": 0, "C": 0, "R": 0, "T": 0}
+        lim_m = _collect_limit_metrics()
+
+        t = scl
+        u = lim_m.get("U", 0)
+        s = lim_m.get("S", 0)
+
+        return FlightControllerSignal(
+            scl=scl,
+            lcl=lcl,
+            nq_icl=nq_icl,
+            gc_icl=gc_icl,
+            nq_p=nq_m.get("P", 0),
+            nq_v=nq_m.get("V", 0),
+            nq_c=nq_m.get("C", 0),
+            nq_r=nq_m.get("R", 0),
+            gc_p=gc_m.get("P", 0),
+            gc_v=gc_m.get("V", 0),
+            gc_c=gc_m.get("C", 0),
+            gc_r=gc_m.get("R", 0),
+            t=t,
+            u=u,
+            s=s,
+        )

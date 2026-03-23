@@ -178,7 +178,7 @@ class Cockpit:
         any_emergency = False
         engine_modes: List[tuple["Engine", ModeType]] = []
         for engine in self.engines:
-            if engine.symbol_type not in signal.icl_by_symbol:
+            if engine.symbol_type not in ("NQ", "GC"):
                 continue
             level = signal.throttle_level(engine.symbol_type)
             target_mode = self._level_to_mode(level)

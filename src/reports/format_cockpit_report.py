@@ -28,13 +28,12 @@ async def build_fc_report_context(
     bundle は fc.get_last_bundle() から取得。表示文言はテンプレート側で組み立てる。
     """
     signal = await fc.get_flight_controller_signal()
-    mapping = fc.mapping
     symbol_blocks: list[dict[str, Any]] = []
     for sym in symbols:
-        if sym not in signal.icl_by_symbol:
+        if sym not in ("NQ", "GC"):
             continue
-        m = get_raw_metrics(mapping, sym)
-        icl = signal.icl_by_symbol[sym]
+        m = get_raw_metrics(signal, sym)
+        icl = signal.nq_icl if sym == "NQ" else signal.gc_icl
         reason = build_reason(icl, signal.scl, signal.lcl)
         throttle = signal.throttle_level(sym)
         symbol_blocks.append({

@@ -31,21 +31,24 @@ def build_reason(icl: int, scl: int, lcl: int) -> str:
     return " / ".join(parts) if parts else "全層0"
 
 
-def get_raw_metrics(mapping: EngineFactorMapping, symbol: str) -> Dict[str, Any]:
+def get_raw_metrics(signal: FlightControllerSignal, symbol: str) -> Dict[str, Any]:
     """
     P, V, C, R, T, U, S の現在レベルを収集する。通知用。定義書「Phase 5 raw_metrics」参照。
     """
-    metrics: Dict[str, int] = {"P": 0, "V": 0, "C": 0, "R": 0, "T": 0, "U": 0, "S": 0}
-    sym_factors = mapping.symbol_factors.get(symbol, [])
-    for f in mapping.global_market_factors + mapping.limit_factors + sym_factors:
-        name = getattr(f, "name", None)
-        if not name or not hasattr(f, "level"):
-            continue
-        if name in metrics:
-            metrics[name] = max(metrics[name], f.level)
-        elif name.startswith("T_"):
-            metrics["T"] = max(metrics["T"], f.level)
-    return metrics
+    base: Dict[str, int] = {"P": 0, "V": 0, "C": 0, "R": 0, "T": int(signal.t), "U": int(signal.u), "S": int(signal.s)}
+    if symbol == "NQ":
+        base["P"] = int(signal.nq_p)
+        base["V"] = int(signal.nq_v)
+        base["C"] = int(signal.nq_c)
+        base["R"] = int(signal.nq_r)
+        return base
+    if symbol == "GC":
+        base["P"] = int(signal.gc_p)
+        base["V"] = int(signal.gc_v)
+        base["C"] = int(signal.gc_c)
+        base["R"] = int(signal.gc_r)
+        return base
+    return base
 
 
 def get_recovery_metrics(
@@ -83,7 +86,7 @@ def get_recovery_metrics(
 def build_summary_reason(signal: FlightControllerSignal) -> str:
     """銘柄ごとの reason を連結した文字列。承認待ちメッセージ用。"""
     parts = [
-        f"{sym}: {build_reason(icl, signal.scl, signal.lcl)}"
-        for sym, icl in sorted(signal.icl_by_symbol.items())
+        f"NQ: {build_reason(signal.nq_icl, signal.scl, signal.lcl)}",
+        f"GC: {build_reason(signal.gc_icl, signal.scl, signal.lcl)}",
     ]
     return "; ".join(parts)

@@ -60,7 +60,7 @@ async def build_daily_flight_log_context(
     signal = await fc.get_flight_controller_signal()
     worst_level = 0
     for sym in symbols:
-        if sym in signal.icl_by_symbol:
+        if sym in ("NQ", "GC"):
             worst_level = max(worst_level, signal.throttle_level(sym))
     mode = MODE_STR.get(worst_level, "?")
 
@@ -69,8 +69,8 @@ async def build_daily_flight_log_context(
     gap_str = "—"
     vol_str = "—"
     for sym in symbols:
-        if sym in signal.icl_by_symbol:
-            m = get_raw_metrics(mapping, sym)
+        if sym in ("NQ", "GC"):
+            m = get_raw_metrics(signal, sym)
             p_lv = max(p_lv, m.get("P", 0))
             v_lv = max(v_lv, m.get("V", 0))
             t_lv = max(t_lv, m.get("T", 0))
@@ -91,10 +91,10 @@ async def build_daily_flight_log_context(
     cap = bundle.capital_signals
     u_lv = s_lv = 0
     first_sig_recovery: dict[str, str] = {}
-    if symbols and symbols[0] in signal.icl_by_symbol:
-        m0 = get_raw_metrics(mapping, symbols[0])
-        u_lv = m0.get("U", 0)
-        s_lv = m0.get("S", 0)
+    if symbols and symbols[0] in ("NQ", "GC"):
+        m0 = get_raw_metrics(signal, symbols[0])
+        u_lv = int(m0.get("U", 0))
+        s_lv = int(m0.get("S", 0))
         first_sig_recovery = get_recovery_metrics(mapping, symbols[0], bundle)
     u_pct = f"{cap.mm_over_nlv * 100:.1f}" if cap else "0.0"
     s_val = f"{cap.span_ratio:.2f}" if cap else "1.00"
@@ -116,13 +116,14 @@ async def build_daily_flight_log_context(
     if bundle.liquidity_tip and bundle.liquidity_tip.tip_drawdown_from_high is not None:
         r_val = f"{bundle.liquidity_tip.tip_drawdown_from_high * 100:.1f}%"
     for idx, sym in enumerate(symbols):
-        if sym not in signal.icl_by_symbol:
+        if sym not in ("NQ", "GC"):
             continue
-        m = get_raw_metrics(mapping, sym)
+        m = get_raw_metrics(signal, sym)
         p_lv = m.get("P", 0)
         v_lv = m.get("V", 0)
         c_lv = m.get("C", 0)
         r_lv = m.get("R", 0)
+        icl_level = signal.nq_icl if sym == "NQ" else signal.gc_icl
         section_id = _icl_ids[idx] if idx < len(_icl_ids) else str(idx + 1)
         ps = bundle.price_signals.get(sym)
         vs = bundle.volatility_signals.get(sym)
@@ -131,14 +132,14 @@ async def build_daily_flight_log_context(
         sym_vol = f"{vs.index_value:.1f}" if vs else "—"
         rec = get_recovery_metrics(mapping, sym, bundle)
         if sym == "NQ":
-            icl_level = max(p_lv, v_lv, c_lv)
+            icl_level = max(int(icl_level), int(p_lv), int(v_lv), int(c_lv))
             rows = [
                 {"factor": "P", "lv": LEVEL_STR.get(p_lv, "?"), "value": f"{price_str} / {p_trend}", "recovery": rec.get("P", "")},
                 {"factor": "V", "lv": LEVEL_STR.get(v_lv, "?"), "value": sym_vol, "recovery": rec.get("V", "")},
                 {"factor": "C", "lv": LEVEL_STR.get(c_lv, "?"), "value": c_val, "recovery": rec.get("C", "")},
             ]
         else:
-            icl_level = max(p_lv, v_lv, r_lv)
+            icl_level = max(int(icl_level), int(p_lv), int(v_lv), int(r_lv))
             rows = [
                 {"factor": "P", "lv": LEVEL_STR.get(p_lv, "?"), "value": f"{price_str} / {p_trend}", "recovery": rec.get("P", "")},
                 {"factor": "V", "lv": LEVEL_STR.get(v_lv, "?"), "value": sym_vol, "recovery": rec.get("V", "")},
@@ -149,7 +150,7 @@ async def build_daily_flight_log_context(
     scl_level = LEVEL_STR.get(signal.scl, "?")
     scl_rows = [{"factor": "T", "lv": LEVEL_STR.get(signal.scl, "?"), "value": scl_value, "recovery": first_sig_recovery.get("T", "")}]
 
-    lcl_level = LEVEL_STR.get(max(u_lv, s_lv), "?")
+    lcl_level = LEVEL_STR.get(max(int(u_lv), int(s_lv)), "?")
     lcl_rows = [
         {"factor": "U", "lv": LEVEL_STR.get(u_lv, "?"), "value": f"{u_pct}% (C1:40% C2:50%)", "recovery": first_sig_recovery.get("U", "")},
         {"factor": "S", "lv": LEVEL_STR.get(s_lv, "?"), "value": f"{s_val} (S1:1.1 S2:1.3)", "recovery": first_sig_recovery.get("S", "")},
