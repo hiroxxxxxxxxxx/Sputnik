@@ -11,7 +11,7 @@ from datetime import date
 from typing import Dict, List, Optional, Union
 
 from ...data.raw import RawDataProvider
-from ...data.raw_market_snapshot import RawMarketSnapshot, cached_raw_data_provider_from_snapshot
+from ...data.raw_market_snapshot import RawMarketSnapshot
 from ...data.signals import (
     AltitudeRegime,
     CapitalSignals,
@@ -26,6 +26,7 @@ from .compute import (
     compute_liquidity_signals_tip,
     compute_price_signals,
     compute_volatility_signal,
+    snapshot_to_raw_reader,
 )
 
 
@@ -59,7 +60,7 @@ def build_signal_bundle(
     }
 
     provider: RawDataProvider = (
-        cached_raw_data_provider_from_snapshot(raw_provider)
+        snapshot_to_raw_reader(raw_provider)
         if isinstance(raw_provider, RawMarketSnapshot)
         else raw_provider
     )

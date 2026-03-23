@@ -9,7 +9,8 @@ from __future__ import annotations
 from datetime import date
 from typing import List, Optional, Tuple
 
-from ...data.raw import PriceBar, RawDataProvider
+from ...data.raw import PriceBar, PriceBar1h, RawDataProvider, RawCapitalSnapshot, VolatilitySeriesPoint
+from ...data.raw_market_snapshot import RawMarketSnapshot
 from ...data.signals import (
     AltitudeRegime,
     CapitalSignals,
@@ -24,6 +25,72 @@ from ...data.signals import (
 
 RECOVERY_LOOKBACK_DAYS = 10
 MIN_BARS_FOR_RECOVERY = 20 + RECOVERY_LOOKBACK_DAYS
+
+
+class _SnapshotRawReader:
+    """
+    RawMarketSnapshot を RawDataProvider 互換の窓口として扱う（Phase1）。
+
+    CachedRawDataProvider への依存を避けるための薄い実装。
+    将来 Phase3 で compute_* を snapshot 直参照に寄せたら削除する。
+    """
+
+    def __init__(self, snapshot: RawMarketSnapshot) -> None:
+        self._s = snapshot
+
+    def get_price_series(self, symbol: str, limit: int) -> List[PriceBar]:
+        if symbol == "NQ":
+            bars = list(self._s.nq_price_bars)
+        elif symbol == "GC":
+            bars = list(self._s.gc_price_bars)
+        else:
+            bars = []
+        bars = sorted(bars, key=lambda b: b.date)
+        return bars[-limit:] if limit else bars
+
+    def get_price_series_1h(self, symbol: str, limit: int) -> List[PriceBar1h]:
+        if symbol == "NQ":
+            bars = list(self._s.nq_price_bars_1h)
+        elif symbol == "GC":
+            bars = list(self._s.gc_price_bars_1h)
+        else:
+            bars = []
+        bars = sorted(bars, key=lambda b: b.bar_end)
+        return bars[-limit:] if limit else bars
+
+    def get_volatility_index(self, symbol: str, as_of: date) -> Optional[float]:
+        series = self.get_volatility_series(symbol, limit=0)
+        candidates = [(d, v) for d, v in series if d <= as_of]
+        return max(candidates, key=lambda x: x[0])[1] if candidates else None
+
+    def get_volatility_series(self, symbol: str, limit: int) -> List[VolatilitySeriesPoint]:
+        if symbol == "NQ":
+            series = list(self._s.nq_volatility_series)
+        elif symbol == "GC":
+            series = list(self._s.gc_volatility_series)
+        else:
+            series = []
+        series = sorted(series, key=lambda x: x[0])
+        return series[-limit:] if limit else series
+
+    def get_capital_snapshot(self, as_of: date) -> Optional[RawCapitalSnapshot]:
+        # RawMarketSnapshot は取得時点のスナップショットを保持（as_of は互換のため無視）
+        return self._s.capital_snapshot
+
+    def get_credit_series(self, symbol: str, limit: int) -> List[PriceBar]:
+        bars = list(self._s.credit_bars.get(symbol, []))
+        bars = sorted(bars, key=lambda b: b.date)
+        return bars[-limit:] if limit else bars
+
+    def get_tip_series(self, limit: int) -> List[PriceBar]:
+        bars = list(self._s.tip_bars)
+        bars = sorted(bars, key=lambda b: b.date)
+        return bars[-limit:] if limit else bars
+
+
+def snapshot_to_raw_reader(snapshot: RawMarketSnapshot) -> RawDataProvider:
+    """RawMarketSnapshot を既存 compute_* が期待する RawDataProvider 互換に変換する（Phase1）。"""
+    return _SnapshotRawReader(snapshot)
 
 
 def _sorted_bars(provider: RawDataProvider, symbol: str, limit: int) -> list[PriceBar]:
