@@ -7,6 +7,7 @@ Protocol は Engine に apply_mode("Emergency") を依頼するだけ。step 概
 from __future__ import annotations
 
 import asyncio
+from datetime import date
 
 import pytest
 
@@ -78,11 +79,18 @@ def test_fc_pulse_entering_emergency_runs_protocol(engine_with_fc: tuple[Cockpit
 
     fc, engine = engine_with_fc
     sym = engine.symbol_type
+
+    class _DummyDataSource:
+        async def fetch_raw(self, *args: object, **kwargs: object) -> object:
+            raise AssertionError("Mock FC.refresh は fetch を呼ばない")
+
     class MockEmergencyEvaluator:
-        async def update_all(self, signal_bundle=None) -> None:
-            pass
+        async def refresh(self, data_source: object, as_of: date, symbols: list[str]) -> None:
+            _ = (data_source, as_of, symbols)
+
         async def get_flight_controller_signal(self, bundle=None):
-            return FlightControllerSignal(icl_by_symbol={sym: 0}, scl=0, lcl=2)
+            return FlightControllerSignal(scl=0, lcl=2, nq_icl=0, gc_icl=0)
+
     fc.fc = MockEmergencyEvaluator()  # type: ignore[assignment]
-    asyncio.run(fc.pulse())
+    asyncio.run(fc.pulse(_DummyDataSource(), date(2025, 1, 1), [sym]))
     assert fc.current_mode == "Emergency"

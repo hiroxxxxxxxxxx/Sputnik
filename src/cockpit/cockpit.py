@@ -9,9 +9,11 @@ Manual モード時は FlightControllerSignal を受信すると Telegram 承認
 from __future__ import annotations
 
 import asyncio
+from datetime import date
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, List, Literal, Optional
 
 from avionics.data.fc_signals import FlightControllerSignal
+from avionics.data.source import DataSource
 from avionics.flight_controller import FlightController
 from reports.format_fc_signal import build_summary_reason
 from protocols.emergency_protocol import EmergencyProtocol
@@ -155,11 +157,13 @@ class Cockpit:
         for engine in self.engines:
             await engine.apply_mode(self._current_mode)
 
-    async def pulse(self) -> None:
+    async def pulse(self, data_source: DataSource, as_of: date, symbols: List[str]) -> None:
         """
-        管制サイクル。FlightController の三層方式で銘柄ごとにスロットルモード取得 → 遷移 → 全エンジンへ指令。
+        管制サイクル。DataSource から FC.refresh（Raw 取得 → bundle → 因子更新）を行い、
+        三層方式で銘柄ごとにスロットルモード取得 → 遷移 → 全エンジンへ指令。
         判定は行わず、get_flight_controller_signal の throttle_level からスロットルモードを導き遷移・配布する。定義書「0-4」「4-2」「0-1-Ⅲ」参照。
         """
+        await self.fc.refresh(data_source, as_of, symbols)
         await self._pulse_subscription()
 
     def _level_to_mode(self, level: int) -> ModeType:
@@ -171,8 +175,7 @@ class Cockpit:
         return BOOST
 
     async def _pulse_subscription(self) -> None:
-        """サブスクリプション: get_flight_controller_signal で全銘柄の計器結論を取得し、銘柄ごとにモードに変換して遷移・配布。定義書 4-2。"""
-        await self.fc.update_all()
+        """pulse で refresh 済みの FC から get_flight_controller_signal で計器結論を取得し、銘柄ごとにモードに変換して遷移・配布。定義書 4-2。"""
         signal = await self.fc.get_flight_controller_signal()
         worst_mode: ModeType = BOOST  # 最小 severity から開始し、全エンジンで最悪のモードを集約
         any_emergency = False

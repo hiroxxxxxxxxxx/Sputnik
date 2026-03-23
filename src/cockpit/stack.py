@@ -2,7 +2,8 @@
 Cockpit と Engine を同一の symbols で組み立てる単一ポイント。
 
 FC と Engine の symbol リストの一致を保証する。run_cockpit_with_ib や
-Cockpit を pulse で動かすエントリでは build_cockpit_stack を呼ぶ。
+Cockpit を pulse で動かすエントリでは build_cockpit_stack を呼び、
+pulse には DataSource・as_of・symbols を渡して fc.refresh を実行する。
 定義書「4. 修正 Phase」Phase 5 参照。
 """
 
