@@ -1,5 +1,5 @@
 """
-Layer 2 Process: RawDataProvider と as_of から各シグナル（PriceSignals, VolatilitySignal 等）を算出する。
+Layer 2 Process: RawDataProvider / RawMarketSnapshot と as_of から各シグナル（PriceSignals, VolatilitySignal 等）を算出する。
 
 型は avionics.data にあり、ここでは計算のみ行う。定義書「4-2 情報の階層構造」参照。
 """
@@ -91,6 +91,59 @@ class _SnapshotRawReader:
 def snapshot_to_raw_reader(snapshot: RawMarketSnapshot) -> RawDataProvider:
     """RawMarketSnapshot を既存 compute_* が期待する RawDataProvider 互換に変換する（Phase1）。"""
     return _SnapshotRawReader(snapshot)
+
+
+def compute_price_signals_from_snapshot(
+    snapshot: RawMarketSnapshot,
+    symbol: str,
+    as_of: date,
+) -> PriceSignals:
+    """RawMarketSnapshot から PriceSignals を算出する（Phase2: 明示エントリ）。"""
+    return compute_price_signals(snapshot_to_raw_reader(snapshot), symbol, as_of)
+
+
+def compute_volatility_signal_from_snapshot(
+    snapshot: RawMarketSnapshot,
+    symbol: str,
+    as_of: date,
+    altitude: AltitudeRegime,
+    *,
+    v1_off_threshold: Optional[float] = None,
+    v2_off_threshold: Optional[float] = None,
+) -> VolatilitySignal:
+    """RawMarketSnapshot から VolatilitySignal を算出する（Phase2: 明示エントリ）。"""
+    return compute_volatility_signal(
+        snapshot_to_raw_reader(snapshot),
+        symbol,
+        as_of,
+        altitude,
+        v1_off_threshold=v1_off_threshold,
+        v2_off_threshold=v2_off_threshold,
+    )
+
+
+def compute_capital_signals_from_snapshot(snapshot: RawMarketSnapshot, as_of: date) -> CapitalSignals:
+    """RawMarketSnapshot から CapitalSignals を算出する（Phase2: 明示エントリ）。"""
+    return compute_capital_signals(snapshot_to_raw_reader(snapshot), as_of)
+
+
+def compute_liquidity_signals_credit_from_snapshot(
+    snapshot: RawMarketSnapshot,
+    symbol: str,
+    as_of: date,
+    altitude: AltitudeRegime,
+) -> LiquiditySignals:
+    """RawMarketSnapshot から credit 用 LiquiditySignals を算出する（Phase2: 明示エントリ）。"""
+    return compute_liquidity_signals_credit(snapshot_to_raw_reader(snapshot), symbol, as_of, altitude)
+
+
+def compute_liquidity_signals_tip_from_snapshot(
+    snapshot: RawMarketSnapshot,
+    as_of: date,
+    altitude: AltitudeRegime,
+) -> LiquiditySignals:
+    """RawMarketSnapshot から tip 用 LiquiditySignals を算出する（Phase2: 明示エントリ）。"""
+    return compute_liquidity_signals_tip(snapshot_to_raw_reader(snapshot), as_of, altitude)
 
 
 def _sorted_bars(provider: RawDataProvider, symbol: str, limit: int) -> list[PriceBar]:
