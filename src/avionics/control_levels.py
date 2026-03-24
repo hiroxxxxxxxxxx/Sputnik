@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, List
 
 if TYPE_CHECKING:
-    from .data.fc_signals import EngineFactorMapping
+    from .data.factor_mapping import EngineFactorMapping
 
 
 def compute_icl(mapping: "EngineFactorMapping", symbol: str) -> int:

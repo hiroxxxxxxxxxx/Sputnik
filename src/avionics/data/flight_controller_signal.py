@@ -1,32 +1,14 @@
 """
-Data: FlightController が入出力に使う型（Layer 3 の計器結論）。
+Data: FlightController が出力する型（Layer 3 の計器結論）。
 
-EngineFactorMapping / FlightControllerSignal。
+FlightControllerSignal。
 定義書「3.フライトコントローラー」「4-2」「Phase 5 Signal」参照。
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Literal
-
-
-@dataclass
-class EngineFactorMapping:
-    """
-    エンジン(Symbol) ↔ Factor のマッピング。ICL/SCL/LCL の入力となる。
-    Assembly が組み立て、FlightController と三層算出は受け取って参照するだけ。
-    定義書「4-2」因子の割り当て参照。
-    """
-
-    symbol_factors: Dict[str, List[Any]]
-    """銘柄別因子。{"NQ": [P,V,T,C], "GC": [P,V,T,R]} 等。ICL 用 P,V,C/R と SCL 用 T を含む。"""
-
-    limit_factors: List[Any]
-    """制限制御層(LCL)用因子。U, S。全エンジン共通。"""
-
-    global_market_factors: List[Any] = field(default_factory=list)
-    """全エンジン共通の個別制御用因子（未使用時は空で可）。"""
+from dataclasses import dataclass
+from typing import Dict, Literal
 
 
 SymbolType = Literal["NQ", "GC"]
@@ -96,3 +78,45 @@ class FlightControllerSignal:
     def any_critical(self) -> bool:
         """LCL>=2 のとき True。承認スキップ判定用。"""
         return self.lcl >= 2
+
+    def get_factor_levels(self, symbol: str) -> Dict[str, int]:
+        """
+        指定銘柄の P, V, C, R, T, U, S 現在レベルを辞書で返す。
+        定義書「Phase 5 raw_metrics」参照。
+        """
+        base: Dict[str, int] = {"P": 0, "V": 0, "C": 0, "R": 0, "T": int(self.t), "U": int(self.u), "S": int(self.s)}
+        if symbol == "NQ":
+            base["P"] = int(self.nq_p)
+            base["V"] = int(self.nq_v)
+            base["C"] = int(self.nq_c)
+            base["R"] = int(self.nq_r)
+        elif symbol == "GC":
+            base["P"] = int(self.gc_p)
+            base["V"] = int(self.gc_v)
+            base["C"] = int(self.gc_c)
+            base["R"] = int(self.gc_r)
+        return base
+
+    def reason(self, symbol: str) -> str:
+        """
+        指定銘柄の三層レベルから判定理由文字列を組み立てる。通知用。
+        定義書「Phase 5 通知」参照。
+        """
+        icl = self.nq_icl if symbol == "NQ" else (self.gc_icl if symbol == "GC" else 0)
+        parts: list[str] = []
+        if self.lcl > 0:
+            parts.append(f"制限層(LCL)={self.lcl}")
+        if self.scl > 0:
+            parts.append(f"同期層(SCL)={self.scl}")
+        if icl > 0:
+            parts.append(f"個別層(ICL)={icl}")
+        return " / ".join(parts) if parts else "全層0"
+
+    @property
+    def summary_reason(self) -> str:
+        """銘柄ごとの reason を連結した文字列。承認待ちメッセージ用。"""
+        parts = [
+            f"NQ: {self.reason('NQ')}",
+            f"GC: {self.reason('GC')}",
+        ]
+        return "; ".join(parts)

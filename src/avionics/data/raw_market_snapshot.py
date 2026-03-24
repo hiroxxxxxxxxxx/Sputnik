@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Dict, List, Optional
 
-from .raw import PriceBar, PriceBar1h, RawCapitalSnapshot, VolatilitySeriesPoint
+from .raw_types import PriceBar, PriceBar1h, RawCapitalSnapshot, VolatilitySeriesPoint
 
 
 @dataclass(frozen=True)

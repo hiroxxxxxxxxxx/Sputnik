@@ -75,7 +75,7 @@ def test_cockpit_level_to_mode() -> None:
 
 def test_fc_pulse_entering_emergency_runs_protocol(engine_with_fc: tuple[Cockpit, Engine]) -> None:
     """Cockpit.pulse で Emergency に遷移すると、コールバック未設定時は EmergencyProtocol が実行される。"""
-    from avionics.data.fc_signals import FlightControllerSignal
+    from avionics.data.flight_controller_signal import FlightControllerSignal
 
     fc, engine = engine_with_fc
     sym = engine.symbol_type

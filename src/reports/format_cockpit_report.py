@@ -8,17 +8,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from reports.format_fc_signal import build_reason, get_raw_metrics
+from cockpit.mode import MODE_STR
 from reports._render import render
 
 if TYPE_CHECKING:
     from avionics import FlightController
-
-MODE_STR = {0: "Boost", 1: "Cruise", 2: "Emergency"}
 COCKPIT_TEMPLATE = "cockpit_report.txt"
 
 
-async def build_fc_report_context(
+async def _build_fc_report_context(
     fc: "FlightController",
     symbols: list[str],
     now_utc: str,
@@ -32,15 +30,13 @@ async def build_fc_report_context(
     for sym in symbols:
         if sym not in ("NQ", "GC"):
             continue
-        m = get_raw_metrics(signal, sym)
-        icl = signal.nq_icl if sym == "NQ" else signal.gc_icl
-        reason = build_reason(icl, signal.scl, signal.lcl)
+        m = signal.get_factor_levels(sym)
         throttle = signal.throttle_level(sym)
         symbol_blocks.append({
             "symbol": sym,
             "mode": MODE_STR.get(throttle, "?"),
             "throttle_level": throttle,
-            "reason": reason,
+            "reason": signal.reason(sym),
             "is_critical": signal.any_critical,
             "p": m.get("P", 0),
             "v": m.get("V", 0),
@@ -69,5 +65,5 @@ async def format_cockpit_report(
     :param template_name: テンプレートファイル名。
     :return: レポート文字列。
     """
-    context = await build_fc_report_context(fc, symbols, now_utc)
+    context = await _build_fc_report_context(fc, symbols, now_utc)
     return render(template_name, context)

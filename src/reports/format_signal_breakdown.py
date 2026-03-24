@@ -1,5 +1,5 @@
 """
-Layer 2 シグナルの整形表示。定義は avionics.data.signals / avionics.process.layer2.compute にあり、ここでは format のみ。
+Layer 2 シグナルの整形表示。定義は avionics.data.signals / avionics.compute にあり、ここでは format のみ。
 定義書「4-2 情報の階層構造」参照。
 """
 
@@ -8,7 +8,7 @@ from __future__ import annotations
 from avionics.data.signals import SignalBundle
 
 
-def format_signal_bundle_breakdown(bundle: SignalBundle) -> str:
+def format_signal_breakdown(bundle: SignalBundle) -> str:
     """
     Layer 2 シグナル（各因子の入力）を人が読める文字列で返す。
     因子の計算内訳確認用。

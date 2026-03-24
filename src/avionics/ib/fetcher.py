@@ -11,7 +11,7 @@ import asyncio
 from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-from ..data.raw import (
+from ..data.raw_types import (
     PriceBar,
     PriceBar1h,
     RawCapitalSnapshot,

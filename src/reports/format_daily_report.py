@@ -11,22 +11,20 @@ from __future__ import annotations
 from datetime import date
 from typing import TYPE_CHECKING, Any, Optional
 
-from reports.format_fc_signal import get_raw_metrics, get_recovery_metrics
+from cockpit.mode import MODE_STR
 from reports._render import render
 
 if TYPE_CHECKING:
     from avionics import FlightController
-    from avionics.data.raw import RawCapitalSnapshot
+    from avionics.data.raw_types import RawCapitalSnapshot
     from avionics.data.signals import SignalBundle
-
-MODE_STR = {0: "Boost", 1: "Cruise", 2: "Emergency"}
 # Level は数値のみ（ICL/SCL/LCL の層で区別するため M/C 接頭辞は廃止）
 LEVEL_STR = {0: "0", 1: "1", 2: "2"}
 
 _DEFAULT_TEMPLATE = "daily_flight_log.txt"
 
 
-def render_daily_flight_log(context: dict[str, Any], template_name: str = _DEFAULT_TEMPLATE) -> str:
+def _render_daily_flight_log(context: dict[str, Any], template_name: str = _DEFAULT_TEMPLATE) -> str:
     """
     事前に組み立てたコンテキストで Daily Flight Log テンプレートをレンダリングする。
 
@@ -37,7 +35,7 @@ def render_daily_flight_log(context: dict[str, Any], template_name: str = _DEFAU
     return render(template_name, context)
 
 
-async def build_daily_flight_log_context(
+async def _build_daily_flight_log_context(
     fc: "FlightController",
     symbols: list[str],
     as_of: Optional[date] = None,
@@ -49,11 +47,11 @@ async def build_daily_flight_log_context(
     :param fc: refresh 済みの FlightController。
     :param symbols: 銘柄リスト（例: ["NQ", "GC"]）。
     :param as_of: 基準日。未指定なら date.today()。
-    :return: render_daily_flight_log に渡す context 辞書。
+    :return: _render_daily_flight_log に渡す context 辞書。
     """
     bundle = fc.get_last_bundle()
     if bundle is None:
-        raise ValueError("build_daily_flight_log_context requires fc.refresh() to have been called first")
+        raise ValueError("_build_daily_flight_log_context requires fc.refresh() to have been called first")
     capital_snapshot = fc.get_last_capital_snapshot()
     d = as_of or date.today()
 
@@ -70,7 +68,7 @@ async def build_daily_flight_log_context(
     vol_str = "—"
     for sym in symbols:
         if sym in ("NQ", "GC"):
-            m = get_raw_metrics(signal, sym)
+            m = signal.get_factor_levels(sym)
             p_lv = max(p_lv, m.get("P", 0))
             v_lv = max(v_lv, m.get("V", 0))
             t_lv = max(t_lv, m.get("T", 0))
@@ -92,10 +90,10 @@ async def build_daily_flight_log_context(
     u_lv = s_lv = 0
     first_sig_recovery: dict[str, str] = {}
     if symbols and symbols[0] in ("NQ", "GC"):
-        m0 = get_raw_metrics(signal, symbols[0])
+        m0 = signal.get_factor_levels(symbols[0])
         u_lv = int(m0.get("U", 0))
         s_lv = int(m0.get("S", 0))
-        first_sig_recovery = get_recovery_metrics(mapping, symbols[0], bundle)
+        first_sig_recovery = mapping.get_recovery_progress(symbols[0], bundle)
     u_pct = f"{cap.mm_over_nlv * 100:.1f}" if cap else "0.0"
     s_val = f"{cap.span_ratio:.2f}" if cap else "1.00"
 
@@ -118,7 +116,7 @@ async def build_daily_flight_log_context(
     for idx, sym in enumerate(symbols):
         if sym not in ("NQ", "GC"):
             continue
-        m = get_raw_metrics(signal, sym)
+        m = signal.get_factor_levels(sym)
         p_lv = m.get("P", 0)
         v_lv = m.get("V", 0)
         c_lv = m.get("C", 0)
@@ -130,7 +128,7 @@ async def build_daily_flight_log_context(
         price_str = f"{ps.last_close:,.2f}" if ps else "—"
         p_trend = ps.trend if ps else "—"
         sym_vol = f"{vs.index_value:.1f}" if vs else "—"
-        rec = get_recovery_metrics(mapping, sym, bundle)
+        rec = mapping.get_recovery_progress(sym, bundle)
         if sym == "NQ":
             icl_level = max(int(icl_level), int(p_lv), int(v_lv), int(c_lv))
             rows = [
@@ -190,5 +188,5 @@ async def format_daily_flight_log(
     :param template_name: 使用するテンプレートファイル名。
     :return: Telegram 送信用のテキスト。
     """
-    context = await build_daily_flight_log_context(fc, symbols, as_of=as_of)
-    return render_daily_flight_log(context, template_name=template_name)
+    context = await _build_daily_flight_log_context(fc, symbols, as_of=as_of)
+    return _render_daily_flight_log(context, template_name=template_name)

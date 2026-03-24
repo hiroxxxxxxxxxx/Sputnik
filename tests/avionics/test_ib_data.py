@@ -12,10 +12,10 @@ from typing import Dict, List, Optional, Tuple
 
 import pytest
 
-from avionics.data.fc_signals import EngineFactorMapping
-from avionics.data.raw import PriceBar, RawCapitalSnapshot
+from avionics.data.factor_mapping import EngineFactorMapping
+from avionics.data.raw_types import PriceBar, RawCapitalSnapshot
 from avionics.data.raw_market_snapshot import RawMarketSnapshot
-from avionics.data.source import BundleBuildOptions
+from avionics.bundle_builder import BundleBuildOptions
 from avionics.flight_controller import FlightController
 from avionics.ib.fetcher import _bar_to_price_bar
 

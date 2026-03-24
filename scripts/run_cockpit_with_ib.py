@@ -79,21 +79,19 @@ async def main() -> int:
             bundle = fc.get_last_bundle()
 
             if args.breakdown and bundle:
-                from avionics.Instruments.signals import format_signal_bundle_breakdown
-                print(format_signal_bundle_breakdown(bundle))
+                from reports.format_signal_breakdown import format_signal_breakdown
+                print(format_signal_breakdown(bundle))
                 print("---")
 
             print("--- FlightController 計器シグナル ---")
-            from reports.format_fc_signal import build_reason, get_raw_metrics
             signal = await fc.get_flight_controller_signal()
             for sym in args.symbols:
                 if sym not in signal.icl_by_symbol:
                     continue
                 throttle = signal.throttle_level(sym)
-                icl = signal.icl_by_symbol[sym]
                 mode_str = {0: "Boost", 1: "Cruise", 2: "Emergency"}.get(throttle, "?")
-                reason = build_reason(icl, signal.scl, signal.lcl)
-                raw_metrics = get_raw_metrics(fc.mapping, sym)
+                reason = signal.reason(sym)
+                raw_metrics = signal.get_factor_levels(sym)
                 print(f"  {sym}: throttle={throttle} ({mode_str})")
                 print(f"        reason={reason}")
                 print(f"        is_critical={signal.any_critical}, raw_metrics={raw_metrics}")

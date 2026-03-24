@@ -7,7 +7,7 @@ Engine は NQ/GC 単一銘柄で MainPart / AttitudePart / BoosterPart の3層�
 """
 
 from .blueprint import LayerBlueprint
-from .blueprint import LayerType, ModeType, contract_size, contract_symbol
+from .blueprint import LayerType, contract_size, contract_symbol
 from .engine import Engine
 from .factory import build_engine_pair, build_gc_engine, build_nq_engine
 from .inventory import EngineInventory
@@ -20,7 +20,6 @@ __all__ = [
     "EngineInventory",
     "LayerBlueprint",
     "LayerType",
-    "ModeType",
     "contract_size",
     "contract_symbol",
     "build_engine_pair",

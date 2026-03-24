@@ -1,7 +1,7 @@
 """
 Data: Layer 2 の型定義のみ（PriceSignals, SignalBundle 等）。
 
-計算ロジックは process.layer2.compute にあり、ここには型だけを置く。
+計算ロジックは avionics.compute にあり、ここには型だけを置く。
 定義書「4-2 情報の階層構造」「4-2-2 SCL トレンド定義」参照。
 """
 

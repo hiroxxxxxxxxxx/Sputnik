@@ -38,7 +38,7 @@
 
 ### 4.1 reports に「取得オーケストレーション」を追加
 
-- **新規** `reports/fetch_cockpit_reports.py`（または既存の `format_cockpit_report.py` の隣に `cockpit_fetcher.py` など）を置く。
+- **新規** `reports/fetch_reports.py`（または既存の `format_cockpit_report.py` の隣に `cockpit_fetcher.py` など）を置く。
 - 次の 3 関数を **reports の公開 API** として定義する（中身は現在の `scripts/telegram_cockpit_bot.py` の `fetch_cockpit_report` / `fetch_breakdown_report` / `fetch_daily_report` を移動したもの）。
   - `async def fetch_cockpit_report(host: str, port: int, symbols: list[str], *, client_id: int = 3, timeout: float = 75) -> str`
   - `async def fetch_breakdown_report(host: str, port: int, symbols: list[str], ...) -> str`
@@ -55,7 +55,7 @@
 ### 4.2 scripts/telegram_cockpit_bot.py のスリム化
 
 - `fetch_cockpit_report`, `fetch_breakdown_report`, `fetch_daily_report` の **定義を削除**し、代わりに **reports から import** する。
-  - 例: `from reports.fetch_cockpit_reports import fetch_cockpit_report, fetch_breakdown_report, fetch_daily_report`
+  - 例: `from reports.fetch_reports import fetch_cockpit_report, fetch_breakdown_report, fetch_daily_report`
 - コマンドハンドラでは、env から `host`, `port`, `symbols` を組み立て、上記 `fetch_`* を **引数 (host, port, symbols) で 1 回呼ぶ**だけにする。
 - IB 接続・build_cockpit_stack・load_factors_config・format_* への参照は Script からは **一切削除**する。
 

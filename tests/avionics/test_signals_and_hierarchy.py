@@ -18,7 +18,7 @@ from avionics.factors import (
     get_v_thresholds,
     load_factors_config,
 )
-from avionics.data.raw import PriceBar, RawCapitalSnapshot
+from avionics.data.raw_types import PriceBar, RawCapitalSnapshot
 from avionics.data.raw_market_snapshot import RawMarketSnapshot
 from avionics.data.signals import (
     CapitalSignals,
@@ -26,7 +26,7 @@ from avionics.data.signals import (
     SignalBundle,
     VolatilitySignal,
 )
-from reports.format_signal_breakdown import format_signal_bundle_breakdown
+from reports.format_signal_breakdown import format_signal_breakdown
 from avionics.compute import (
     _settlement_bar_indices_from_date,
     compute_capital_signals_from_cap,
@@ -43,15 +43,11 @@ def _run(coro):
     return asyncio.run(coro)
 
 
-def test_compute_price_signals_insufficient_bars_returns_safe_defaults() -> None:
-    """価格系列が不足しているときは安全なデフォルトの PriceSignals を返す。"""
+def test_compute_price_signals_insufficient_bars_raises() -> None:
+    """価格系列が不足しているときは ValueError を送出する。"""
     snapshot = RawMarketSnapshot(as_of=date(2025, 3, 1))
-    out = compute_price_signals_from_snapshot(snapshot, "NQ", date(2025, 3, 1))
-    assert out.symbol == "NQ"
-    assert out.trend == "up"
-    assert out.daily_change == 0.0
-    assert out.cum5_change == 0.0
-    assert out.downside_gap == -0.01
+    with pytest.raises(ValueError, match="requires >= 2 bars"):
+        compute_price_signals_from_snapshot(snapshot, "NQ", date(2025, 3, 1))
 
 
 def test_compute_price_signals_from_series() -> None:
@@ -125,11 +121,10 @@ def test_compute_capital_signals() -> None:
     assert out.span_ratio == pytest.approx(0.2)
 
 
-def test_compute_capital_signals_none_returns_defaults() -> None:
-    """スナップショットが None のときは安全なデフォルトを返す。"""
-    out = compute_capital_signals_from_cap(None)
-    assert out.mm_over_nlv == 0.0
-    assert out.span_ratio == 1.0
+def test_compute_capital_signals_none_raises() -> None:
+    """スナップショットが None のときは ValueError を送出する。"""
+    with pytest.raises(ValueError, match="RawCapitalSnapshot is required"):
+        compute_capital_signals_from_cap(None)
 
 
 def test_signal_bundle_apply_all_distributes_to_factors() -> None:

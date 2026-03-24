@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 BREAKDOWN_TEMPLATE = "breakdown_report.txt"
 
 
-def build_breakdown_report_context(bundle: "SignalBundle") -> dict[str, Any]:
+def _build_breakdown_report_context(bundle: "SignalBundle") -> dict[str, Any]:
     """
     Layer 2 シグナル内訳用のテンプレートコンテキストを組み立てる。
     フォーマット後の値のみ渡し、表示文言はテンプレート側で組み立てる。
@@ -100,5 +100,5 @@ def format_breakdown_report(
     bundle = fc.get_last_bundle()
     if bundle is None:
         raise ValueError("format_breakdown_report requires fc.refresh() to have been called first")
-    context = build_breakdown_report_context(bundle)
+    context = _build_breakdown_report_context(bundle)
     return render(template_name, context)

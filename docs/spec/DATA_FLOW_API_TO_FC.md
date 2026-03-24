@@ -12,10 +12,10 @@ ib_async 依存は **avionics.ib** パッケージに集約されている（rep
 | **IB 接続** | あり（エントリ側でトリガー） | なし | — | `avionics.ib.session`: `with_ib_fetcher`（**IBRawFetcher** を yield）/ `with_ib_connection` / `check_ib_connection`。呼び元は `reports/fetch_*` または `scripts/run_cockpit_with_ib.py` / `telegram_cockpit_bot.py`。 |
 | **FC.refresh(data_source, as_of, symbols)** | 内部で data_source.fetch_raw（API 呼び出し） | 内部で build_signal_bundle → update_all | L1+L2+L3 入力 | `flight_controller.py`。DataSource（例: IBRawFetcher）から Raw 取得 → `build_signal_bundle`（`BundleBuildOptions` は FC 構築時注入）→ `_update_all_from_signals`。最後の bundle は `get_last_bundle()` で参照。 |
 | **fetch_raw** | あり（reqHistoricalDataAsync 等） | なし（Raw を詰めるだけ） | Layer 1 | `avionics/ib/fetcher.py` の **IBRawFetcher.fetch_raw()**。FC.refresh 内で呼ばれる。 |
-| **build_signal_bundle** | なし | あり（compute_* で Layer 2 算出） | Layer 2 | `process/layer2/bundle_builder.py`。FC.refresh 内から呼ばれる。 |
-| **get_flight_controller_signal()** | なし | あり（因子 level → ICL/SCL/LCL） | Layer 3 出力 | `flight_controller.py` の `get_flight_controller_signal()`（引数なし）。`control_levels.compute_icl/scl/lcl`。戻り値は `FlightControllerSignal`（`data/fc_signals.py`）。 |
+| **build_signal_bundle** | なし | あり（compute_* で Layer 2 算出） | Layer 2 | `avionics/bundle_builder.py`。FC.refresh 内から呼ばれる。 |
+| **get_flight_controller_signal()** | なし | あり（因子 level → ICL/SCL/LCL） | Layer 3 出力 | `flight_controller.py` の `get_flight_controller_signal()`（引数なし）。`control_levels.compute_icl/scl/lcl`。戻り値は `FlightControllerSignal`（`data/flight_controller_signal.py`）。 |
 
-**FlightController.update_all が呼ばれるとき、API は一切呼ばれない。** 渡された SignalBundle を因子に配布し、各因子が自分の level を更新するだけ。
+**FlightController.apply_all が呼ばれるとき、API は一切呼ばれない。** 渡された SignalBundle を因子に配布し、各因子が自分の level を更新するだけ。
 
 ---
 
@@ -25,7 +25,7 @@ IB 接続（`ib.connectAsync(...)`）は **avionics.ib.session** 内で行われ
 
 | トリガー | 場所 | やること |
 |----------|------|----------|
-| **レポート取得（Telegram /cockpit 等）** | `reports/fetch_cockpit_reports.py` の `fetch_cockpit_report` / `fetch_breakdown_report` / `fetch_daily_report` | `with_ib_fetcher` で **IBRawFetcher** を取得 → `build_cockpit_stack(symbols)` で FC 取得 → `fc.refresh(fetcher, as_of, symbols)` → `format_*(fc, ...)`（bundle は formatter 内で fc.get_last_bundle() を使用）。 |
+| **レポート取得（Telegram /cockpit 等）** | `reports/fetch_reports.py` の `fetch_cockpit_report` / `fetch_breakdown_report` / `fetch_daily_report` | `with_ib_fetcher` で **IBRawFetcher** を取得 → `build_cockpit_stack(symbols)` で FC 取得 → `fc.refresh(fetcher, as_of, symbols)` → `format_*(fc, ...)`（bundle は formatter 内で fc.get_last_bundle() を使用）。 |
 | **CLI サンプル** | `scripts/run_cockpit_with_ib.py` | 同上。`with_ib_fetcher` → `fc.refresh(fetcher, as_of, symbols)` → `fc.get_flight_controller_signal()` / `fc.get_last_bundle()`。 |
 | **取引時間スキャン（/schedule）** | `scripts/telegram_cockpit_bot.py` の `fetch_schedule_alerts` | `avionics.ib.with_ib_connection` で接続 → `avionics.ib.run_daily_schedule_scan(ib, symbols)`。 |
 | **Gateway 起動完了通知** | `scripts/telegram_cockpit_bot.py` の `_notify_gateway_ready`（post_init で起動） | `avionics.ib.check_ib_connection(host, port, ...)` で接続試行のみ。成功時「起動完了」、失敗時「接続できませんでした」を Telegram 送信。 |

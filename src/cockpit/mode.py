@@ -17,3 +17,5 @@ EMERGENCY = "Emergency"
 MODES: Tuple[str, ...] = (BOOST, CRUISE, EMERGENCY)
 
 ModeType = Literal["Boost", "Cruise", "Emergency"]
+
+MODE_STR: dict[int, str] = {0: BOOST, 1: CRUISE, 2: EMERGENCY}

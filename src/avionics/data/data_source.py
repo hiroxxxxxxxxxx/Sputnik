@@ -1,19 +1,16 @@
 """
-DataSource 抽象と Bundle ビルド用設定。
+DataSource Protocol: Raw データの取得元。
 
-FC が「最新取得」する際に使う DataSource Protocol と、
-refresh 時に build_signal_bundle へ渡すオプションの型を定義する。
+FC.refresh に注入して使う。BundleBuildOptions は avionics.bundle_builder で定義。
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import date
 from typing import Dict, List, Optional, Protocol, Tuple
 
-from .raw import RawCapitalSnapshot
+from .raw_types import RawCapitalSnapshot
 from .raw_market_snapshot import RawMarketSnapshot
-from .signals import AltitudeRegime
 
 
 class DataSource(Protocol):
@@ -36,21 +33,3 @@ class DataSource(Protocol):
     ) -> Tuple[RawMarketSnapshot, Optional[RawCapitalSnapshot]]:
         ...
         """Layer 1 の Raw を取得し、RawMarketSnapshot と Optional[RawCapitalSnapshot] を返す。"""
-
-
-@dataclass(frozen=True)
-class BundleBuildOptions:
-    """
-    FC 構築時に注入する、build_signal_bundle 用のオプション。
-    refresh 時に FC がこの値を使って bundle を組み立てる。
-    """
-
-    liquidity_credit_symbol: Optional[str] = "HYG"
-    liquidity_tip: bool = True
-    base_density: float = 1.0
-    v_altitude: AltitudeRegime = "high_mid"
-    c_altitude: AltitudeRegime = "high_mid"
-    r_altitude: AltitudeRegime = "high_mid"
-    account: str = ""
-    volatility_symbols: Optional[Dict[str, str]] = None
-    v_recovery_params: Optional[Dict[str, dict]] = None

@@ -28,7 +28,7 @@ V はステートレス専用に変更済み。`update_from_index` は `recovery
 |------|------|------|
 | `base_factor.py` | `history` (deque) | レベル履歴。`record_level()` で append。本番では参照していない（テストのみ）。再起動で空になる。 |
 
-**対応方針（実施済み）**: 復帰「x/N日目」の表示用キャッシュ（`_last_recovery_display`, V の `_last_recovery_*`）は廃止した。表示時は `get_cockpit_signal(symbol, bundle)` に bundle を渡し、`_get_recovery_metrics(symbol, bundle)` 内で各ステートレス因子の `get_recovery_progress_from_bundle(symbol, bundle)` を呼んでその場で算出する。bundle 未渡しの場合は U/S のみ `recovery_confirm_progress()` で stateful な値を返す。呼び出し元（`run_cockpit_with_ib.py`, `format_daily_report.py`, `format_cockpit_report`）は bundle を渡すよう変更済み。
+**対応方針（実施済み）**: 復帰「x/N日目」の表示用キャッシュ（`_last_recovery_display`, V の `_last_recovery_*`）は廃止した。表示時は `get_cockpit_signal(symbol, bundle)` に bundle を渡し、`EngineFactorMapping.get_recovery_progress(symbol, bundle)` 内で各ステートレス因子の `get_recovery_progress_from_bundle(symbol, bundle)` を呼んでその場で算出する。bundle 未渡しの場合は U/S のみ `recovery_confirm_progress()` で stateful な値を返す。呼び出し元（`run_cockpit_with_ib.py`, `format_daily_report.py`, `format_cockpit_report`）は bundle を渡すよう変更済み。
 
 ---
 

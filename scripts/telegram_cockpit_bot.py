@@ -30,7 +30,7 @@ if str(_root / "src") not in sys.path:
 if str(_scripts) not in sys.path:
     sys.path.insert(0, str(_scripts))
 
-from reports.fetch_cockpit_reports import (
+from reports.fetch_reports import (
     fetch_breakdown_report,
     fetch_cockpit_report,
     fetch_daily_report,

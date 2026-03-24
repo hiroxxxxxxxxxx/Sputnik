@@ -12,10 +12,9 @@ import asyncio
 from datetime import date
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, List, Literal, Optional
 
-from avionics.data.fc_signals import FlightControllerSignal
-from avionics.data.source import DataSource
+from avionics.data.flight_controller_signal import FlightControllerSignal
+from avionics.data.data_source import DataSource
 from avionics.flight_controller import FlightController
-from reports.format_fc_signal import build_summary_reason
 from protocols.emergency_protocol import EmergencyProtocol
 
 from .mode import BOOST, CRUISE, EMERGENCY, ModeType
@@ -134,7 +133,7 @@ class Cockpit:
             return
         if hasattr(self._telegram, "send"):
             await self._telegram.send(
-                f"[承認待ち] {build_summary_reason(signal)} (throttle={signal.worst_throttle_level})"
+                f"[承認待ち] {signal.summary_reason} (throttle={signal.worst_throttle_level})"
             )
 
     async def dispatch_protocol(self, signal: FlightControllerSignal) -> None:

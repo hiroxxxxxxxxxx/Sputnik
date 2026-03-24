@@ -6,7 +6,7 @@ from typing import Optional
 
 import sqlite3
 
-from avionics.data.fc_signals import FlightControllerSignal
+from avionics.data.flight_controller_signal import FlightControllerSignal
 
 
 def upsert_signal_daily(

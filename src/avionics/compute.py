@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import date
 from typing import List, Optional, Tuple
 
-from .data.raw import PriceBar, PriceBar1h, RawCapitalSnapshot, VolatilitySeriesPoint
+from .data.raw_types import PriceBar, PriceBar1h, RawCapitalSnapshot, VolatilitySeriesPoint
 from .data.raw_market_snapshot import RawMarketSnapshot
 from .data.signals import (
     AltitudeRegime,
@@ -65,7 +65,7 @@ def _volatility_index_from_series(series: List[VolatilitySeriesPoint], as_of: da
 def _sma(series: list[PriceBar], n: int) -> float:
     """直近 n 本の終値の単純移動平均。"""
     if not series or len(series) < n:
-        return 0.0
+        raise ValueError(f"_sma requires >= {n} bars, got {len(series) if series else 0}")
     return sum(b.close for b in series[-n:]) / n
 
 
@@ -143,14 +143,8 @@ def compute_price_signals_from_bars(
     「今日の清算値」は as_of の日付でバーを検索し、その足と1本前を比較する（as_of は呼び出し元で NY の今日などに揃える）。
     """
     if len(bars) < 2:
-        return PriceSignals(
-            symbol=symbol,
-            trend="up",
-            daily_change=0.0,
-            cum5_change=0.0,
-            cum2_change=None,
-            downside_gap=-0.01,
-            last_close=bars[-1].close if bars else 0.0,
+        raise ValueError(
+            f"compute_price_signals_from_bars requires >= 2 bars for {symbol}, got {len(bars)}"
         )
 
     latest_idx, prev_idx = _settlement_bar_indices_from_date(bars, as_of)
@@ -283,8 +277,10 @@ def compute_capital_signals_from_cap(cap: Optional[RawCapitalSnapshot]) -> Capit
     mm_over_nlv = MM/NLV。span_ratio = Current Density / Base Density。
     証拠金密度 = MM / (現在値 × 先物倍率)（定義書 4-2-3-2）。
     """
-    if cap is None or cap.nlv <= 0:
-        return CapitalSignals(mm_over_nlv=0.0, span_ratio=1.0)
+    if cap is None:
+        raise ValueError("RawCapitalSnapshot is required but got None")
+    if cap.nlv <= 0:
+        raise ValueError(f"RawCapitalSnapshot.nlv must be > 0, got {cap.nlv}")
     mm_over_nlv = cap.mm / cap.nlv
     denom = cap.current_value * cap.futures_multiplier
     current_density = cap.mm / denom if denom > 0 else 0.0
@@ -300,16 +296,14 @@ def compute_liquidity_signals_credit_from_bars(
     """HYG/LQD 等の価格系列から L 因子 credit 用シグナルを算出する。as_of で当日足を特定。SMA20 のため 20+遡り日数本取得。"""
     bars = sorted(bars, key=lambda b: b.date)
     if len(bars) < 2:
-        return LiquiditySignals(
-            altitude=altitude,
-            below_sma20=False,
-            daily_change=0.0,
+        raise ValueError(
+            f"compute_liquidity_signals_credit_from_bars requires >= 2 bars, got {len(bars)}"
         )
     latest_idx, prev_idx = _settlement_bar_indices_from_date(bars, as_of)
     latest = bars[latest_idx]
     prev = bars[prev_idx]
     sma_bars = bars[:latest_idx] if latest_idx != -1 else bars[:-1]
-    sma20 = _sma(sma_bars, 20) if len(sma_bars) >= 20 else prev.close or 0.0
+    sma20 = _sma(sma_bars, 20) if len(sma_bars) >= 20 else prev.close
     below_sma20 = latest.close < sma20 if sma20 else False
     daily_change = (latest.close - prev.close) / prev.close if prev.close else 0.0
 
@@ -341,7 +335,9 @@ def compute_liquidity_signals_tip_from_bars(
     """TIP 価格系列から L 因子 tip 用（高値比ドローダウン）を算出する。as_of で当日足を特定。20日高値のため 20+遡り日数本取得。"""
     bars = sorted(bars, key=lambda b: b.date)
     if len(bars) < 2:
-        return LiquiditySignals(altitude=altitude, tip_drawdown_from_high=-0.001)
+        raise ValueError(
+            f"compute_liquidity_signals_tip_from_bars requires >= 2 bars, got {len(bars)}"
+        )
     latest_idx, _ = _settlement_bar_indices_from_date(bars, as_of)
     latest = bars[latest_idx]
     if latest_idx == -1:
@@ -350,7 +346,9 @@ def compute_liquidity_signals_tip_from_bars(
         high_20_slice = bars[max(0, latest_idx - 19) : latest_idx + 1]
     high_20 = max(b.high for b in high_20_slice) if high_20_slice else (latest.high or latest.close)
     if not high_20 or high_20 <= 0:
-        return LiquiditySignals(altitude=altitude, tip_drawdown_from_high=-0.001)
+        raise ValueError(
+            f"compute_liquidity_signals_tip_from_bars: high_20 must be > 0, got {high_20}"
+        )
     drawdown = (latest.close / high_20) - 1.0
 
     daily_history_tip_list: List[TipDailyRow] = []
@@ -393,7 +391,9 @@ def compute_volatility_signal_from_snapshot(
 ) -> VolatilitySignal:
     """RawMarketSnapshot から VolatilitySignal を算出する（Phase3: snapshot直）。"""
     full_series = _volatility_series_from_snapshot(snapshot, symbol)
-    v = _volatility_index_from_series(full_series, as_of) or 0.0
+    v = _volatility_index_from_series(full_series, as_of)
+    if v is None:
+        raise ValueError(f"No volatility index data for {symbol} as of {as_of}")
 
     daily = _price_bars_from_snapshot(snapshot, symbol)[-5:]
     bars_1h = _price_bars_1h_from_snapshot(snapshot, symbol)[-24:]
