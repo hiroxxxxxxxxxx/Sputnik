@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import pytest
 
-from cockpit.mode import ModeType
 from engines.blueprint import LayerBlueprint
 from engines.inventory import EngineInventory
 

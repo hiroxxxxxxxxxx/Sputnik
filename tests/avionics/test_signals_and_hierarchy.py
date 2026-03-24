@@ -26,7 +26,6 @@ from avionics.data.signals import (
     SignalBundle,
     VolatilitySignal,
 )
-from reports.format_signal_breakdown import format_signal_breakdown
 from avionics.compute import (
     _settlement_bar_indices_from_date,
     compute_capital_signals_from_cap,

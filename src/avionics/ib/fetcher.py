@@ -86,21 +86,21 @@ class IBRawFetcher:
     def __init__(self, ib: Any) -> None:
         self._ib = ib
 
-    async def _fetch_bars(
+    async def _fetch_historical(
         self,
         contract: Any,
         end_date: date,
         duration_str: str = "40 D",
         bar_size: str = "1 day",
-    ) -> List[PriceBar]:
-        """日足の履歴を取得し PriceBar のリストで返す。useRTH=True で現物クローズに合わせる。"""
+    ) -> List[Any]:
+        """IB 履歴バー取得の共通メソッド。生の BarData リストを返す。"""
         from ib_async import ContFuture
         from ib_async.util import formatIBDatetime
 
         end_dt = datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59, tzinfo=timezone.utc)
         end_str = formatIBDatetime(end_dt)
         is_cont_future = isinstance(contract, ContFuture)
-        bars = await self._ib.reqHistoricalDataAsync(
+        return await self._ib.reqHistoricalDataAsync(
             contract,
             endDateTime="" if is_cont_future else end_str,
             durationStr=duration_str,
@@ -109,6 +109,16 @@ class IBRawFetcher:
             useRTH=True,
             timeout=30,
         )
+
+    async def _fetch_bars(
+        self,
+        contract: Any,
+        end_date: date,
+        duration_str: str = "40 D",
+        bar_size: str = "1 day",
+    ) -> List[PriceBar]:
+        """日足の履歴を取得し PriceBar のリストで返す。"""
+        bars = await self._fetch_historical(contract, end_date, duration_str, bar_size)
         return [_bar_to_price_bar(b) for b in bars]
 
     async def _fetch_bars_1h(
@@ -118,21 +128,7 @@ class IBRawFetcher:
         duration_str: str = "5 D",
     ) -> List[PriceBar1h]:
         """1h足の履歴を取得。"""
-        from ib_async import ContFuture
-        from ib_async.util import formatIBDatetime
-
-        end_dt = datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59, tzinfo=timezone.utc)
-        end_str = formatIBDatetime(end_dt)
-        is_cont_future = isinstance(contract, ContFuture)
-        bars = await self._ib.reqHistoricalDataAsync(
-            contract,
-            endDateTime="" if is_cont_future else end_str,
-            durationStr=duration_str,
-            barSizeSetting="1 hour",
-            whatToShow="TRADES",
-            useRTH=True,
-            timeout=30,
-        )
+        bars = await self._fetch_historical(contract, end_date, duration_str, "1 hour")
         return [_bar_to_price_bar_1h(b) for b in bars]
 
     async def _fetch_volatility_series(

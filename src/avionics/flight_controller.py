@@ -158,7 +158,7 @@ class FlightController:
         if tasks:
             await asyncio.gather(*tasks)
 
-    async def get_individual_control_level(self, symbol: str) -> int:
+    def get_individual_control_level(self, symbol: str) -> int:
         """
         ICL（個別制御層）= max(P, V, C, R) を銘柄 symbol について返す。
         ControlLevels.compute_icl に委譲。定義書「4-2-1 個別制御層」参照。
@@ -166,7 +166,7 @@ class FlightController:
         from .control_levels import compute_icl
         return compute_icl(self._mapping, symbol)
 
-    async def get_synchronous_control_level(self) -> int:
+    def get_synchronous_control_level(self) -> int:
         """
         SCL（同期制御層）= T 相関。ControlLevels.compute_scl に委譲。
         定義書「4-2-2 同期制御層」参照。
@@ -174,7 +174,7 @@ class FlightController:
         from .control_levels import compute_scl
         return compute_scl(self._mapping)
 
-    async def get_limit_control_level(self) -> int:
+    def get_limit_control_level(self) -> int:
         """
         LCL（制限制御層）= max(U, S)。ControlLevels.compute_lcl に委譲。
         定義書「4-2-3 制限制御層」参照。
@@ -212,13 +212,13 @@ class FlightController:
                     metrics[name] = max(metrics[name], int(f.level))
             return metrics
 
-        scl = await self.get_synchronous_control_level()
-        lcl = await self.get_limit_control_level()
+        scl = self.get_synchronous_control_level()
+        lcl = self.get_limit_control_level()
 
         has_nq = "NQ" in self._mapping.symbol_factors
         has_gc = "GC" in self._mapping.symbol_factors
-        nq_icl = await self.get_individual_control_level("NQ") if has_nq else 0
-        gc_icl = await self.get_individual_control_level("GC") if has_gc else 0
+        nq_icl = self.get_individual_control_level("NQ") if has_nq else 0
+        gc_icl = self.get_individual_control_level("GC") if has_gc else 0
 
         nq_m = _collect_symbol_metrics("NQ") if has_nq else {"P": 0, "V": 0, "C": 0, "R": 0, "T": 0}
         gc_m = _collect_symbol_metrics("GC") if has_gc else {"P": 0, "V": 0, "C": 0, "R": 0, "T": 0}

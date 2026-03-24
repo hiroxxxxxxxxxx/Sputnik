@@ -47,7 +47,7 @@
   1. IB に接続（host, port, client_id, timeout）
   2. （必要なら）factors config を読んで `v_recovery_params` 等を組み立て
   3. `IBDataFetcher(ib).fetch_signal_bundle(...)` で bundle 取得
-  4. cockpit/daily の場合は `build_cockpit_stack(symbols)` → `fc.update_all(bundle)` → `format_cockpit_report(fc, symbols, now_utc, bundle)` または `format_daily_flight_log(fc, bundle, symbols, ...)`
+  4. cockpit/daily の場合は `build_cockpit_stack(symbols)` → `fc.update_all(bundle)` → `format_cockpit_report(fc, symbols, now_utc, bundle)` または `format_daily_report(fc, symbols, ...)`
   5. breakdown の場合は `format_breakdown_report(bundle)`
   6. 最後に `ib.disconnect()`（try/finally）
   7. レポート文字列を返す

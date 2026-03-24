@@ -209,6 +209,52 @@ class BaseFactor:
         self.record_level()
         return True
 
+    async def _apply_two_level_ratio(
+        self,
+        value: float,
+        *,
+        lv2_on: float,
+        lv2_off: float,
+        lv1_on: float,
+        lv1_off: float,
+        lv2_confirm_days: int,
+        lv1_confirm_days: int,
+    ) -> LevelType:
+        """
+        U/S 共通の 0/1/2 三段階 ratio 判定。
+        悪化は即時 downgrade、復帰は confirm_days 付き upgrade。
+        """
+        current = self.level
+        if current == 2:
+            candidate: LevelType = 1 if value < lv2_off else 2
+        elif current == 1:
+            if value >= lv2_on:
+                candidate = 2
+            elif value < lv1_off:
+                candidate = 0
+            else:
+                candidate = 1
+        else:
+            if value >= lv2_on:
+                candidate = 2
+            elif value >= lv1_on:
+                candidate = 1
+            else:
+                candidate = 0
+
+        if candidate > self.level:
+            self.downgrade(candidate)
+        elif candidate < self.level:
+            if self.level == 2 and candidate == 1:
+                await self.upgrade(candidate, confirm_days=lv2_confirm_days)
+            elif self.level == 1 and candidate == 0:
+                await self.upgrade(candidate, confirm_days=lv1_confirm_days)
+            else:
+                await self.upgrade(candidate, confirm_days=1)
+        else:
+            self.record_level()
+        return self.level
+
     def test_downgrade(self) -> bool:
         """
         降格ロジックが基本仕様どおりに動作するかの簡易テストを行う。

@@ -7,7 +7,6 @@ FlightController が参照する個別・同期・制限制御の算出はここ
 
 from __future__ import annotations
 
-from . import factors_config
 from .base_factor import BaseFactor
 from .factors_config import (
     FactorsConfigError,

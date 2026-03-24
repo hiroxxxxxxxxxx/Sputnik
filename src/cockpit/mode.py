@@ -1,8 +1,8 @@
 """
-スロットルモードの単一定義。Boost / Cruise / Emergency の文字列定数と型。
+スロットルモード定数の単一定義（共有層）。Boost / Cruise / Emergency の文字列定数と型。
 
-Cockpit が get_flight_controller_signal().throttle_level(symbol) の 0/1/2 をこのモードに変換し、Engine へ apply_mode する。
-Engine / Blueprint も同じ定義を参照して get_ratios(mode) 等で使用する。
+cockpit, engines, reports の共通基盤。パッケージ依存の方向は cockpit.mode を最下流として、
+上位パッケージ（engines, reports）がここから import する。
 定義書「4-2 Effective Level × スロットルモード対応表」参照。
 """
 

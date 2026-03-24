@@ -81,7 +81,7 @@ def test_avionics_subscription_limit_control_level() -> None:
         symbol_factors={},
     )
     _run(av.apply_all(_EMPTY_BUNDLE))
-    lim = _run(av.get_limit_control_level())
+    lim = av.get_limit_control_level()
     assert lim == 2
 
 
@@ -123,7 +123,7 @@ def test_avionics_get_individual_control_level_excludes_t() -> None:
         symbol_factors={"NQ": [p, v, t]},
     )
     _run(av.apply_all(_EMPTY_BUNDLE))
-    ind = _run(av.get_individual_control_level("NQ"))
+    ind = av.get_individual_control_level("NQ")
     assert ind == max(p.level, v.level)
 
 
@@ -143,7 +143,7 @@ def test_avionics_get_synchronous_control_level_from_t_factors() -> None:
         symbol_factors={"NQ": [t0]},
     )
     _run(av.apply_all(_EMPTY_BUNDLE))
-    syn = _run(av.get_synchronous_control_level())
+    syn = av.get_synchronous_control_level()
     assert syn in (0, 2)
 
 
@@ -173,7 +173,7 @@ def test_avionics_get_effective_level_is_max_of_three_layers() -> None:
     )
     _run(av.apply_all(_EMPTY_BUNDLE))
     sig = _run(av.get_flight_controller_signal())
-    ind = _run(av.get_individual_control_level("NQ"))
-    syn = _run(av.get_synchronous_control_level())
-    lim = _run(av.get_limit_control_level())
+    ind = av.get_individual_control_level("NQ")
+    syn = av.get_synchronous_control_level()
+    lim = av.get_limit_control_level()
     assert sig.throttle_level("NQ") == max(ind, syn, lim)

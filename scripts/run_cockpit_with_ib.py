@@ -55,9 +55,9 @@ async def main() -> int:
         print("ib_async がインストールされていません: pip install ib_async", file=sys.stderr)
         return 1
 
-    from avionics.Instruments import FactorsConfigError, load_factors_config
+    from avionics.factors.factors_config import FactorsConfigError, load_factors_config
     from cockpit.stack import build_cockpit_stack
-    from util import ny_date_now
+    from avionics.calendar import ny_date_now
 
     fc, _engines = build_cockpit_stack(args.symbols)
     try:

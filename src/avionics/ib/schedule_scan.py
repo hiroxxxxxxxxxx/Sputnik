@@ -40,14 +40,9 @@ async def fetch_trading_hours_async(ib: Any, contract: Any) -> List[DaySchedule]
 
 
 def _contract_for_symbol(symbol: str) -> Any:
-    """価格系列用 IB 契約（tradingHours 取得用）。ib.fetcher と同じマッピング。"""
-    from ib_async import ContFuture
-
-    m = {"NQ": ("NQ", "CME", "USD"), "GC": ("GC", "COMEX", "USD")}
-    if symbol in m:
-        s, ex, cur = m[symbol]
-        return ContFuture(symbol=s, exchange=ex, currency=cur)
-    return ContFuture(symbol=symbol, exchange="SMART", currency="USD")
+    """価格系列用 IB 契約（tradingHours 取得用）。fetcher と同じ関数に委譲。"""
+    from .fetcher import _contract_for_price
+    return _contract_for_price(symbol)
 
 
 async def run_daily_schedule_scan(

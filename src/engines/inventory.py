@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Dict, Literal
 
-from .blueprint import LayerBlueprint, ModeType, RATIO_KEYS
+from .blueprint import LayerBlueprint, ModeType
 
 
 class EngineInventory:
