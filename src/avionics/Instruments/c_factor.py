@@ -42,17 +42,6 @@ class CFactor(BaseFactor):
         self.thresholds: dict = dict(thresholds)
         super().__init__(name=name, levels=[0, 2], history_size=history_size)
 
-    async def update(self) -> None:
-        """
-        未注入時は安全なデフォルトで update_from_signals を呼ぶ。
-        定義書「3-1 PFD」「4-2-1-3 C因子」参照。
-        """
-        await self.update_from_signals(
-            altitude="high_mid",
-            below_sma20=False,
-            daily_change=0.0,
-        )
-
     def _row_satisfies_c0(self, row: tuple, c2_th: float) -> bool:
         """1日分 (date, below_sma20, daily_change) が C0 を満たすか。"""
         return len(row) >= 3 and not row[1] and row[2] > c2_th
@@ -119,7 +108,7 @@ class CFactor(BaseFactor):
         confirm = int(self.thresholds["confirm_days"])
         return (min(count, confirm), confirm)
 
-    async def update_from_signal_bundle(
+    async def apply_signal_bundle(
         self, symbol: Optional[str], bundle: "SignalBundle"
     ) -> None:
         lc = getattr(bundle, "liquidity_credit", None)
@@ -134,8 +123,6 @@ class CFactor(BaseFactor):
                 daily_change_lqd=lc_lqd.daily_change if lc_lqd and lc_lqd.daily_change is not None else None,
                 daily_history_credit_lqd=getattr(lc_lqd, "daily_history_credit", ()) if lc_lqd else (),
             )
-        else:
-            await self.update()
 
     async def update_from_signals(
         self,

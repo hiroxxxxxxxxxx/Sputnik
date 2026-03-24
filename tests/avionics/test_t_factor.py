@@ -6,6 +6,7 @@ import pytest
 
 from avionics import TFactor
 from avionics.Instruments import FactorsConfigError, get_t_thresholds, load_factors_config
+from avionics.data.signals import SignalBundle
 
 
 def _run(coro):
@@ -42,15 +43,27 @@ def test_downgrade_immediate(t_thresholds) -> None:
 
 def test_upgrade_delayed(t_thresholds) -> None:
     """
-    T因子が改善方向では連続2日確認後にのみ昇格することを確認する。
+    T因子が改善方向では confirm_days 連続確認後にのみ昇格することを確認する。
+    daily_history が不十分なときは復帰せず、十分な連続日数を渡すと復帰する。
     """
+    from datetime import date, timedelta
     tf = TFactor(symbol="NQ", thresholds=t_thresholds)
     tf.level = 2
+    confirm = int(t_thresholds["confirm_days"])
 
     async def scenario():
-        await tf.apply_trend("up")
+        short_history = tuple(
+            (date(2025, 3, 1) - timedelta(days=i), 0.0, 0.0, -0.01, "up", None)
+            for i in range(confirm - 1)
+        )
+        await tf.apply_trend("up", daily_history=short_history)
         assert tf.level == 2
-        await tf.apply_trend("up")
+
+        full_history = tuple(
+            (date(2025, 3, 1) - timedelta(days=i), 0.0, 0.0, -0.01, "up", None)
+            for i in range(confirm)
+        )
+        await tf.apply_trend("up", daily_history=full_history)
         assert tf.level == 0
 
     _run(scenario())
@@ -60,31 +73,33 @@ def test_level_calculation_single_symbol(t_thresholds) -> None:
     """
     単一銘柄のトレンドが T0/T2 に正しくマッピングされることを確認する。
     """
+    from datetime import date, timedelta
     tf = TFactor(symbol="GC", thresholds=t_thresholds)
+    confirm = int(t_thresholds["confirm_days"])
 
     async def scenario():
         level_down = await tf.apply_trend("down")
         assert level_down == 2
-        # 改善は2日連続で適用
-        await tf.apply_trend("up")
-        assert tf.level == 2
-        await tf.apply_trend("up")
+        full_history = tuple(
+            (date(2025, 3, 1) - timedelta(days=i), 0.0, 0.0, -0.01, "up", None)
+            for i in range(confirm)
+        )
+        await tf.apply_trend("up", daily_history=full_history)
         assert tf.level == 0
-        # flat も T0 扱い
         await tf.apply_trend("flat")
         assert tf.level == 0
 
     _run(scenario())
 
 
-def test_tfactor_update_runs_with_defaults(t_thresholds) -> None:
+def test_tfactor_apply_empty_bundle_runs_safely(t_thresholds) -> None:
     """
-    TFactor.update が引数なしで正常終了し、レベルは 0 または 2 のいずれかに留まることを確認する。
+    TFactor.apply_signal_bundle が空の SignalBundle で正常終了し、レベルは 0 または 2 のいずれかに留まることを確認する。
     """
     tf = TFactor(symbol="NQ", thresholds=t_thresholds)
 
     async def scenario():
-        await tf.update()
+        await tf.apply_signal_bundle("NQ", SignalBundle())
         assert tf.level in (0, 2)
 
     _run(scenario())

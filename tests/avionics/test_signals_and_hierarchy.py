@@ -1,5 +1,5 @@
 """
-Layer 1 / Layer 2 / SignalBundle と Cockpit.update_all(signal_bundle) のテスト。
+Layer 1 / Layer 2 / SignalBundle と FC.apply_all(signal_bundle) のテスト。
 
 定義書 4-2 情報の階層構造に基づく分離の動作を検証する。
 """
@@ -18,10 +18,10 @@ from avionics.Instruments import (
     get_v_thresholds,
     load_factors_config,
 )
-from avionics.data.raw import PriceBar, PriceBar1h, RawCapitalSnapshot, RawDataProvider
+from avionics.data.raw import PriceBar, RawCapitalSnapshot
+from avionics.data.raw_market_snapshot import RawMarketSnapshot
 from avionics.data.signals import (
     CapitalSignals,
-    LiquiditySignals,
     PriceSignals,
     SignalBundle,
     VolatilitySignal,
@@ -29,8 +29,8 @@ from avionics.data.signals import (
 from avionics.Instruments.signals import format_signal_bundle_breakdown
 from avionics.process.layer2.compute import (
     _settlement_bar_indices_from_date,
-    compute_capital_signals,
-    compute_price_signals,
+    compute_capital_signals_from_cap,
+    compute_price_signals_from_snapshot,
 )
 
 try:
@@ -43,45 +43,10 @@ def _run(coro):
     return asyncio.run(coro)
 
 
-class _MockRawProvider:
-    """テスト用 RawDataProvider。価格系列と証拠金スナップショットを返す。"""
-
-    def __init__(
-        self,
-        bars: list[PriceBar] | None = None,
-        capital: RawCapitalSnapshot | None = None,
-        volatility: float | None = None,
-    ) -> None:
-        self.bars = bars or []
-        self.capital = capital
-        self.volatility = volatility or 0.0
-
-    def get_price_series(self, symbol: str, limit: int) -> list[PriceBar]:
-        return self.bars[-limit:] if self.bars else []
-
-    def get_price_series_1h(self, symbol: str, limit: int) -> list[PriceBar1h]:
-        return []
-
-    def get_volatility_series(self, symbol: str, limit: int) -> list:
-        return []
-
-    def get_volatility_index(self, symbol: str, as_of: date) -> float | None:
-        return self.volatility
-
-    def get_capital_snapshot(self, as_of: date) -> RawCapitalSnapshot | None:
-        return self.capital
-
-    def get_credit_series(self, symbol: str, limit: int) -> list[PriceBar]:
-        return self.bars[-limit:] if self.bars else []
-
-    def get_tip_series(self, limit: int) -> list[PriceBar]:
-        return self.bars[-limit:] if self.bars else []
-
-
 def test_compute_price_signals_insufficient_bars_returns_safe_defaults() -> None:
     """価格系列が不足しているときは安全なデフォルトの PriceSignals を返す。"""
-    provider = _MockRawProvider(bars=[])
-    out = compute_price_signals(provider, "NQ", date(2025, 3, 1))
+    snapshot = RawMarketSnapshot(as_of=date(2025, 3, 1))
+    out = compute_price_signals_from_snapshot(snapshot, "NQ", date(2025, 3, 1))
     assert out.symbol == "NQ"
     assert out.trend == "up"
     assert out.daily_change == 0.0
@@ -92,25 +57,14 @@ def test_compute_price_signals_insufficient_bars_returns_safe_defaults() -> None
 def test_compute_price_signals_from_series() -> None:
     """十分な本数の価格系列から trend, daily_change, cum5, downside_gap を算出する。"""
     base = date(2025, 2, 1)
-    # 20本の過去 + 直近2本で SMA20, daily_change が計算できる
     bars = [
         PriceBar(date=base + timedelta(days=i), close=100.0 + i * 0.5, high=101.0 + i, volume=1000)
         for i in range(22)
     ]
-    bars[-1] = PriceBar(
-        date=bars[-1].date,
-        close=102.0,
-        high=120.0,
-        volume=1000,
-    )
-    bars[-2] = PriceBar(
-        date=bars[-2].date,
-        close=101.0,
-        high=119.0,
-        volume=1000,
-    )
-    provider = _MockRawProvider(bars=bars)
-    out = compute_price_signals(provider, "NQ", bars[-1].date)
+    bars[-1] = PriceBar(date=bars[-1].date, close=102.0, high=120.0, volume=1000)
+    bars[-2] = PriceBar(date=bars[-2].date, close=101.0, high=119.0, volume=1000)
+    snapshot = RawMarketSnapshot(as_of=bars[-1].date, nq_price_bars=bars)
+    out = compute_price_signals_from_snapshot(snapshot, "NQ", bars[-1].date)
     assert out.symbol == "NQ"
     assert out.daily_change == pytest.approx((102.0 - 101.0) / 101.0)
     assert out.downside_gap != 0.0
@@ -126,9 +80,8 @@ def test_compute_price_signals_settlement_uses_as_of() -> None:
     bars[-3] = PriceBar(date=bars[-3].date, close=98.0, high=99.0, volume=1000)
     bars[-2] = PriceBar(date=bars[-2].date, close=99.0, high=100.0, volume=1000)
     bars[-1] = PriceBar(date=bars[-1].date, close=100.0, high=101.0, volume=1000)
-    provider = _MockRawProvider(bars=bars)
-    # as_of を bars[-2].date にすると latest=bars[-2], prev=bars[-3]
-    out = compute_price_signals(provider, "NQ", as_of=bars[-2].date)
+    snapshot = RawMarketSnapshot(as_of=bars[-2].date, nq_price_bars=bars)
+    out = compute_price_signals_from_snapshot(snapshot, "NQ", as_of=bars[-2].date)
     assert out.daily_change == pytest.approx((99.0 - 98.0) / 98.0)
     assert out.last_close == 99.0
 
@@ -167,22 +120,20 @@ def test_compute_capital_signals() -> None:
         current_value=200.0,
         futures_multiplier=1.0,
     )
-    provider = _MockRawProvider(capital=cap)
-    out = compute_capital_signals(provider, date(2025, 3, 1))
+    out = compute_capital_signals_from_cap(cap)
     assert out.mm_over_nlv == 0.4
-    assert out.span_ratio == pytest.approx(0.2)  # current_density = 40/200 = 0.2, base=1.0
+    assert out.span_ratio == pytest.approx(0.2)
 
 
 def test_compute_capital_signals_none_returns_defaults() -> None:
     """スナップショットが None のときは安全なデフォルトを返す。"""
-    provider = _MockRawProvider()
-    out = compute_capital_signals(provider, date(2025, 3, 1))
+    out = compute_capital_signals_from_cap(None)
     assert out.mm_over_nlv == 0.0
     assert out.span_ratio == 1.0
 
 
-def test_signal_bundle_update_all_distributes_to_factors() -> None:
-    """update_all(signal_bundle) で P/V/T にシグナルが配布され、レベルが更新される。"""
+def test_signal_bundle_apply_all_distributes_to_factors() -> None:
+    """apply_all(signal_bundle) で P/V/T にシグナルが配布され、レベルが更新される。"""
     from avionics import FlightController
     from avionics.Instruments import get_t_thresholds
 
@@ -210,15 +161,15 @@ def test_signal_bundle_update_all_distributes_to_factors() -> None:
         volatility_signals={"NQ": vol},
     )
 
-    _run(av.update_all(signal_bundle=bundle))
+    _run(av.apply_all(bundle))
 
     assert p.level == 2
     assert t.level == 2
     assert v.level >= 1
 
 
-def test_signal_bundle_update_all_capital_factors() -> None:
-    """update_all(signal_bundle) で U/S に capital_signals が配布される。"""
+def test_signal_bundle_apply_all_capital_factors() -> None:
+    """apply_all(signal_bundle) で U/S に capital_signals が配布される。"""
     from avionics import FlightController
     from avionics.Instruments import get_s_thresholds, get_u_thresholds
 
@@ -234,9 +185,7 @@ def test_signal_bundle_update_all_capital_factors() -> None:
     cap = CapitalSignals(mm_over_nlv=0.50, span_ratio=1.25)
     bundle = SignalBundle(capital_signals=cap)
 
-    _run(av.update_all(signal_bundle=bundle))
+    _run(av.apply_all(bundle))
 
     assert u.level == 2
     assert s.level >= 1
-
-

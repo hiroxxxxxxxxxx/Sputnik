@@ -1,5 +1,5 @@
 """
-Layer 2 Process: RawDataProvider / RawMarketSnapshot と as_of から各シグナル（PriceSignals, VolatilitySignal 等）を算出する。
+Layer 2 Process: RawMarketSnapshot と as_of から各シグナル（PriceSignals, VolatilitySignal 等）を算出する。
 
 型は avionics.data にあり、ここでは計算のみ行う。定義書「4-2 情報の階層構造」参照。
 """
@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import date
 from typing import List, Optional, Tuple
 
-from ...data.raw import PriceBar, PriceBar1h, RawDataProvider, RawCapitalSnapshot, VolatilitySeriesPoint
+from ...data.raw import PriceBar, PriceBar1h, RawCapitalSnapshot, VolatilitySeriesPoint
 from ...data.raw_market_snapshot import RawMarketSnapshot
 from ...data.signals import (
     AltitudeRegime,
@@ -60,18 +60,6 @@ def _volatility_series_from_snapshot(snapshot: RawMarketSnapshot, symbol: str) -
 def _volatility_index_from_series(series: List[VolatilitySeriesPoint], as_of: date) -> Optional[float]:
     candidates = [(d, v) for d, v in series if d <= as_of]
     return max(candidates, key=lambda x: x[0])[1] if candidates else None
-
-
-def _sorted_bars(provider: RawDataProvider, symbol: str, limit: int) -> list[PriceBar]:
-    """get_price_series を日付昇順で返す。"""
-    bars = provider.get_price_series(symbol, limit)
-    return sorted(bars, key=lambda b: b.date)
-
-
-def _sorted_credit_bars(provider: RawDataProvider, symbol: str, limit: int) -> list[PriceBar]:
-    """get_credit_series（HYG/LQD）を日付昇順で返す。"""
-    bars = provider.get_credit_series(symbol, limit)
-    return sorted(bars, key=lambda b: b.date)
 
 
 def _sma(series: list[PriceBar], n: int) -> float:
@@ -222,15 +210,6 @@ def compute_price_signals_from_bars(
     )
 
 
-def compute_price_signals(
-    raw_provider: RawDataProvider,
-    symbol: str,
-    as_of: date,
-) -> PriceSignals:
-    bars = _sorted_bars(raw_provider, symbol, limit=MIN_BARS_FOR_RECOVERY)
-    return compute_price_signals_from_bars(bars, symbol, as_of)
-
-
 def _count_consecutive_days_below(
     series: list[tuple[date, float]], threshold: float
 ) -> int:
@@ -297,36 +276,6 @@ def compute_volatility_signal_from_inputs(
     )
 
 
-def compute_volatility_signal(
-    raw_provider: RawDataProvider,
-    symbol: str,
-    as_of: date,
-    altitude: AltitudeRegime,
-    *,
-    v1_off_threshold: Optional[float] = None,
-    v2_off_threshold: Optional[float] = None,
-) -> VolatilitySignal:
-    """
-    VXN/GVZ 相当の指数値から V 因子用シグナルを返す。
-
-    復帰確認: get_volatility_series から閾値未満の連続日数を算出（営業日遡り）。
-    1hノックインは is_intraday_condition_met / v1_to_v0_knock_in_ok に載せる。
-    """
-    v = raw_provider.get_volatility_index(symbol, as_of) or 0.0
-    daily = sorted(raw_provider.get_price_series(symbol, 5), key=lambda b: b.date)
-    bars_1h = raw_provider.get_price_series_1h(symbol, 24)
-    knock_in = _v1_to_v0_knock_in_ok(daily, bars_1h, as_of)
-    series = raw_provider.get_volatility_series(symbol, 5)
-    return compute_volatility_signal_from_inputs(
-        index_value=v,
-        altitude=altitude,
-        knock_in=knock_in,
-        series=series,
-        v1_off_threshold=v1_off_threshold,
-        v2_off_threshold=v2_off_threshold,
-    )
-
-
 def compute_capital_signals_from_cap(cap: Optional[RawCapitalSnapshot]) -> CapitalSignals:
     """
     証拠金スナップショットから U/S 用シグナルを算出する。
@@ -341,13 +290,6 @@ def compute_capital_signals_from_cap(cap: Optional[RawCapitalSnapshot]) -> Capit
     current_density = cap.mm / denom if denom > 0 else 0.0
     span_ratio = current_density / cap.base_density if cap.base_density > 0 else 1.0
     return CapitalSignals(mm_over_nlv=mm_over_nlv, span_ratio=span_ratio)
-
-
-def compute_capital_signals(
-    raw_provider: RawDataProvider,
-    as_of: date,
-) -> CapitalSignals:
-    return compute_capital_signals_from_cap(raw_provider.get_capital_snapshot(as_of))
 
 
 def compute_liquidity_signals_credit_from_bars(
@@ -391,16 +333,6 @@ def compute_liquidity_signals_credit_from_bars(
     )
 
 
-def compute_liquidity_signals_credit(
-    raw_provider: RawDataProvider,
-    symbol: str,
-    as_of: date,
-    altitude: AltitudeRegime,
-) -> LiquiditySignals:
-    bars = _sorted_credit_bars(raw_provider, symbol, limit=MIN_BARS_FOR_RECOVERY)
-    return compute_liquidity_signals_credit_from_bars(bars, as_of, altitude)
-
-
 def compute_liquidity_signals_tip_from_bars(
     bars: List[PriceBar],
     as_of: date,
@@ -438,15 +370,6 @@ def compute_liquidity_signals_tip_from_bars(
         tip_drawdown_from_high=drawdown,
         daily_history_tip=daily_history_tip,
     )
-
-
-def compute_liquidity_signals_tip(
-    raw_provider: RawDataProvider,
-    as_of: date,
-    altitude: AltitudeRegime,
-) -> LiquiditySignals:
-    bars = raw_provider.get_tip_series(limit=MIN_BARS_FOR_RECOVERY)
-    return compute_liquidity_signals_tip_from_bars(bars, as_of, altitude)
 
 
 def compute_price_signals_from_snapshot(

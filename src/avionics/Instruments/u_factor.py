@@ -35,24 +35,12 @@ class UFactor(BaseFactor):
         self._thresholds: dict = dict(thresholds)
         super().__init__(name="U", levels=[0, 1, 2], history_size=history_size)
 
-    async def update(self) -> None:
-        """
-        最新のMM/NLVからUレベルを更新する。
-
-        FlightController 等から呼ばれる共通エントリ。実データは上位で注入する想定のため、
-        未注入時は安全なデフォルトで update_from_ratio() を呼ぶ。
-        定義書「3-1 PFD」「4-2-2-1 U因子」参照。
-        """
-        await self.update_from_ratio(0.3)
-
-    async def update_from_signal_bundle(
+    async def apply_signal_bundle(
         self, symbol: Optional[str], bundle: "SignalBundle"
     ) -> None:
         cap = getattr(bundle, "capital_signals", None)
         if cap is not None:
             await self.update_from_ratio(cap.mm_over_nlv)
-        else:
-            await self.update()
 
     async def update_from_capital_signals(self, signals: CapitalSignals) -> LevelType:
         """

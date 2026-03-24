@@ -6,6 +6,7 @@ import pytest
 
 from avionics import UFactor
 from avionics.Instruments import FactorsConfigError, get_u_thresholds, load_factors_config
+from avionics.data.signals import SignalBundle
 
 
 def _run(coro):
@@ -92,14 +93,14 @@ def test_level_calculation_thresholds(u_thresholds) -> None:
     _run(scenario())
 
 
-def test_ufactor_update_runs_with_defaults(u_thresholds) -> None:
+def test_ufactor_apply_empty_bundle_runs_safely(u_thresholds) -> None:
     """
-    UFactor.update がデフォルト引数で update_from_ratio を呼び正常終了することを確認する。
+    UFactor.apply_signal_bundle が空の SignalBundle で正常終了することを確認する。
     """
     uf = UFactor(thresholds=u_thresholds)
 
     async def scenario():
-        await uf.update()
+        await uf.apply_signal_bundle(None, SignalBundle())
         assert uf.level in (0, 1, 2)
 
     _run(scenario())

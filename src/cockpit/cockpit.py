@@ -161,23 +161,11 @@ class Cockpit:
         """
         管制サイクル。DataSource から FC.refresh（Raw 取得 → bundle → 因子更新）を行い、
         三層方式で銘柄ごとにスロットルモード取得 → 遷移 → 全エンジンへ指令。
-        判定は行わず、get_flight_controller_signal の throttle_level からスロットルモードを導き遷移・配布する。定義書「0-4」「4-2」「0-1-Ⅲ」参照。
+        定義書「0-4」「4-2」「0-1-Ⅲ」参照。
         """
         await self.fc.refresh(data_source, as_of, symbols)
-        await self._pulse_subscription()
-
-    def _level_to_mode(self, level: int) -> ModeType:
-        """実行レベル 0/1/2 をスロットルモード（Boost/Cruise/Emergency）に変換。定義書 4-2 対応表。"""
-        if level >= 2:
-            return EMERGENCY
-        if level == 1:
-            return CRUISE
-        return BOOST
-
-    async def _pulse_subscription(self) -> None:
-        """pulse で refresh 済みの FC から get_flight_controller_signal で計器結論を取得し、銘柄ごとにモードに変換して遷移・配布。定義書 4-2。"""
         signal = await self.fc.get_flight_controller_signal()
-        worst_mode: ModeType = BOOST  # 最小 severity から開始し、全エンジンで最悪のモードを集約
+        worst_mode: ModeType = BOOST
         any_emergency = False
         engine_modes: List[tuple["Engine", ModeType]] = []
         for engine in self.engines:
@@ -200,6 +188,14 @@ class Cockpit:
             self._current_mode = worst_mode
         for engine, target_mode in engine_modes:
             await engine.apply_mode(target_mode)
+
+    def _level_to_mode(self, level: int) -> ModeType:
+        """実行レベル 0/1/2 をスロットルモード（Boost/Cruise/Emergency）に変換。定義書 4-2 対応表。"""
+        if level >= 2:
+            return EMERGENCY
+        if level == 1:
+            return CRUISE
+        return BOOST
 
     def force_mode(self, mode: ModeType) -> None:
         """テスト用: 指定モードへ強制遷移。"""

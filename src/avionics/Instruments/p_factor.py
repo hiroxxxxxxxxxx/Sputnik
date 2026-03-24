@@ -46,30 +46,12 @@ class PFactor(BaseFactor):
         self.thresholds: dict = dict(thresholds)
         super().__init__(name=name, levels=[0, 1, 2], history_size=history_size)
 
-    async def update(self) -> None:
-        """
-        最新の価格データから P レベルを更新する。
-
-        実データは上位で注入する想定。未注入時は安全なデフォルトで update_from_signals を呼ぶ。
-        定義書「3-1 PFD」「4-2-1-1 P因子」参照。
-        """
-        await self.update_from_signals(
-            daily_change=0.0,
-            cum5_change=0.0,
-            downside_gap=-0.01,
-            trend="up",
-            recovery_confirm_satisfied_days=0,
-            cum2_change=None,
-        )
-
-    async def update_from_signal_bundle(
+    async def apply_signal_bundle(
         self, symbol: Optional[str], bundle: "SignalBundle"
     ) -> None:
         price = getattr(bundle, "price_signals", {}).get(symbol) if symbol else None
         if price is not None:
             await self.update_from_price_signals(price)
-        else:
-            await self.update()
 
     def _count_recovery_satisfied_days(
         self,

@@ -226,15 +226,15 @@ def test_test_downgrade_single_level_short_circuits() -> None:
     assert factor.test_downgrade() is True
 
 
-def test_basefactor_update_not_implemented() -> None:
+def test_basefactor_apply_signal_bundle_not_implemented() -> None:
     """
-    BaseFactor.update が NotImplementedError を送出することを確認する。
+    BaseFactor.apply_signal_bundle が NotImplementedError を送出することを確認する。
     """
     base = BaseFactor(name="X", levels=[0, 1])
 
     async def scenario() -> None:
         with pytest.raises(NotImplementedError):
-            await base.update()
+            await base.apply_signal_bundle(None, object())  # type: ignore[arg-type]
 
     _run(scenario())
 

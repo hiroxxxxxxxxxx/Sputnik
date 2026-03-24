@@ -6,6 +6,7 @@ import pytest
 
 from avionics import PFactor
 from avionics.Instruments import FactorsConfigError, get_p_thresholds, load_factors_config
+from avionics.data.signals import SignalBundle
 
 try:
     _config = load_factors_config()
@@ -102,14 +103,14 @@ def test_level_calculation_nq_vs_gc() -> None:
     _run(scenario())
 
 
-def test_pfactor_update_runs_with_defaults() -> None:
+def test_pfactor_apply_empty_bundle_runs_safely() -> None:
     """
-    PFactor.update が安全デフォルトで update_from_signals を呼び正常終了することを確認する。
+    PFactor.apply_signal_bundle が空の SignalBundle で正常終了することを確認する。
     """
     pf = PFactor(name="P_NQ", thresholds=_p_nq())
 
     async def scenario():
-        await pf.update()
+        await pf.apply_signal_bundle("NQ", SignalBundle())
         assert pf.level in (0, 1, 2)
 
     _run(scenario())

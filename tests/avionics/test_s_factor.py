@@ -6,6 +6,7 @@ import pytest
 
 from avionics import SFactor
 from avionics.Instruments import FactorsConfigError, get_s_thresholds, load_factors_config
+from avionics.data.signals import SignalBundle
 
 
 def _run(coro):
@@ -92,14 +93,14 @@ def test_level_calculation_thresholds(s_thresholds) -> None:
     _run(scenario())
 
 
-def test_sfactor_update_runs_with_defaults(s_thresholds) -> None:
+def test_sfactor_apply_empty_bundle_runs_safely(s_thresholds) -> None:
     """
-    SFactor.update がデフォルト引数で update_from_ratio を呼び正常終了することを確認する。
+    SFactor.apply_signal_bundle が空の SignalBundle で正常終了することを確認する。
     """
     sf = SFactor(thresholds=s_thresholds)
 
     async def scenario():
-        await sf.update()
+        await sf.apply_signal_bundle(None, SignalBundle())
         assert sf.level in (0, 1, 2)
 
     _run(scenario())

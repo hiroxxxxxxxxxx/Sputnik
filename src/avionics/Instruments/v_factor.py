@@ -71,14 +71,12 @@ class VFactor(BaseFactor):
             return (min(satisfied, required), required)
         return None
 
-    async def update_from_signal_bundle(
+    async def apply_signal_bundle(
         self, symbol: Optional[str], bundle: "SignalBundle"
     ) -> None:
         vol = getattr(bundle, "volatility_signals", {}).get(symbol) if symbol else None
         if vol is not None:
             await self.update_from_volatility_signal(vol)
-        else:
-            await self.update()
 
     async def update_from_volatility_signal(
         self,

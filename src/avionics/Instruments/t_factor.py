@@ -45,16 +45,6 @@ class TFactor(BaseFactor):
             history_size=history_size,
         )
 
-    async def update(self) -> None:
-        """
-        Cockpit.update_all() から呼ばれる主エントリ。
-
-        トレンドは update_all(signal_bundle) で PriceSignals.trend が渡されるか、
-        呼び出し元が apply_trend(trend) を直接呼ぶ。未注入時はレベルを変更せず record_level のみ。
-        定義書「3-1 PFD」「4-2-1-4」参照。
-        """
-        self.record_level()
-
     def _count_recovery_satisfied_days(
         self,
         daily_history: tuple,
@@ -76,7 +66,7 @@ class TFactor(BaseFactor):
         confirm = int(self._thresholds["confirm_days"])
         return (min(count, confirm), confirm)
 
-    async def update_from_signal_bundle(
+    async def apply_signal_bundle(
         self, symbol: Optional[str], bundle: "SignalBundle"
     ) -> None:
         price = getattr(bundle, "price_signals", {}).get(symbol) if symbol else None
@@ -85,8 +75,6 @@ class TFactor(BaseFactor):
                 price.trend,
                 daily_history=getattr(price, "daily_history", ()),
             )
-        else:
-            await self.update()
 
     async def apply_trend(
         self,

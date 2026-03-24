@@ -1,8 +1,8 @@
 """
-三層制御レベル（ICL / SCL / LCL）の算出に特化したクラス。
+三層制御レベル（ICL / SCL / LCL）の算出に特化したモジュール。
 
-EngineFactorMapping を入力に、update_all 済みの因子の level を読んで ICL/SCL/LCL を返す。
-FlightController は update_all のあとこのクラスにマッピングを渡して三層を取得する。
+EngineFactorMapping を入力に、apply_all 済みの因子の level を読んで ICL/SCL/LCL を返す。
+FlightController は apply_all のあとこのモジュールにマッピングを渡して三層を取得する。
 定義書「4-2」個別制御層・同期制御層・制限制御層参照。
 """
 
@@ -18,7 +18,7 @@ def compute_icl(mapping: "EngineFactorMapping", symbol: str) -> int:
     """
     ICL（個別制御層）= max(P, V, C, R) を銘柄 symbol について返す。
 
-    T は含めない（SCL 用）。因子は update_all 済みである前提。
+    T は含めない（SCL 用）。因子は apply_all 済みである前提。
     定義書「4-2-1 個別制御層」参照。
     """
     from .Instruments.c_factor import CFactor
@@ -40,7 +40,7 @@ def compute_scl(mapping: "EngineFactorMapping") -> int:
     SCL（同期制御層）= T 相関。
 
     両銘柄 Downtrend(T=2)→2, 片方→1, 両方 Uptrend/Flat→0。銘柄1つの場合はその T の level。
-    因子は update_all 済みである前提。定義書「4-2-2 同期制御層」参照。
+    因子は apply_all 済みである前提。定義書「4-2-2 同期制御層」参照。
     """
     if not mapping.symbol_factors:
         return 0
@@ -66,7 +66,7 @@ def compute_lcl(mapping: "EngineFactorMapping") -> int:
     """
     LCL（制限制御層）= max(U, S)。全エンジン共通。
 
-    因子は update_all 済みである前提。定義書「4-2-3 制限制御層」参照。
+    因子は apply_all 済みである前提。定義書「4-2-3 制限制御層」参照。
     """
     if not mapping.limit_factors:
         return 0

@@ -65,26 +65,17 @@ class BaseFactor:
             ignore_invalid_triggers=True,
         )
 
-    async def update(self) -> None:
-        """
-        最新データを取得して内部状態を更新する。
-
-        具体的なデータソース・ロジックは各因子クラスで実装する。
-        定義書「3-1 PFD（主計器）」参照。
-        """
-        raise NotImplementedError
-
-    async def update_from_signal_bundle(
+    async def apply_signal_bundle(
         self, symbol: Optional[str], bundle: "SignalBundle"
     ) -> None:
         """
-        Layer 2 の SignalBundle から自身の入力を取り出し更新する。
+        Layer 2 の SignalBundle から自身の入力を取り出し、レベルを更新する。
 
         銘柄別因子は symbol で bundle 内の該当シグナルを参照する。
         制限因子（U/S）や global_market は symbol=None。各因子でオーバーライドする。
         定義書「4-2 情報の階層構造」参照。
         """
-        await self.update()
+        raise NotImplementedError
 
     def record_level(self) -> None:
         """

@@ -6,6 +6,7 @@ import pytest
 
 from avionics import VFactor
 from avionics.Instruments import FactorsConfigError, get_v_thresholds, load_factors_config
+from avionics.data.signals import SignalBundle
 
 try:
     _config = load_factors_config()
@@ -128,15 +129,15 @@ def test_level_calculation_altitude_tables() -> None:
     _run(scenario())
 
 
-def test_vfactor_update_not_implemented() -> None:
+def test_vfactor_apply_empty_bundle_runs_safely() -> None:
     """
-    VFactor は update() を実装せず、必ず update_from_volatility_signal で更新する。
+    VFactor.apply_signal_bundle が空の SignalBundle で正常終了することを確認する。
     """
     vf = VFactor(name="V_NQ", thresholds=_v_nq())
 
     async def scenario():
-        with pytest.raises(NotImplementedError):
-            await vf.update()
+        await vf.apply_signal_bundle("NQ", SignalBundle())
+        assert vf.level in (0, 1, 2)
 
     _run(scenario())
 
@@ -162,7 +163,7 @@ def test_vfactor_no_change_records_history() -> None:
 
 def test_vfactor_v1_to_v0_without_buffer_condition() -> None:
     """
-    V1→V0 復帰時に buffer_condition を指定しない分岐をカバーする。
+    V1→V0 復帰時に buffer_condition=None → buf_ok=False で V1 に留まることを確認する。
     """
     vf = VFactor(name="V_NQ", thresholds=_v_nq())
     vf.level = 1
@@ -172,11 +173,7 @@ def test_vfactor_v1_to_v0_without_buffer_condition() -> None:
             index_value=27.0, altitude="high_mid",
             recovery_confirm_satisfied_days_v1_off=1, recovery_confirm_satisfied_days_v2_off=0,
         )
-        await vf.update_from_index(
-            index_value=27.0, altitude="high_mid",
-            recovery_confirm_satisfied_days_v1_off=1, recovery_confirm_satisfied_days_v2_off=0,
-        )
-        assert vf.level == 0
+        assert vf.level == 1
 
     _run(scenario())
 

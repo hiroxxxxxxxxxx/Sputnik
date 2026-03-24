@@ -1,24 +1,21 @@
 """
 FC.refresh(DataSource) と get_last_bundle のテスト。
 
-実 IB 接続は行わず、モック DataSource で refresh → get_last_bundle の組み立てと
-CachedRawDataProvider の RawDataProvider 互換を検証する。
+実 IB 接続は行わず、モック DataSource で refresh → get_last_bundle の組み立てを検証する。
 """
 
 from __future__ import annotations
 
 import asyncio
 from datetime import date
-from typing import Any, Dict, List, Optional, Tuple
-from unittest.mock import AsyncMock
+from typing import Dict, List, Optional, Tuple
 
 import pytest
 
-from avionics.data.cache import CachedRawDataProvider
 from avionics.data.fc_signals import EngineFactorMapping
 from avionics.data.raw import PriceBar, RawCapitalSnapshot
 from avionics.data.raw_market_snapshot import RawMarketSnapshot
-from avionics.data.source import BundleBuildOptions, DataSource
+from avionics.data.source import BundleBuildOptions
 from avionics.flight_controller import FlightController
 from avionics.ib.fetcher import _bar_to_price_bar
 
@@ -59,86 +56,19 @@ def _mock_bar(d, close: float, high: float, volume: float):
     return bar
 
 
-# --- CachedRawDataProvider ---
-
-
-def test_cached_raw_data_provider_price_series() -> None:
-    """get_price_series はキャッシュした bars の直近 limit 本を返す。"""
-    bars = [
-        PriceBar(date=date(2025, 2, i), close=100.0 + i, high=101.0, volume=1000.0)
-        for i in range(1, 6)
-    ]
-    cache = CachedRawDataProvider(_price_bars={"NQ": bars})
-    out = cache.get_price_series("NQ", 2)
-    assert len(out) == 2
-    assert out[0].date == date(2025, 2, 4)
-    assert out[1].date == date(2025, 2, 5)
-    assert cache.get_price_series("GC", 10) == []
-
-
-def test_cached_raw_data_provider_volatility_and_capital() -> None:
-    """get_volatility_index / get_capital_snapshot はキャッシュを返す。"""
-    cap = RawCapitalSnapshot(
-        as_of=date(2025, 3, 1),
-        mm=50_000.0,
-        nlv=1_000_000.0,
-        base_density=1.0,
-    )
-    cache = CachedRawDataProvider(
-        _volatility_series={"NQ": [(date(2025, 2, 28), 18.0), (date(2025, 3, 1), 18.5)]},
-        _capital_snapshot=cap,
-    )
-    assert cache.get_volatility_index("NQ", date(2025, 3, 1)) == 18.5
-    assert cache.get_volatility_index("GC", date(2025, 3, 1)) is None
-    snap = cache.get_capital_snapshot(date(2025, 3, 1))
-    assert snap is not None
-    assert snap.nlv == 1_000_000.0
-    assert snap.mm == 50_000.0
-
-
-def test_cached_raw_data_provider_credit_and_tip() -> None:
-    """get_credit_series / get_tip_series はキャッシュを返す。"""
-    tip_bars = [
-        PriceBar(date=date(2025, 2, i), close=105.0, high=106.0, volume=2000.0)
-        for i in range(1, 6)
-    ]
-    cache = CachedRawDataProvider(
-        _credit_bars={"HYG": []},
-        _tip_bars=tip_bars,
-    )
-    assert cache.get_credit_series("HYG", 5) == []
-    out = cache.get_tip_series(3)
-    assert len(out) == 3
-    assert out[-1].date == date(2025, 2, 5)
-
-
 # --- Mock DataSource + FC.refresh → get_last_bundle ---
 
 
 class MockDataSource:
-    """テスト用: 事前に用意した CachedRawDataProvider を RawMarketSnapshot に変換して返す DataSource。"""
+    """テスト用: RawMarketSnapshot を返す DataSource。"""
 
     def __init__(
         self,
-        cache: CachedRawDataProvider,
+        snapshot: RawMarketSnapshot,
         capital_snapshot: Optional[RawCapitalSnapshot] = None,
     ) -> None:
-        self._cache = cache
+        self._snapshot = snapshot
         self._capital_snapshot = capital_snapshot
-
-    def _snapshot(self, as_of: date) -> RawMarketSnapshot:
-        return RawMarketSnapshot(
-            as_of=as_of,
-            nq_price_bars=list(self._cache._price_bars.get("NQ", [])),
-            gc_price_bars=list(self._cache._price_bars.get("GC", [])),
-            nq_price_bars_1h=list(self._cache._price_bars_1h.get("NQ", [])),
-            gc_price_bars_1h=list(self._cache._price_bars_1h.get("GC", [])),
-            nq_volatility_series=list(self._cache._volatility_series.get("NQ", [])),
-            gc_volatility_series=list(self._cache._volatility_series.get("GC", [])),
-            capital_snapshot=self._capital_snapshot,
-            credit_bars={k: list(v) for k, v in self._cache._credit_bars.items()},
-            tip_bars=list(self._cache._tip_bars),
-        )
 
     async def fetch_raw(
         self,
@@ -152,7 +82,7 @@ class MockDataSource:
         base_density: float = 1.0,
         v_recovery_params: Optional[Dict[str, dict]] = None,
     ) -> Tuple[RawMarketSnapshot, Optional[RawCapitalSnapshot]]:
-        return (self._snapshot(as_of), self._capital_snapshot)
+        return (self._snapshot, self._capital_snapshot)
 
 
 def _make_fc(symbols: List[str], options: Optional[BundleBuildOptions] = None) -> FlightController:
@@ -180,12 +110,13 @@ def test_fc_refresh_returns_bundle_with_price_and_capital() -> None:
         nlv=1_000_000.0,
         base_density=1.0,
     )
-    cache = CachedRawDataProvider(
-        _price_bars={"NQ": bars},
-        _volatility_series={"NQ": [(date(2025, 3, 1), 18.5)]},
-        _capital_snapshot=cap,
+    snapshot = RawMarketSnapshot(
+        as_of=date(2025, 3, 1),
+        nq_price_bars=bars,
+        nq_volatility_series=[(date(2025, 3, 1), 18.5)],
+        capital_snapshot=cap,
     )
-    ds = MockDataSource(cache, capital_snapshot=cap)
+    ds = MockDataSource(snapshot, capital_snapshot=cap)
     fc = _make_fc(["NQ"])
     _run(fc.refresh(ds, date(2025, 3, 1), ["NQ"]))
     bundle = fc.get_last_bundle()
@@ -202,20 +133,18 @@ def test_fc_refresh_returns_bundle_with_price_and_capital() -> None:
 
 def test_fc_refresh_with_liquidity_options() -> None:
     """liquidity_credit_symbol / liquidity_tip 指定で C/R 用シグナルが bundle に入る。"""
-    bars = [
-        PriceBar(date=date(2025, 3, 1), close=101.0, high=102.0, volume=1100.0),
-    ]
     tip_bars = [
         PriceBar(date=date(2025, 2, i), close=105.0, high=106.0, volume=2000.0)
         for i in range(1, 4)
     ]
-    cache = CachedRawDataProvider(
-        _price_bars={"NQ": bars},
-        _volatility_series={"NQ": [(date(2025, 3, 1), 18.5)]},
-        _credit_bars={"HYG": []},
-        _tip_bars=tip_bars,
+    snapshot = RawMarketSnapshot(
+        as_of=date(2025, 3, 1),
+        nq_price_bars=[PriceBar(date=date(2025, 3, 1), close=101.0, high=102.0, volume=1100.0)],
+        nq_volatility_series=[(date(2025, 3, 1), 18.5)],
+        tip_bars=tip_bars,
+        credit_bars={"HYG": []},
     )
-    ds = MockDataSource(cache, capital_snapshot=None)
+    ds = MockDataSource(snapshot, capital_snapshot=None)
     options = BundleBuildOptions(
         liquidity_credit_symbol="HYG",
         liquidity_tip=True,

@@ -86,9 +86,9 @@ def test_fc_pulse_entering_emergency_runs_protocol(engine_with_fc: tuple[Cockpit
 
     class MockEmergencyEvaluator:
         async def refresh(self, data_source: object, as_of: date, symbols: list[str]) -> None:
-            _ = (data_source, as_of, symbols)
+            pass
 
-        async def get_flight_controller_signal(self, bundle=None):
+        async def get_flight_controller_signal(self):
             return FlightControllerSignal(scl=0, lcl=2, nq_icl=0, gc_icl=0)
 
     fc.fc = MockEmergencyEvaluator()  # type: ignore[assignment]

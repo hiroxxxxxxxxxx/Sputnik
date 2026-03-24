@@ -72,7 +72,7 @@ class CapitalSignals:
 class SignalBundle:
     """
     Layer 2 の出力を一括保持する型。Cockpit が因子へ配布するための束。
-    定義書「4-2 情報の階層構造」に基づき、update_all(signal_bundle) で渡す。
+    定義書「4-2 情報の階層構造」に基づき、apply_all(bundle) で渡す。
     """
     price_signals: dict[str, PriceSignals] = field(default_factory=dict)
     volatility_signals: dict[str, VolatilitySignal] = field(default_factory=dict)

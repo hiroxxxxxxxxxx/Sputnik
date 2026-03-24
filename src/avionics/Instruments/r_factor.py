@@ -55,16 +55,6 @@ class RFactor(BaseFactor):
         key = "drawdown_high_mid_L0" if altitude == "high_mid" else "drawdown_low_L0"
         return float(self.thresholds[key])
 
-    async def update(self) -> None:
-        """
-        未注入時は安全なデフォルトで update_from_signals を呼ぶ。
-        定義書「3-1 PFD」「4-2-1-4 R因子」参照。
-        """
-        await self.update_from_signals(
-            altitude="high_mid",
-            tip_drawdown_from_high=-0.001,
-        )
-
     def _count_recovery_satisfied_days(
         self,
         daily_history_tip: tuple,
@@ -91,7 +81,7 @@ class RFactor(BaseFactor):
         confirm = int(self.thresholds["confirm_days"])
         return (min(count, confirm), confirm)
 
-    async def update_from_signal_bundle(
+    async def apply_signal_bundle(
         self, symbol: Optional[str], bundle: "SignalBundle"
     ) -> None:
         lt = getattr(bundle, "liquidity_tip", None)
@@ -101,8 +91,6 @@ class RFactor(BaseFactor):
                 tip_drawdown_from_high=lt.tip_drawdown_from_high if lt.tip_drawdown_from_high is not None else -0.001,
                 daily_history_tip=getattr(lt, "daily_history_tip", ()),
             )
-        else:
-            await self.update()
 
     async def update_from_signals(
         self,
