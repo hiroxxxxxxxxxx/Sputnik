@@ -47,7 +47,7 @@ V はステートレス専用に変更済み。`update_from_index` は `recovery
 
 ### 3.2 Engine / Part
 
-（`_last_instruction` は未使用のため main_part / booster_part / attitude_part から削除済み。）
+（`_last_instruction` は未使用のため削除済み。Part 階層は廃止され Engine が Blueprint を直接管理。）
 
 ---
 

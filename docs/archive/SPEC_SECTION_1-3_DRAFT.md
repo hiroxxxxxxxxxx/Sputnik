@@ -52,11 +52,9 @@
 
 ## 補足（実装との対応）
 
-* **Engine**：`symbol_type`（NQ/GC）、`blueprints`（Main / Attitude / Booster の LayerBlueprint）、`main_part` / `attitude_part` / `booster_part`。  
+* **Engine**：`symbol_type`（NQ/GC）、`blueprints`（Main / Attitude / Booster の LayerBlueprint）を直接管理。Part 階層は廃止済み。  
 * **LayerBlueprint**：`get_ratios(mode)` で Boost/Cruise/Emergency 別の比率を返す。frozen。  
 * **contract_symbol(symbol_type, layer_type)**：Mini→NQ/GC、Micro→MNQ/MGC。  
-* **MainPart**：wings_pb, wings_cc, wings_bps。  
-* **AttitudePart**：wings_pb のみ。  
-* **BoosterPart**：wings_bps のみ。
+* **PART_LAYER_TYPES**：Main=MINI, Attitude/Booster=MICRO の対応マッピング。
 
 このドラフトを SPEC.md の 1-3 にそのまま差し替えるか、文言を調整したうえで反映してください。

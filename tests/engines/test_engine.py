@@ -33,7 +33,7 @@ def test_engine_apply_mode_collects_deltas(fc_with_engines) -> None:
     _, engine = fc_with_engines
     asyncio.run(engine.apply_mode("Emergency"))
     target = engine._target_for_part("Main", "Emergency", engine.config["base_unit"])
-    main_deltas = engine.main_part.calculate_deltas(target=target, actual=None)
+    main_deltas = engine.calculate_deltas("Main", target=target, actual=None)
     assert len(main_deltas) >= 1
 
 
@@ -60,7 +60,7 @@ def test_engine_instruction_for_uses_config() -> None:
 def test_engine_sync_calls_all_parts(fc_with_engines) -> None:
     _, engine = fc_with_engines
     engine.sync()
-    assert engine.main_part.blueprint.name == "Main"
+    assert engine.blueprints["Main"].name == "Main"
 
 
 def test_engine_calculate_net_targets(fc_with_engines) -> None:

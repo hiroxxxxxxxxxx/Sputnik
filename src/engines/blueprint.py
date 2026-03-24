@@ -17,6 +17,14 @@ from cockpit.mode import ModeType, MODES
 # 層タイプ（Main=MINI, Attitude/Booster=MICRO）。発注先・重み算出に使用。
 LayerType = Literal["MINI", "MICRO"]
 
+PART_NAMES: Tuple[str, ...] = ("Main", "Attitude", "Booster")
+
+PART_LAYER_TYPES: Dict[str, LayerType] = {
+    "Main": "MINI",
+    "Attitude": "MICRO",
+    "Booster": "MICRO",
+}
+
 
 def contract_symbol(symbol_type: Literal["NQ", "GC"], layer_type: LayerType) -> str:
     """

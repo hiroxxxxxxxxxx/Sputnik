@@ -29,10 +29,10 @@ def test_build_nq_engine_returns_engine(cockpit) -> None:
         config={"base_unit": 1.0, "boost_ratio": 1.0},
     )
     assert engine.symbol_type == "NQ"
-    assert engine.main_part.blueprint.name == "Main"
-    assert engine.main_part.contract_symbol == "NQ"
-    assert engine.booster_part.blueprint.name == "Booster"
-    assert engine.booster_part.contract_symbol == "MNQ"
+    assert engine.blueprints["Main"].name == "Main"
+    assert engine.contract_symbol_for("Main") == "NQ"
+    assert engine.blueprints["Booster"].name == "Booster"
+    assert engine.contract_symbol_for("Booster") == "MNQ"
 
 
 def test_build_nq_engine_custom_blueprints(cockpit) -> None:
@@ -48,7 +48,7 @@ def test_build_nq_engine_custom_blueprints(cockpit) -> None:
         blueprints={"Main": bp, "Attitude": bp, "Booster": bp},
         config={"base_unit": 1.0, "boost_ratio": 1.0},
     )
-    assert engine.main_part.blueprint is bp
+    assert engine.blueprints["Main"] is bp
 
 
 def test_build_gc_engine_returns_engine(cockpit) -> None:
@@ -58,8 +58,8 @@ def test_build_gc_engine_returns_engine(cockpit) -> None:
         config={"base_unit": 1.0, "boost_ratio": 1.0},
     )
     assert engine.symbol_type == "GC"
-    assert engine.main_part.symbol_type == "GC"
-    assert engine.booster_part.contract_symbol == "MGC"
+    assert engine.symbol_type == "GC"
+    assert engine.contract_symbol_for("Booster") == "MGC"
 
 
 def test_build_gc_engine_with_config(cockpit) -> None:
@@ -107,5 +107,5 @@ def test_build_engine_pair_same_structure_as_individual(cockpit) -> None:
     nq2, gc2 = build_engine_pair(
         blueprints_nq=bp, blueprints_gc=bp, nq_config=cfg, gc_config=cfg
     )
-    assert nq1.main_part.blueprint.name == nq2.main_part.blueprint.name
-    assert gc1.booster_part.blueprint.name == gc2.booster_part.blueprint.name
+    assert nq1.blueprints["Main"].name == nq2.blueprints["Main"].name
+    assert gc1.blueprints["Booster"].name == gc2.blueprints["Booster"].name
