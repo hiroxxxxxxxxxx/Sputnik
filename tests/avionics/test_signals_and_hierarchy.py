@@ -12,7 +12,7 @@ from datetime import date, timedelta
 import pytest
 
 from avionics import PFactor, SFactor, TFactor, UFactor, VFactor
-from avionics.Instruments import (
+from avionics.factors import (
     FactorsConfigError,
     get_p_thresholds,
     get_v_thresholds,
@@ -26,8 +26,8 @@ from avionics.data.signals import (
     SignalBundle,
     VolatilitySignal,
 )
-from avionics.Instruments.signals import format_signal_bundle_breakdown
-from avionics.process.layer2.compute import (
+from reports.format_signal_breakdown import format_signal_bundle_breakdown
+from avionics.compute import (
     _settlement_bar_indices_from_date,
     compute_capital_signals_from_cap,
     compute_price_signals_from_snapshot,
@@ -135,7 +135,7 @@ def test_compute_capital_signals_none_returns_defaults() -> None:
 def test_signal_bundle_apply_all_distributes_to_factors() -> None:
     """apply_all(signal_bundle) で P/V/T にシグナルが配布され、レベルが更新される。"""
     from avionics import FlightController
-    from avionics.Instruments import get_t_thresholds
+    from avionics.factors import get_t_thresholds
 
     p = PFactor(name="P_NQ", thresholds=get_p_thresholds(_config, "NQ"))
     v = VFactor(name="V_NQ", thresholds=get_v_thresholds(_config, "NQ"))
@@ -171,7 +171,7 @@ def test_signal_bundle_apply_all_distributes_to_factors() -> None:
 def test_signal_bundle_apply_all_capital_factors() -> None:
     """apply_all(signal_bundle) で U/S に capital_signals が配布される。"""
     from avionics import FlightController
-    from avionics.Instruments import get_s_thresholds, get_u_thresholds
+    from avionics.factors import get_s_thresholds, get_u_thresholds
 
     u_th = get_u_thresholds(_config)
     s_th = get_s_thresholds(_config)

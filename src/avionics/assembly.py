@@ -10,7 +10,7 @@ from __future__ import annotations
 from .data.fc_signals import EngineFactorMapping
 from .data.source import BundleBuildOptions
 from .flight_controller import FlightController
-from .Instruments import (
+from .factors import (
     CFactor,
     PFactor,
     RFactor,
@@ -19,7 +19,7 @@ from .Instruments import (
     UFactor,
     VFactor,
 )
-from .Instruments.factors_config import (
+from .factors.factors_config import (
     FactorsConfigError,
     get_c_thresholds,
     get_p_thresholds,

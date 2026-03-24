@@ -10,7 +10,7 @@ Market Level / Capital Level を算出。Cockpit: 管制層。スロットルモ
 
 from .assembly import build_flight_controller
 from .flight_controller import FlightController
-from .Instruments import (
+from .factors import (
     BaseFactor,
     CFactor,
     PFactor,

@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from data.db import get_connection, get_db_path
+from store.db import get_connection, get_db_path
 
 
 def test_get_db_path_default() -> None:

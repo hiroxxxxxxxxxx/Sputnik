@@ -5,7 +5,7 @@ import asyncio
 import pytest
 
 from avionics import TFactor
-from avionics.Instruments import FactorsConfigError, get_t_thresholds, load_factors_config
+from avionics.factors import FactorsConfigError, get_t_thresholds, load_factors_config
 from avionics.data.signals import SignalBundle
 
 

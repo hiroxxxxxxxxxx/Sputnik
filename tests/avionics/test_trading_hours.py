@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from avionics.trading_hours import (
+from avionics.ib.trading_hours import (
     DaySchedule,
     check_upcoming_schedule,
     parse_trading_hours,

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, List, Optional, Tuple
 
-from ..trading_hours import (
+from .trading_hours import (
     DaySchedule,
     check_upcoming_schedule,
     parse_trading_hours,

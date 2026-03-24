@@ -102,7 +102,7 @@ def test_avionics_register_factor_subscription() -> None:
 def test_avionics_get_individual_control_level_excludes_t() -> None:
     """get_individual_control_level(symbol) は P,V のみで T を含まない。"""
     from avionics import PFactor, TFactor, VFactor
-    from avionics.Instruments import (
+    from avionics.factors import (
         FactorsConfigError,
         get_p_thresholds,
         get_t_thresholds,
@@ -130,7 +130,7 @@ def test_avionics_get_individual_control_level_excludes_t() -> None:
 def test_avionics_get_synchronous_control_level_from_t_factors() -> None:
     """get_synchronous_control_level() は T 相関で 0/1/2。銘柄1つなら T の level。"""
     from avionics import TFactor
-    from avionics.Instruments import FactorsConfigError, get_t_thresholds, load_factors_config
+    from avionics.factors import FactorsConfigError, get_t_thresholds, load_factors_config
 
     try:
         config = load_factors_config()
@@ -150,7 +150,7 @@ def test_avionics_get_synchronous_control_level_from_t_factors() -> None:
 def test_avionics_get_effective_level_is_max_of_three_layers() -> None:
     """get_flight_controller_signal().throttle_level(sym) = max(個別制御層, 同期制御層, 制限制御層)。"""
     from avionics import PFactor, TFactor, VFactor
-    from avionics.Instruments import (
+    from avionics.factors import (
         get_p_thresholds,
         get_t_thresholds,
         get_v_thresholds,

@@ -2,7 +2,6 @@
 IB（ib_async）経由で Raw のみ取得する（Layer 1）。
 
 IBRawFetcher は IB から Raw を取得し RawMarketSnapshot（NQ/GC固定DTO）として返す。SignalBundle は作らない。
-内部実装の都合で一時的に CachedRawDataProvider に詰めるが、外部へはスナップショットを返す。
 SignalBundle は FC.refresh 経由で get_last_bundle() から取得する。
 """
 
@@ -12,7 +11,6 @@ import asyncio
 from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-from ..data.cache import CachedRawDataProvider
 from ..data.raw import (
     PriceBar,
     PriceBar1h,
@@ -197,7 +195,6 @@ class IBRawFetcher:
 
         :return: (RawMarketSnapshot, Optional[RawCapitalSnapshot])
         """
-        cache = CachedRawDataProvider()
         vol_map = volatility_symbols or {s: "VXN" if s == "NQ" else "GVZ" for s in price_symbols}
 
         def _series_limit(sym: str) -> int:
@@ -235,50 +232,47 @@ class IBRawFetcher:
 
         results = await asyncio.gather(*coros)
         idx = 0
+        price_bars: Dict[str, List[PriceBar]] = {}
         for sym in price_symbols:
-            cache._price_bars[sym] = results[idx]
+            price_bars[sym] = results[idx]
             idx += 1
+        vol_series: Dict[str, List[VolatilitySeriesPoint]] = {}
         for sym in price_symbols:
             series = results[idx]
             idx += 1
             if series:
-                cache._volatility_series[sym] = series
-        cache._capital_snapshot = results[idx]
+                vol_series[sym] = series
+        capital: Optional[RawCapitalSnapshot] = results[idx]
         idx += 1
+        credit_map: Dict[str, List[PriceBar]] = {}
         if liquidity_credit_symbol:
-            cache._credit_bars[liquidity_credit_symbol] = results[idx]
+            credit_map[liquidity_credit_symbol] = results[idx]
             idx += 1
             if liquidity_credit_symbol.upper() == "HYG":
-                cache._credit_bars["LQD"] = results[idx]
+                credit_map["LQD"] = results[idx]
                 idx += 1
+        tip: List[PriceBar] = []
         if liquidity_tip:
-            cache._tip_bars = results[idx]
+            tip = results[idx]
             idx += 1
+        bars_1h: Dict[str, List[PriceBar1h]] = {}
         for sym in price_symbols:
-            cache._price_bars_1h[sym] = results[idx]
+            bars_1h[sym] = results[idx]
             idx += 1
-
-        nq_bars = list(cache._price_bars.get("NQ", []))
-        gc_bars = list(cache._price_bars.get("GC", []))
-        nq_1h = list(cache._price_bars_1h.get("NQ", []))
-        gc_1h = list(cache._price_bars_1h.get("GC", []))
-        nq_vol = list(cache._volatility_series.get("NQ", []))
-        gc_vol = list(cache._volatility_series.get("GC", []))
-        credit_map: Dict[str, List[PriceBar]] = {k: list(v) for k, v in cache._credit_bars.items()}
 
         snapshot = RawMarketSnapshot(
             as_of=as_of,
-            nq_price_bars=nq_bars,
-            gc_price_bars=gc_bars,
-            nq_price_bars_1h=nq_1h,
-            gc_price_bars_1h=gc_1h,
-            nq_volatility_series=nq_vol,
-            gc_volatility_series=gc_vol,
-            capital_snapshot=cache._capital_snapshot,
+            nq_price_bars=list(price_bars.get("NQ", [])),
+            gc_price_bars=list(price_bars.get("GC", [])),
+            nq_price_bars_1h=list(bars_1h.get("NQ", [])),
+            gc_price_bars_1h=list(bars_1h.get("GC", [])),
+            nq_volatility_series=list(vol_series.get("NQ", [])),
+            gc_volatility_series=list(vol_series.get("GC", [])),
+            capital_snapshot=capital,
             credit_bars=credit_map,
-            tip_bars=list(cache._tip_bars),
+            tip_bars=tip,
         )
-        return snapshot, snapshot.capital_snapshot
+        return snapshot, capital
 
 
 async def fetch_raw(

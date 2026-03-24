@@ -185,7 +185,7 @@ def load_factors_config(path: str | Path | None = None) -> Dict[str, Any]:
     :raises FactorsConfigError: ファイルが見つからない、または path がファイルでない場合。
     """
     if path is None:
-        # __file__ = .../src/avionics/Instruments/factors_config.py -> project_root = .../Sputnik
+        # __file__ = .../src/avionics/factors/factors_config.py -> project_root = .../Sputnik
         project_root = Path(__file__).resolve().parent.parent.parent.parent
         env_dir = os.environ.get("SPUTNIK_CONFIG_DIR")
         candidates = []

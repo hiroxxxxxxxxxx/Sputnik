@@ -21,10 +21,10 @@ def compute_icl(mapping: "EngineFactorMapping", symbol: str) -> int:
     T は含めない（SCL 用）。因子は apply_all 済みである前提。
     定義書「4-2-1 個別制御層」参照。
     """
-    from .Instruments.c_factor import CFactor
-    from .Instruments.p_factor import PFactor
-    from .Instruments.r_factor import RFactor
-    from .Instruments.v_factor import VFactor
+    from .factors.c_factor import CFactor
+    from .factors.p_factor import PFactor
+    from .factors.r_factor import RFactor
+    from .factors.v_factor import VFactor
     relevant = [
         f
         for f in (mapping.global_market_factors + mapping.symbol_factors.get(symbol, []))
@@ -44,7 +44,7 @@ def compute_scl(mapping: "EngineFactorMapping") -> int:
     """
     if not mapping.symbol_factors:
         return 0
-    from .Instruments.t_factor import TFactor
+    from .factors.t_factor import TFactor
     t_levels: List[int] = []
     for factors in mapping.symbol_factors.values():
         for f in factors:

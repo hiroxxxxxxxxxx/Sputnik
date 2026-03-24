@@ -106,7 +106,7 @@ class FlightController:
         lqd_symbol: Optional[str] = None
         if (opts.liquidity_credit_symbol or "").upper() == "HYG" and "LQD" in raw_snapshot.credit_bars:
             lqd_symbol = "LQD"
-        from .process.layer2.bundle_builder import build_signal_bundle
+        from .bundle_builder import build_signal_bundle
 
         bundle = build_signal_bundle(
             raw_snapshot,

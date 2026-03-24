@@ -5,7 +5,7 @@ import asyncio
 import pytest
 
 from avionics import PFactor
-from avionics.Instruments import FactorsConfigError, get_p_thresholds, load_factors_config
+from avionics.factors import FactorsConfigError, get_p_thresholds, load_factors_config
 from avionics.data.signals import SignalBundle
 
 try:

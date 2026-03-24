@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from avionics.Instruments import (
+from avionics.factors import (
     FactorsConfigError,
     get_c_thresholds,
     get_p_thresholds,
