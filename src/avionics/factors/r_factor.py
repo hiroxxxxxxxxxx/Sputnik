@@ -13,7 +13,7 @@ from typing import Any, Literal, Optional, TYPE_CHECKING
 from .base_factor import BaseFactor, LevelType
 
 if TYPE_CHECKING:
-    from avionics.data.signals import LiquiditySignals, SignalBundle
+    from avionics.data.signals import SignalBundle
 
 
 AltitudeRegime = Literal["high_mid", "low"]

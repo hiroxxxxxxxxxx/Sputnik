@@ -1,8 +1,7 @@
 """
-EngineInventory のテスト。
+calculate_net_targets のテスト。
 
-calculate_net_targets の合算と base_unit 乗算・丸めを検証。
-定義書「1-4」「6-2」参照。
+合算と base_unit 乗算・丸めを検証。定義書「1-4」「6-2」参照。
 """
 
 from __future__ import annotations
@@ -10,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 from engines.blueprint import LayerBlueprint
-from engines.inventory import EngineInventory
+from engines.engine import calculate_net_targets
 
 
 def _make_main_blueprint() -> LayerBlueprint:
@@ -33,8 +32,7 @@ def _make_booster_blueprint() -> LayerBlueprint:
 
 def test_calculate_net_targets_single_layer() -> None:
     """単一層で base_unit 倍して丸められる。"""
-    inv = EngineInventory("NQ", blueprints={"Main": _make_main_blueprint()})
-    t = inv.calculate_net_targets("Cruise", base_unit=2.0)
+    t = calculate_net_targets({"Main": _make_main_blueprint()}, "Cruise", base_unit=2.0)
     assert t["future"] == 2
     assert t["k1"] == -2
     assert t["k2"] == 0
@@ -42,29 +40,17 @@ def test_calculate_net_targets_single_layer() -> None:
 
 def test_calculate_net_targets_two_layers_aggregate() -> None:
     """複数層を合算する。Boost 時は Main + Booster の比率が足される。"""
-    inv = EngineInventory(
-        "NQ",
-        blueprints={"Main": _make_main_blueprint(), "Booster": _make_booster_blueprint()},
-    )
-    t = inv.calculate_net_targets("Boost", base_unit=1.0)
-    assert t["future"] == round(1.0 + 1.5)  # 2
-    assert t["k1"] == round(-1.0 + -1.5)  # -2
+    blueprints = {"Main": _make_main_blueprint(), "Booster": _make_booster_blueprint()}
+    t = calculate_net_targets(blueprints, "Boost", base_unit=1.0)
+    assert t["future"] == round(1.0 + 1.5)
+    assert t["k1"] == round(-1.0 + -1.5)
     assert t["k2"] == 0
 
 
 def test_calculate_net_targets_emergency_booster_zero() -> None:
     """Emergency 時は Booster が 0 なので Main 分のみ。"""
-    inv = EngineInventory(
-        "NQ",
-        blueprints={"Main": _make_main_blueprint(), "Booster": _make_booster_blueprint()},
-    )
-    t = inv.calculate_net_targets("Emergency", base_unit=2.0)
+    blueprints = {"Main": _make_main_blueprint(), "Booster": _make_booster_blueprint()}
+    t = calculate_net_targets(blueprints, "Emergency", base_unit=2.0)
     assert t["future"] == 2
     assert t["k1"] == -2
     assert t["k2"] == 2
-
-
-def test_inventory_symbol() -> None:
-    """symbol が保持される。"""
-    inv = EngineInventory("GC", blueprints={"Main": _make_main_blueprint()})
-    assert inv.symbol == "GC"

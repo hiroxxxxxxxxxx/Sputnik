@@ -37,26 +37,6 @@ def test_engine_apply_mode_collects_deltas(fc_with_engines) -> None:
     assert len(main_deltas) >= 1
 
 
-def test_engine_instruction_for_default_base_unit(fc_with_engines) -> None:
-    _, engine = fc_with_engines
-    inst = engine._instruction_for("Cruise")
-    assert "base_unit" in inst
-    assert inst.get("base_unit", 0) == 1.0
-    assert inst.get("boost_ratio", 0) == 1.0
-
-
-def test_engine_instruction_for_uses_config() -> None:
-    flight_controller = FlightController(global_market_factors=[], global_capital_factors=[], symbol_factors={})
-    fc = Cockpit(fc=flight_controller, engines=[], initial_mode="Cruise")
-    engine = build_nq_engine(
-        blueprints=_default_blueprints(),
-        config={"base_unit": 2.0, "boost_ratio": 1.5},
-    )
-    inst = engine._instruction_for("Boost")
-    assert inst["base_unit"] == 2.0
-    assert inst["boost_ratio"] == 1.5
-
-
 def test_engine_sync_calls_all_parts(fc_with_engines) -> None:
     _, engine = fc_with_engines
     engine.sync()

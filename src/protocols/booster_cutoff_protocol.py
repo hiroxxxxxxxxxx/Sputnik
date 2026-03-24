@@ -20,13 +20,9 @@ class BoosterCutoffProtocol(BaseProtocol):
         self,
         engines: Optional[List["Engine"]] = None,
         *,
-        ib_client: Any = None,
         notifier: Any = None,
     ) -> None:
-        super().__init__(engines, ib_client=ib_client, notifier=notifier)
-
-    def get_priority(self) -> int:
-        return 1
+        super().__init__(engines, notifier=notifier)
 
     async def run(self) -> None:
         if self._engines:

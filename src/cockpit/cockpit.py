@@ -142,12 +142,8 @@ class Cockpit:
         throttle_level=2 の場合は EmergencyProtocol。それ以外はモード遷移のみ全エンジンへ apply_mode。
         定義書「Phase 5 プロトコル起動」参照。
         """
-        target_mode: ModeType = (
-            EMERGENCY
-            if signal.worst_throttle_level >= 2
-            else (CRUISE if signal.worst_throttle_level == 1 else BOOST)
-        )
-        if signal.worst_throttle_level >= 2:
+        target_mode = self._level_to_mode(signal.worst_throttle_level)
+        if target_mode == EMERGENCY:
             if self._on_emergency_entered is not None:
                 await self._on_emergency_entered()
             protocol = EmergencyProtocol(self.engines)

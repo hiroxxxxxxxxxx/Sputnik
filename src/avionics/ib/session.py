@@ -8,11 +8,29 @@ reports や scripts は with_ib_fetcher / with_ib_connection / check_ib_connecti
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator
+from typing import Any, AsyncIterator, Callable
 
 from ib_async import IB
 
 from .fetcher import IBRawFetcher
+
+
+@asynccontextmanager
+async def _ib_session(
+    host: str,
+    port: int,
+    *,
+    client_id: int = 3,
+    timeout: float = 30.0,
+    wrap: Callable[[IB], Any] = lambda ib: ib,
+) -> AsyncIterator[Any]:
+    """IB に接続し、wrap(ib) の結果を yield する。抜けたら disconnect。"""
+    ib = IB()
+    await ib.connectAsync(host=host, port=port, clientId=client_id, timeout=timeout)
+    try:
+        yield wrap(ib)
+    finally:
+        ib.disconnect()
 
 
 @asynccontextmanager
@@ -27,12 +45,8 @@ async def with_ib_fetcher(
     IB に接続し、Raw 取得用の IBRawFetcher を yield する。
     抜けたら disconnect。reports / scripts は fetcher を FC.refresh に渡して最新取得する。
     """
-    ib = IB()
-    await ib.connectAsync(host=host, port=port, clientId=client_id, timeout=timeout)
-    try:
-        yield IBRawFetcher(ib)
-    finally:
-        ib.disconnect()
+    async with _ib_session(host, port, client_id=client_id, timeout=timeout, wrap=IBRawFetcher) as fetcher:
+        yield fetcher
 
 
 @asynccontextmanager
@@ -47,12 +61,8 @@ async def with_ib_connection(
     IB に接続し、接続済み ib インスタンスを yield する。
     取引時間スキャン（run_daily_schedule_scan）等で使う。抜けたら disconnect。
     """
-    ib = IB()
-    await ib.connectAsync(host=host, port=port, clientId=client_id, timeout=timeout)
-    try:
+    async with _ib_session(host, port, client_id=client_id, timeout=timeout) as ib:
         yield ib
-    finally:
-        ib.disconnect()
 
 
 async def check_ib_connection(

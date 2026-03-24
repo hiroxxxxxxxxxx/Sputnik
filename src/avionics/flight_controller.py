@@ -16,7 +16,6 @@ from typing import Any, Dict, List, Optional
 from .data.factor_mapping import EngineFactorMapping
 from .data.flight_controller_signal import FlightControllerSignal
 from .data.raw_types import RawCapitalSnapshot
-from .data.raw_market_snapshot import RawMarketSnapshot
 from .data.signals import SignalBundle
 from .bundle_builder import BundleBuildOptions
 from .data.data_source import DataSource
@@ -62,7 +61,6 @@ class FlightController:
         self._bundle_build_options = bundle_build_options or BundleBuildOptions()
         self._last_bundle: Optional[SignalBundle] = None
         self._last_capital_snapshot: Optional[RawCapitalSnapshot] = None
-        self._last_raw_snapshot: Optional[RawMarketSnapshot] = None
 
     def register_factor(self, group: str, factor: Any) -> None:
         """
@@ -114,7 +112,6 @@ class FlightController:
             raw_snapshot,
             as_of,
             symbols,
-            volatility_symbols=opts.volatility_symbols,
             liquidity_credit_symbol=opts.liquidity_credit_symbol,
             liquidity_credit_lqd_symbol=lqd_symbol,
             liquidity_tip=opts.liquidity_tip,
@@ -125,7 +122,6 @@ class FlightController:
         )
         self._last_bundle = bundle
         self._last_capital_snapshot = capital_snapshot
-        self._last_raw_snapshot = raw_snapshot
         await self.apply_all(bundle)
 
     def get_last_bundle(self) -> Optional[SignalBundle]:
@@ -135,10 +131,6 @@ class FlightController:
     def get_last_capital_snapshot(self) -> Optional[RawCapitalSnapshot]:
         """最後に refresh した RawCapitalSnapshot。未 refresh の場合は None。"""
         return self._last_capital_snapshot
-
-    def get_last_raw_snapshot(self) -> Optional[RawMarketSnapshot]:
-        """最後に refresh した RawMarketSnapshot。未 refresh の場合は None。"""
-        return self._last_raw_snapshot
 
     async def apply_all(self, bundle: SignalBundle) -> None:
         """
@@ -161,26 +153,63 @@ class FlightController:
     def get_individual_control_level(self, symbol: str) -> int:
         """
         ICL（個別制御層）= max(P, V, C, R) を銘柄 symbol について返す。
-        ControlLevels.compute_icl に委譲。定義書「4-2-1 個別制御層」参照。
+
+        T は含めない（SCL 用）。因子は apply_all 済みである前提。
+        定義書「4-2-1 個別制御層」参照。
         """
-        from .control_levels import compute_icl
-        return compute_icl(self._mapping, symbol)
+        from .factors.c_factor import CFactor
+        from .factors.p_factor import PFactor
+        from .factors.r_factor import RFactor
+        from .factors.v_factor import VFactor
+
+        m = self._mapping
+        relevant = [
+            f
+            for f in (m.global_market_factors + m.symbol_factors.get(symbol, []))
+            if isinstance(f, (PFactor, VFactor, CFactor, RFactor))
+        ]
+        if not relevant:
+            return 0
+        return max(f.level for f in relevant)
 
     def get_synchronous_control_level(self) -> int:
         """
-        SCL（同期制御層）= T 相関。ControlLevels.compute_scl に委譲。
+        SCL（同期制御層）= T 相関。
+
+        両銘柄 Downtrend(T=2)→2, 片方→1, 両方 Uptrend/Flat→0。
+        銘柄1つの場合はその T の level。因子は apply_all 済みである前提。
         定義書「4-2-2 同期制御層」参照。
         """
-        from .control_levels import compute_scl
-        return compute_scl(self._mapping)
+        m = self._mapping
+        if not m.symbol_factors:
+            return 0
+        from .factors.t_factor import TFactor
+
+        t_levels: List[int] = []
+        for factors in m.symbol_factors.values():
+            for f in factors:
+                if isinstance(f, TFactor):
+                    t_levels.append(f.level)
+                    break
+        if not t_levels:
+            return 0
+        if len(t_levels) == 1:
+            return t_levels[0]
+        if all(lv == 2 for lv in t_levels):
+            return 2
+        if any(lv == 2 for lv in t_levels):
+            return 1
+        return 0
 
     def get_limit_control_level(self) -> int:
         """
-        LCL（制限制御層）= max(U, S)。ControlLevels.compute_lcl に委譲。
-        定義書「4-2-3 制限制御層」参照。
+        LCL（制限制御層）= max(U, S)。全エンジン共通。
+
+        因子は apply_all 済みである前提。定義書「4-2-3 制限制御層」参照。
         """
-        from .control_levels import compute_lcl
-        return compute_lcl(self._mapping)
+        if not self._mapping.limit_factors:
+            return 0
+        return max(f.level for f in self._mapping.limit_factors)
 
     async def get_flight_controller_signal(self) -> FlightControllerSignal:
         """

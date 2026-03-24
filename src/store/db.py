@@ -17,7 +17,7 @@ from pathlib import Path
 
 
 def _project_root() -> Path:
-    """src/data/db.py からプロジェクトルートを算出。"""
+    """src/store/db.py からプロジェクトルートを算出。"""
     return Path(__file__).resolve().parent.parent.parent
 
 

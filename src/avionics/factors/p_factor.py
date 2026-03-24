@@ -14,7 +14,7 @@ from typing import Any, Literal, Optional, Sequence, TYPE_CHECKING
 from .base_factor import BaseFactor, LevelType
 
 if TYPE_CHECKING:
-    from avionics.data.signals import PriceDailyRow, PriceSignals, SignalBundle
+    from avionics.data.signals import PriceSignals, SignalBundle
 
 
 TrendType = Literal["up", "down", "flat"]

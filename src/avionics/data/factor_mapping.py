@@ -1,7 +1,7 @@
 """
 Data: エンジン(Symbol) ↔ Factor のマッピング構造。
 
-Assembly が組み立て、FlightController と三層算出（control_levels）が参照する。
+Assembly が組み立て、FlightController が三層算出（ICL/SCL/LCL）時に参照する。
 定義書「4-2」因子の割り当て参照。
 """
 

@@ -13,7 +13,7 @@ ib_async 依存は **avionics.ib** パッケージに集約されている（rep
 | **FC.refresh(data_source, as_of, symbols)** | 内部で data_source.fetch_raw（API 呼び出し） | 内部で build_signal_bundle → update_all | L1+L2+L3 入力 | `flight_controller.py`。DataSource（例: IBRawFetcher）から Raw 取得 → `build_signal_bundle`（`BundleBuildOptions` は FC 構築時注入）→ `_update_all_from_signals`。最後の bundle は `get_last_bundle()` で参照。 |
 | **fetch_raw** | あり（reqHistoricalDataAsync 等） | なし（Raw を詰めるだけ） | Layer 1 | `avionics/ib/fetcher.py` の **IBRawFetcher.fetch_raw()**。FC.refresh 内で呼ばれる。 |
 | **build_signal_bundle** | なし | あり（compute_* で Layer 2 算出） | Layer 2 | `avionics/bundle_builder.py`。FC.refresh 内から呼ばれる。 |
-| **get_flight_controller_signal()** | なし | あり（因子 level → ICL/SCL/LCL） | Layer 3 出力 | `flight_controller.py` の `get_flight_controller_signal()`（引数なし）。`control_levels.compute_icl/scl/lcl`。戻り値は `FlightControllerSignal`（`data/flight_controller_signal.py`）。 |
+| **get_flight_controller_signal()** | なし | あり（因子 level → ICL/SCL/LCL） | Layer 3 出力 | `flight_controller.py` の `get_flight_controller_signal()`（引数なし）。ICL/SCL/LCL 算出は `FlightController` のメソッド内で直接実行。戻り値は `FlightControllerSignal`（`data/flight_controller_signal.py`）。 |
 
 **FlightController.apply_all が呼ばれるとき、API は一切呼ばれない。** 渡された SignalBundle を因子に配布し、各因子が自分の level を更新するだけ。
 
@@ -88,10 +88,10 @@ Raw 取得窓口は `avionics.ib.IBRawFetcher` を直接利用する（re-export
 | **接続** | `avionics/ib/session.py` | `with_ib_fetcher`（IBRawFetcher を yield）/ `with_ib_connection` / `check_ib_connection`。 | あり（接続時） |
 | **FC.refresh** | `avionics/flight_controller.py` | DataSource（例: IBRawFetcher）を渡すと、内部で fetch_raw → build_signal_bundle（BundleBuildOptions 使用）→ update_all。最後の bundle は get_last_bundle() で取得。 | 内部で fetch_raw が API 呼び出し |
 | **Layer 1（Raw 取得）** | `avionics/ib/fetcher.py` の **IBRawFetcher** | `fetch_raw`: reqHistoricalDataAsync / accountSummaryAsync で Raw を取得。FC.refresh に注入する DataSource の実装。 | **あり** |
-| **Layer 1（型）** | `avionics/data/raw.py`, `data/cache.py` | Raw の型定義と CachedRawDataProvider。計算なし。 | なし |
+| **Layer 1（型）** | `avionics/data/raw_types.py`, `data/cache.py` | Raw の型定義と CachedRawDataProvider。計算なし。 | なし |
 | **Layer 2（Signals）** | `avionics/process/layer2/bundle_builder.py` + `compute.py` | `build_signal_bundle`: compute_price_signals / compute_volatility_signal / compute_liquidity_signals_* / compute_capital_signals で SignalBundle を組み立てる。 | なし |
 | **Layer 3 入力** | `avionics/flight_controller.py` の `update_all(signal_bundle=bundle)` | SignalBundle を各因子に配布。各因子が `update_from_signal_bundle` で level を更新。 | なし |
-| **Layer 3 出力** | `flight_controller.py` の `get_flight_controller_signal` + `control_levels.py` | 因子の level から ICL / SCL / LCL を算出し FlightControllerSignal を返す。 | なし |
+| **Layer 3 出力** | `flight_controller.py` の `get_flight_controller_signal` | 因子の level から ICL / SCL / LCL を算出し FlightControllerSignal を返す。 | なし |
 | **表示** | `reports/format_*.py` | FlightControllerSignal と fc.mapping からレポート文字列を組み立て。 | なし |
 
 

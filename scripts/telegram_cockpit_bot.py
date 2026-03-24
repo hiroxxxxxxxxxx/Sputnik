@@ -209,11 +209,7 @@ async def schedule_command(update: object, context: ContextTypes.DEFAULT_TYPE) -
     msg = getattr(update, "effective_message", None)
     if msg is None:
         return
-    host = os.environ.get("IBKR_HOST", "127.0.0.1").strip()
-    port_str = os.environ.get("IBKR_PORT", "").strip()
-    port = int(port_str) if port_str.isdigit() else 4002
-    symbols_str = os.environ.get("TELEGRAM_COCKPIT_SYMBOLS", "NQ,GC").strip()
-    symbols = [s.strip() for s in symbols_str.split(",") if s.strip()] or ["NQ", "GC"]
+    host, port, symbols, _cid, _timeout = _env_host_port_symbols()
     try:
         await msg.reply_text("取引時間スキャン中…")
     except Exception:
@@ -246,10 +242,7 @@ async def _notify_gateway_ready(application: object) -> None:
     if not chat_id:
         print("TELEGRAM_CHAT_ID が未設定のため、起動完了メッセージは送信しません。", file=sys.stderr)
         return
-    host = os.environ.get("IBKR_HOST", "127.0.0.1").strip()
-    port_str = os.environ.get("IBKR_PORT", "").strip()
-    port = int(port_str) if port_str.isdigit() else 8888
-    client_id = int(os.environ.get("IBKR_CLIENT_ID", "3"))
+    host, port, _symbols, client_id, _timeout = _env_host_port_symbols()
     await asyncio.sleep(30)
 
     from avionics.ib import check_ib_connection

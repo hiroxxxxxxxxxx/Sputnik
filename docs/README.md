@@ -5,7 +5,7 @@
 | ファイル | 役割 |
 |----------|------|
 | **SPEC.md**（ルート） | 戦略・運用の**正本**（マクロインカム戦略 完全運用定義書）。憲章・因子・制御構造のマスター。ここを最新にメンテする。 |
-| **docs/spec/** | 実装レベルの**仕様・設計**。PHASE2 テーブル、注文処理・プロトコル階層（ARCHITECTURE）など。SPEC.md を具体化したもの。 |
+| **docs/spec/** | 実装レベルの**仕様・設計**。PHASE2 テーブル、注文処理・プロトコル階層（ARCHITECTURE）、未実装一覧（TODO）など。SPEC.md を具体化したもの。 |
 
 | フォルダ | 用途 |
 |----------|------|
@@ -17,10 +17,10 @@
 
 ## 各フォルダの主なファイル
 
-- **spec:** PHASE2_TABLE_SPEC.md, ARCHITECTURE.md
+- **spec:** ARCHITECTURE.md, PHASE2_TABLE_SPEC.md, DATA_FLOW_API_TO_FC.md, TODO.md
 - **runbooks:** DOCKER.md
-- **proposals:** （検討中の提案のみ。空でも可）
+- **proposals:** （現在なし。検討案が出たら配置する）
 - **plans:** SQLITE_IMPLEMENTATION_PLAN.md
-- **archive:** DATA_FLOW_AND_DEPENDENCIES.md, LAYER_CHARTER_COMPLIANCE.md, SPEC_COMPLIANCE.md, AVIONICS_RESTRUCTURE_PLAN.md, LAYER4_SPEC_ALIGNMENT.md, SPEC_SECTION_1-3_DRAFT.md, SQLITE_DATA_SPEC_REVIEW.md, PROPOSAL_*.md, DATA_HIERARCHY_PROPOSAL.md, recovery_confirm_spec_options.md, IMPACT_GET_EFFECTIVE_LEVEL_REMOVAL.md, STATEFUL_AUDIT.md
+- **archive:** 採用済み提案（FC_AS_SINGLE_ENTRY_POINT, IB_FETCHER_IB_DATA_RESPONSIBILITY, LAYER_SCRIPT_REPORTS_FC, SIGNAL_BUNDLE_AND_ALTITUDE 等）、照合結果、旧ドラフト
 
 新規ドキュメントは上記分類に従って配置する。仕様は spec、進行中計画は plans、検討中提案は proposals。完了・古い・照合結果は archive。

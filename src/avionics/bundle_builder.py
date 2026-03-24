@@ -50,7 +50,6 @@ def build_signal_bundle(
     as_of: date,
     price_symbols: List[str],
     *,
-    volatility_symbols: Optional[Dict[str, str]] = None,
     liquidity_credit_symbol: Optional[str] = None,
     liquidity_credit_lqd_symbol: Optional[str] = None,
     liquidity_tip: bool = True,
@@ -65,7 +64,6 @@ def build_signal_bundle(
     :param snapshot: Layer 1 のスナップショット（RawMarketSnapshot）。
     :param as_of: 清算値の「当日」バー検索に使う基準日。
     :param price_symbols: P/T 用銘柄リスト（例: ["NQ", "GC"]）。
-    :param volatility_symbols: 銘柄→ボラ指数シンボル。None なら NQ→VXN, 他→GVZ。
     :param liquidity_credit_symbol: C因子用（例: "HYG"）。None なら取得しない。
     :param liquidity_tip: R因子用 TIP を使うか。
     :param v_recovery_params: 銘柄→V因子の高度スライス（V1_off, V2_off 等）。

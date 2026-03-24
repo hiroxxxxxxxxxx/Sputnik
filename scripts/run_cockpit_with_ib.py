@@ -45,7 +45,6 @@ async def main() -> int:
     )
     parser.add_argument("--client-id", type=int, default=1, help="API クライアント ID")
     parser.add_argument("--symbols", nargs="+", default=["NQ", "GC"], help="価格銘柄（例: NQ GC）")
-    parser.add_argument("--base-density", type=float, default=1.0, help="証拠金 base_density")
     parser.add_argument("--breakdown", action="store_true", help="各因子の入力となる Layer 2 シグナル内訳を表示")
     args = parser.parse_args()
 

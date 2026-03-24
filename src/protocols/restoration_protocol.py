@@ -25,13 +25,9 @@ class RestorationProtocol(BaseProtocol):
         self,
         engines: Optional[List["Engine"]] = None,
         *,
-        ib_client: Any = None,
         notifier: Any = None,
     ) -> None:
-        super().__init__(engines, ib_client=ib_client, notifier=notifier)
-
-    def get_priority(self) -> int:
-        return 2
+        super().__init__(engines, notifier=notifier)
 
     async def run(self) -> None:
         """復旧シーケンス。全エンジンに Cruise を並列適用。"""

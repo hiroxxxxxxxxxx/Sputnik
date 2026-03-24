@@ -54,11 +54,6 @@ class FlightControllerSignal:
         """互換用: 銘柄→ICL の辞書ビュー（読み取り専用）。"""
         return {"NQ": self.nq_icl, "GC": self.gc_icl}
 
-    @property
-    def throttle_by_symbol(self) -> Dict[str, int]:
-        """銘柄ごとの実行レベル Effective = max(ICL, SCL, LCL)。Cockpit の apply_mode 用。"""
-        return {"NQ": self.throttle_level("NQ"), "GC": self.throttle_level("GC")}
-
     def throttle_level(self, symbol: SymbolType | str) -> int:
         """指定銘柄の実行レベル。銘柄が無い場合は 0。"""
         if symbol == "NQ":

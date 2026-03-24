@@ -23,7 +23,7 @@ async def _build_fc_report_context(
 ) -> dict[str, Any]:
     """
     FlightController 計器レポート用のテンプレートコンテキストを組み立てる。
-    bundle は fc.get_last_bundle() から取得。表示文言はテンプレート側で組み立てる。
+    fc.get_flight_controller_signal() から因子レベルを取得。表示文言はテンプレート側で組み立てる。
     """
     signal = await fc.get_flight_controller_signal()
     symbol_blocks: list[dict[str, Any]] = []
@@ -57,7 +57,7 @@ async def format_cockpit_report(
 ) -> str:
     """
     Cockpit 計器レポート文字列をテンプレートで生成する。
-    bundle は fc.get_last_bundle() から取得する（refresh 済みの FC を渡すこと）。
+    fc.get_flight_controller_signal() から因子レベルを取得する（refresh 済みの FC を渡すこと）。
 
     :param fc: refresh 済みの FlightController。
     :param symbols: 銘柄リスト。

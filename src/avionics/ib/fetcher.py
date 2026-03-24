@@ -269,31 +269,3 @@ class IBRawFetcher:
             tip_bars=tip,
         )
         return snapshot, capital
-
-
-async def fetch_raw(
-    ib: Any,
-    as_of: date,
-    price_symbols: List[str],
-    *,
-    volatility_symbols: Optional[Dict[str, str]] = None,
-    liquidity_credit_symbol: Optional[str] = None,
-    liquidity_tip: bool = True,
-    account: str = "",
-    base_density: float = 1.0,
-    v_recovery_params: Optional[Dict[str, dict]] = None,
-) -> Tuple[RawMarketSnapshot, Optional[RawCapitalSnapshot]]:
-    """
-    利便関数: IB インスタンスとパラメータから Raw を取得する。
-    """
-    fetcher = IBRawFetcher(ib)
-    return await fetcher.fetch_raw(
-        as_of,
-        price_symbols,
-        volatility_symbols=volatility_symbols,
-        liquidity_credit_symbol=liquidity_credit_symbol,
-        liquidity_tip=liquidity_tip,
-        account=account,
-        base_density=base_density,
-        v_recovery_params=v_recovery_params,
-    )

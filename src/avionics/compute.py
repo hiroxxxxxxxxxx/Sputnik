@@ -27,33 +27,26 @@ RECOVERY_LOOKBACK_DAYS = 10
 MIN_BARS_FOR_RECOVERY = 20 + RECOVERY_LOOKBACK_DAYS
 
 
+_PRICE_BARS_ATTR = {"NQ": "nq_price_bars", "GC": "gc_price_bars"}
+_PRICE_BARS_1H_ATTR = {"NQ": "nq_price_bars_1h", "GC": "gc_price_bars_1h"}
+_VOL_SERIES_ATTR = {"NQ": "nq_volatility_series", "GC": "gc_volatility_series"}
+
+
 def _price_bars_from_snapshot(snapshot: RawMarketSnapshot, symbol: str) -> List[PriceBar]:
-    if symbol == "NQ":
-        bars = list(snapshot.nq_price_bars)
-    elif symbol == "GC":
-        bars = list(snapshot.gc_price_bars)
-    else:
-        bars = []
+    attr = _PRICE_BARS_ATTR.get(symbol)
+    bars = list(getattr(snapshot, attr)) if attr else []
     return sorted(bars, key=lambda b: b.date)
 
 
 def _price_bars_1h_from_snapshot(snapshot: RawMarketSnapshot, symbol: str) -> List[PriceBar1h]:
-    if symbol == "NQ":
-        bars = list(snapshot.nq_price_bars_1h)
-    elif symbol == "GC":
-        bars = list(snapshot.gc_price_bars_1h)
-    else:
-        bars = []
+    attr = _PRICE_BARS_1H_ATTR.get(symbol)
+    bars = list(getattr(snapshot, attr)) if attr else []
     return sorted(bars, key=lambda b: b.bar_end)
 
 
 def _volatility_series_from_snapshot(snapshot: RawMarketSnapshot, symbol: str) -> List[VolatilitySeriesPoint]:
-    if symbol == "NQ":
-        series = list(snapshot.nq_volatility_series)
-    elif symbol == "GC":
-        series = list(snapshot.gc_volatility_series)
-    else:
-        series = []
+    attr = _VOL_SERIES_ATTR.get(symbol)
+    series = list(getattr(snapshot, attr)) if attr else []
     return sorted(series, key=lambda x: x[0])
 
 
