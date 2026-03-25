@@ -12,7 +12,7 @@ from datetime import date
 from typing import Literal, Optional, Tuple
 
 TrendType = Literal["up", "down", "flat"]
-AltitudeRegime = Literal["high_mid", "low"]
+AltitudeRegime = Literal["high", "mid", "low"]
 
 # 復帰確認用。1日分の価格シグナル (date, daily_change, cum5_change, downside_gap, trend, cum2_change)。newest first。
 PriceDailyRow = Tuple[date, float, float, float, TrendType, Optional[float]]

@@ -30,9 +30,9 @@ class BundleBuildOptions:
     liquidity_credit_symbol: Optional[str] = "HYG"
     liquidity_tip: bool = True
     base_density: float = 1.0
-    v_altitude: AltitudeRegime = "high_mid"
-    c_altitude: AltitudeRegime = "high_mid"
-    r_altitude: AltitudeRegime = "high_mid"
+    v_altitude: AltitudeRegime = "mid"
+    c_altitude: AltitudeRegime = "mid"
+    r_altitude: AltitudeRegime = "mid"
     account: str = ""
     volatility_symbols: Optional[Dict[str, str]] = None
     v_recovery_params: Optional[Dict[str, dict]] = None
@@ -53,9 +53,9 @@ def build_signal_bundle(
     liquidity_credit_symbol: Optional[str] = None,
     liquidity_credit_lqd_symbol: Optional[str] = None,
     liquidity_tip: bool = True,
-    v_altitude: AltitudeRegime = "high_mid",
-    c_altitude: AltitudeRegime = "high_mid",
-    r_altitude: AltitudeRegime = "high_mid",
+    v_altitude: AltitudeRegime = "mid",
+    c_altitude: AltitudeRegime = "mid",
+    r_altitude: AltitudeRegime = "mid",
     v_recovery_params: Optional[Dict[str, dict]] = None,
 ) -> SignalBundle:
     """

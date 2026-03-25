@@ -32,13 +32,13 @@ def test_downgrade_immediate() -> None:
 
     async def scenario():
         level = await vf.update_from_index(
-            index_value=30.5, altitude="high_mid",
+            index_value=30.5, altitude="mid",
             recovery_confirm_satisfied_days_v1_off=0, recovery_confirm_satisfied_days_v2_off=0,
         )
         assert level == 1
 
         level = await vf.update_from_index(
-            index_value=41.0, altitude="high_mid",
+            index_value=41.0, altitude="mid",
             recovery_confirm_satisfied_days_v1_off=0, recovery_confirm_satisfied_days_v2_off=0,
         )
         assert level == 2
@@ -55,13 +55,13 @@ def test_upgrade_delayed_v2_to_v1() -> None:
 
     async def scenario():
         await vf.update_from_index(
-            index_value=37.5, altitude="high_mid",
+            index_value=37.5, altitude="mid",
             recovery_confirm_satisfied_days_v1_off=0, recovery_confirm_satisfied_days_v2_off=0,
         )
         assert vf.level == 2
 
         await vf.update_from_index(
-            index_value=37.0, altitude="high_mid",
+            index_value=37.0, altitude="mid",
             recovery_confirm_satisfied_days_v1_off=2, recovery_confirm_satisfied_days_v2_off=2,
         )
         assert vf.level == 1
@@ -87,7 +87,7 @@ def test_v_recovery_with_1h_knockin() -> None:
 
         await vf.update_from_index(
             index_value=index_value,
-            altitude="high_mid",
+            altitude="mid",
             recovery_confirm_satisfied_days_v1_off=1,
             recovery_confirm_satisfied_days_v2_off=0,
             buffer_condition_v1_to_v0=buffer_false,
@@ -96,7 +96,7 @@ def test_v_recovery_with_1h_knockin() -> None:
 
         await vf.update_from_index(
             index_value=index_value,
-            altitude="high_mid",
+            altitude="mid",
             recovery_confirm_satisfied_days_v1_off=1,
             recovery_confirm_satisfied_days_v2_off=0,
             buffer_condition_v1_to_v0=buffer_true,
@@ -114,7 +114,7 @@ def test_level_calculation_altitude_tables() -> None:
 
     async def scenario():
         level_high = await vf.update_from_index(
-            index_value=35.0, altitude="high_mid",
+            index_value=35.0, altitude="mid",
             recovery_confirm_satisfied_days_v1_off=0, recovery_confirm_satisfied_days_v2_off=0,
         )
         assert level_high == 1
@@ -152,7 +152,7 @@ def test_vfactor_no_change_records_history() -> None:
     async def scenario():
         before_len = len(vf.history)
         level = await vf.update_from_index(
-            index_value=20.0, altitude="high_mid",
+            index_value=20.0, altitude="mid",
             recovery_confirm_satisfied_days_v1_off=0, recovery_confirm_satisfied_days_v2_off=0,
         )
         assert level == 0
@@ -170,7 +170,7 @@ def test_vfactor_v1_to_v0_without_buffer_condition() -> None:
 
     async def scenario():
         await vf.update_from_index(
-            index_value=27.0, altitude="high_mid",
+            index_value=27.0, altitude="mid",
             recovery_confirm_satisfied_days_v1_off=1, recovery_confirm_satisfied_days_v2_off=0,
         )
         assert vf.level == 1
@@ -192,7 +192,7 @@ def test_vfactor_update_from_volatility_signal_uses_1h_knock_in() -> None:
         # 指数は閾値未満・連続1日満たすが 1h ノックイン未達のときは V1 のまま
         sig_false = VolatilitySignal(
             index_value=27.0,
-            altitude="high_mid",
+            altitude="mid",
             v1_to_v0_knock_in_ok=False,
             is_intraday_condition_met=False,
             recovery_confirm_satisfied_days_v1_off=1,
@@ -205,7 +205,7 @@ def test_vfactor_update_from_volatility_signal_uses_1h_knock_in() -> None:
         # 1h ノックイン達成で V0 復帰（連続1日＋is_intraday で一発昇格）
         sig_true = VolatilitySignal(
             index_value=27.0,
-            altitude="high_mid",
+            altitude="mid",
             v1_to_v0_knock_in_ok=True,
             is_intraday_condition_met=True,
             recovery_confirm_satisfied_days_v1_off=1,
@@ -227,7 +227,7 @@ def test_vfactor_update_from_index_v1_unchanged_records_history() -> None:
     async def scenario():
         before_len = len(vf.history)
         level = await vf.update_from_index(
-            index_value=30.0, altitude="high_mid",
+            index_value=30.0, altitude="mid",
             recovery_confirm_satisfied_days_v1_off=0, recovery_confirm_satisfied_days_v2_off=0,
         )
         assert level == 1
@@ -245,7 +245,7 @@ def test_vfactor_update_from_index_v2_to_v0_upgrade_confirm_days_1() -> None:
 
     async def scenario():
         level = await vf.update_from_index(
-            index_value=27.0, altitude="high_mid",
+            index_value=27.0, altitude="mid",
             recovery_confirm_satisfied_days_v1_off=0, recovery_confirm_satisfied_days_v2_off=1,
         )
         assert level == 0

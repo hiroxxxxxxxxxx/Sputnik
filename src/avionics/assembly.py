@@ -42,7 +42,7 @@ def build_flight_controller(symbols: list[str]) -> FlightController:
     """
     config = load_factors_config()
 
-    v_recovery_params = {s: get_v_thresholds(config, s)["high_mid"] for s in symbols}
+    v_recovery_params = {s: get_v_thresholds(config, s)["mid"] for s in symbols}
     bundle_build_options = BundleBuildOptions(v_recovery_params=v_recovery_params)
 
     global_market_factors: list = []

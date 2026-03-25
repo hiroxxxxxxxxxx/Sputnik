@@ -64,13 +64,14 @@ def get_v_thresholds(config: Dict[str, Any], symbol: str) -> Dict[str, Any]:
     if not config or symbol not in config:
         raise FactorsConfigError(
             f"factors config missing or no entry for symbol {symbol!r}. "
-            f"Provide config/factors.toml with [{symbol}.V.high_mid] and [{symbol}.V.low]."
+            f"Provide config/factors.toml with [{symbol}.V.high], [{symbol}.V.mid] and [{symbol}.V.low]."
         )
     v = config[symbol].get("V")
-    if not v or "high_mid" not in v or "low" not in v:
+    missing = [k for k in ("high", "mid", "low") if k not in (v or {})]
+    if not v or missing:
         raise FactorsConfigError(
-            f"factors config missing V thresholds for {symbol!r}. "
-            f"Add [{symbol}.V.high_mid] and [{symbol}.V.low] in config/factors.toml."
+            f"factors config missing V thresholds for {symbol!r}: {missing}. "
+            f"Add [{symbol}.V.high], [{symbol}.V.mid] and [{symbol}.V.low] in config/factors.toml."
         )
     return {k: dict(inner) for k, inner in v.items()}
 
@@ -168,7 +169,7 @@ def get_r_thresholds(config: Dict[str, Any], symbol: str) -> Dict[str, Any]:
             f"Add [{symbol}.R] in config/factors.toml."
         )
     out = dict(r)
-    for key in ("drawdown_high_mid_L2", "drawdown_low_L2", "drawdown_high_mid_L0", "drawdown_low_L0", "confirm_days"):
+    for key in ("drawdown_high_L2", "drawdown_mid_L2", "drawdown_low_L2", "drawdown_high_L0", "drawdown_mid_L0", "drawdown_low_L0", "confirm_days"):
         if key not in out:
             raise FactorsConfigError(
                 f"factors config [{symbol}.R] must have '{key}'. Add in config/factors.toml."

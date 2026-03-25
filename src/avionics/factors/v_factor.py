@@ -9,15 +9,13 @@ V因子（Volatility Stress）：ボラティリティストレス計器。
 from __future__ import annotations
 
 from collections.abc import Awaitable
-from typing import Any, Literal, Optional, TYPE_CHECKING
+from typing import Any, Optional, TYPE_CHECKING
 
+from avionics.data.signals import AltitudeRegime
 from .base_factor import BaseFactor, BufferCondition, LevelType
 
 if TYPE_CHECKING:
     from avionics.data.signals import SignalBundle, VolatilitySignal
-
-
-AltitudeRegime = Literal["high_mid", "low"]
 
 
 class VFactor(BaseFactor):
@@ -60,7 +58,7 @@ class VFactor(BaseFactor):
         sig = getattr(bundle, "volatility_signals", {}).get(symbol)
         if not sig:
             return None
-        th = self._get_thresholds(getattr(sig, "altitude", "high_mid"))
+        th = self._get_thresholds(getattr(sig, "altitude", "mid"))
         if self.level == 2:
             required = int(th["V2_confirm_days"])
             satisfied = getattr(sig, "recovery_confirm_satisfied_days_v2_off", 0)

@@ -1,6 +1,7 @@
 # 銘柄別・因子別しきい値。起動時に Avionics/Factory が読み込み、各因子へ注入する。
 # 定義書「0-1-Ⅵ 自己改造禁止」「4-2-1 計器」参照。ロジックと戦略パラメータの分離。
 # ※時刻・データ遅延は config/schedule.toml で管理。
+# 高度レジーム: high（高高度・利下げ）/ mid（中高度・安定期）/ low（低高度・利上げ）
 
 [U]
 C2_on = 0.50
@@ -36,7 +37,15 @@ P0_cum5_min = -0.03
 P0_gap_min = -0.03
 confirm_days = 1
 
-[NQ.V.high_mid]
+[NQ.V.high]
+V2_on = 40.0
+V2_off = 38.0
+V2_confirm_days = 2
+V1_on = 30.0
+V1_off = 28.0
+V1_confirm_days = 1
+
+[NQ.V.mid]
 V2_on = 40.0
 V2_off = 38.0
 V2_confirm_days = 2
@@ -72,7 +81,15 @@ P0_cum5_min = -0.03
 P0_gap_min = -0.025
 confirm_days = 1
 
-[GC.V.high_mid]
+[GC.V.high]
+V2_on = 40.0
+V2_off = 38.0
+V2_confirm_days = 2
+V1_on = 30.0
+V1_off = 28.0
+V1_confirm_days = 1
+
+[GC.V.mid]
 V2_on = 40.0
 V2_off = 38.0
 V2_confirm_days = 2
@@ -89,9 +106,11 @@ V1_off = 23.0
 V1_confirm_days = 1
 
 [GC.R]
-# R2発動（即）: 高値比 高高度▲2.5%超 / 低高度▲1.5%超。R0復帰は2日確認。
-drawdown_high_mid_L2 = -0.025
+# R2発動（即）: 高値比 高高度▲2.5%超 / 中高度▲2.5%超 / 低高度▲1.5%超。R0復帰は2日確認。
+drawdown_high_L2 = -0.025
+drawdown_mid_L2 = -0.025
 drawdown_low_L2 = -0.015
-drawdown_high_mid_L0 = -0.015
+drawdown_high_L0 = -0.015
+drawdown_mid_L0 = -0.015
 drawdown_low_L0 = -0.005
 confirm_days = 2

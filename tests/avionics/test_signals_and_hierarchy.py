@@ -149,7 +149,7 @@ def test_signal_bundle_apply_all_distributes_to_factors() -> None:
         cum2_change=-0.06,
         downside_gap=-0.06,
     )
-    vol = VolatilitySignal(index_value=35.0, altitude="high_mid")
+    vol = VolatilitySignal(index_value=35.0, altitude="mid")
     bundle = SignalBundle(
         price_signals={"NQ": price},
         volatility_signals={"NQ": vol},
