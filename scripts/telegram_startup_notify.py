@@ -10,9 +10,8 @@ from __future__ import annotations
 
 import os
 import sys
-import urllib.error
-import urllib.parse
-import urllib.request
+
+from notifications.telegram import send_telegram_message
 
 
 def main() -> int:
@@ -24,16 +23,7 @@ def main() -> int:
         "Sputnik 起動中..."
     )
     text = os.environ.get("TELEGRAM_STARTUP_MESSAGE", default_msg.strip())
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    data = urllib.parse.urlencode({"chat_id": chat_id, "text": text}).encode()
-    try:
-        req = urllib.request.Request(url, data=data, method="POST")
-        req.add_header("Content-Type", "application/x-www-form-urlencoded")
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            if 200 <= resp.status < 300:
-                return 0
-    except (urllib.error.URLError, OSError):
-        pass
+    send_telegram_message(token=token, chat_id=chat_id, text=text, timeout=10.0)
     return 0
 
 

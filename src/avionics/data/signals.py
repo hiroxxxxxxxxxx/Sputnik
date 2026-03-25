@@ -45,6 +45,7 @@ class VolatilitySignal:
     index_value: float
     altitude: AltitudeRegime
     v1_to_v0_knock_in_ok: Optional[bool] = None
+    knock_in_bar_end: Optional[str] = None
     is_intraday_condition_met: bool = False
     recovery_confirm_satisfied_days_v1_off: int = 0
     recovery_confirm_satisfied_days_v2_off: int = 0

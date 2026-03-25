@@ -19,8 +19,8 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import date, timedelta
-from typing import List
+from datetime import date, time, timedelta
+from typing import List, Optional, Tuple
 
 # tradingHours の典型形式（いずれも取引所現地時間 ET）:
 #   "20250310:0930-1600;20250311:0930-1600"  日足現物
@@ -72,13 +72,38 @@ def parse_trading_hours(raw: str) -> List[DaySchedule]:
             continue
         date_str = match.group(1)
         session_part = match.group(2)
-        sessions = [s.strip() for s in session_part.split(",") if s.strip()]
+        sessions_raw = [s.strip() for s in session_part.split(",") if s.strip()]
+
+        # IB の hours 文字列には "0830-20260325:1600" のように end 側へ日付が付く形式がある。
+        # ここでは (start, end) それぞれから最後の ":" 以降（HHMM）だけを抜き、"HHMM-HHMM" に正規化する。
+        sessions: List[str] = []
         close_time = ""
-        for s in sessions:
-            # "0930-1600" -> 1600
-            if "-" in s:
-                close_time = s.split("-")[-1].strip()[:4]
-        result.append(DaySchedule(date_str=date_str, sessions=sessions, close_time=close_time or "1600"))
+        for s in sessions_raw:
+            if s.upper() == "CLOSED":
+                sessions.append("CLOSED")
+                continue
+            if "-" not in s:
+                continue
+            left, right = s.split("-", 1)
+            left = left.strip()
+            right = right.strip()
+            if ":" in left:
+                left = left.split(":")[-1].strip()
+            if ":" in right:
+                right = right.split(":")[-1].strip()
+            left = re.sub(r"[:\s]", "", left)
+            right = re.sub(r"[:\s]", "", right)
+            if len(left) == 4 and left.isdigit() and len(right) == 4 and right.isdigit():
+                sessions.append(f"{left}-{right}")
+                close_time = right
+
+        result.append(
+            DaySchedule(
+                date_str=date_str,
+                sessions=sessions,
+                close_time=close_time or "1600",
+            )
+        )
     return result
 
 
@@ -88,6 +113,107 @@ def _normalize_close(close_time: str) -> str:
     if len(s) == 4 and s.isdigit():
         return s
     return "1600"
+
+
+def _parse_session_start_time(session: str) -> time | None:
+    """
+    セッション文字列から開始時刻を抽出して返す。
+
+    例:
+      "0930-1600" -> 09:30
+      "20260325:0830-20260325:1600" は parse_trading_hours 側で "0830-1600" になる想定
+    """
+    s = (session or "").strip()
+    if not s or "-" not in s:
+        return None
+    left = s.split("-")[0].strip()
+    left = left.replace(":", "")
+    if len(left) != 4 or not left.isdigit():
+        return None
+    hh = int(left[:2])
+    mm = int(left[2:])
+    return time(hh, mm)
+
+
+def _parse_session_end_time(session: str) -> time | None:
+    """セッション文字列から終了時刻（HH:MM）を抽出して返す。"""
+    s = (session or "").strip()
+    if not s or "-" not in s:
+        return None
+    right = s.split("-")[1].strip()
+    right = right.replace(":", "")
+    if len(right) != 4 or not right.isdigit():
+        return None
+    hh = int(right[:2])
+    mm = int(right[2:])
+    return time(hh, mm)
+
+
+def core_start_from_hours_raw(
+    raw_hours: str,
+    *,
+    ny_date: date,
+) -> tuple[date, time] | None:
+    """
+    raw tradingHours/liquidHours から、指定 ny_date の「最初のセッション開始」を返す。
+
+    返す時刻は raw_hours が属する市場ローカル時刻（timeZoneId で解釈するのは呼び出し側）。
+    """
+    schedule_list = parse_trading_hours(raw_hours)
+    if not schedule_list:
+        return None
+    target = ny_date.strftime("%Y%m%d")
+    chosen = None
+    for s in schedule_list:
+        if s.date_str == target:
+            chosen = s
+            break
+    if chosen is None:
+        chosen = schedule_list[0]
+    sessions = list(chosen.sessions or [])
+    starts = [_parse_session_start_time(sess) for sess in sessions]
+    starts = [st for st in starts if st is not None]
+    if not starts:
+        return None
+    return (
+        date(int(chosen.date_str[:4]), int(chosen.date_str[4:6]), int(chosen.date_str[6:8])),
+        min(starts),
+    )
+
+
+def core_session_from_hours_raw(
+    raw_hours: str,
+    *,
+    ny_date: date,
+) -> Tuple[date, time, time] | None:
+    """
+    raw tradingHours/liquidHours から、指定 ny_date の「コアセッション(start,end)」を返す。
+
+    定義:
+    - chosen day（ny_date に一致する DaySchedule）
+    - その日の sessions のうち CLOSED を除いたセッション群について
+      start=min(starts), end=max(ends)
+    """
+    schedule_list = parse_trading_hours(raw_hours)
+    if not schedule_list:
+        return None
+    target = ny_date.strftime("%Y%m%d")
+    chosen = None
+    for s in schedule_list:
+        if s.date_str == target:
+            chosen = s
+            break
+    if chosen is None:
+        chosen = schedule_list[0]
+    sessions = [sess for sess in (chosen.sessions or []) if sess and sess.upper() != "CLOSED"]
+    starts = [_parse_session_start_time(sess) for sess in sessions]
+    ends = [_parse_session_end_time(sess) for sess in sessions]
+    starts = [st for st in starts if st is not None]
+    ends = [en for en in ends if en is not None]
+    if not starts or not ends:
+        return None
+    d = date(int(chosen.date_str[:4]), int(chosen.date_str[4:6]), int(chosen.date_str[6:8]))
+    return (d, min(starts), max(ends))
 
 
 def check_upcoming_schedule(

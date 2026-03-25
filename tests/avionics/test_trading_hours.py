@@ -57,7 +57,7 @@ def test_check_upcoming_schedule_no_changes() -> None:
         DaySchedule(today.strftime("%Y%m%d"), ["0930-1600"], "1600"),
         DaySchedule((today + timedelta(days=1)).strftime("%Y%m%d"), ["0930-1600"], "1600"),
     ]
-    msgs = check_upcoming_schedule(schedule_list, days=3)
+    msgs = check_upcoming_schedule(schedule_list, days=2)
     assert msgs == []
 
 

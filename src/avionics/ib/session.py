@@ -10,8 +10,6 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Callable
 
-from ib_async import IB
-
 from .fetcher import IBRawFetcher
 
 
@@ -25,6 +23,13 @@ async def _ib_session(
     wrap: Callable[[IB], Any] = lambda ib: ib,
 ) -> AsyncIterator[Any]:
     """IB に接続し、wrap(ib) の結果を yield する。抜けたら disconnect。"""
+    try:
+        from ib_async import IB  # type: ignore
+    except ImportError as e:
+        raise ImportError(
+            "ib_async is required for avionics.ib session. Install with: pip install ib_async"
+        ) from e
+
     ib = IB()
     await ib.connectAsync(host=host, port=port, clientId=client_id, timeout=timeout)
     try:

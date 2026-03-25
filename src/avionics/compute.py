@@ -218,7 +218,7 @@ def _v1_to_v0_knock_in_ok(
     as_of: date,
 ) -> Optional[bool]:
     """
-    SPEC 4-2-1-2「1hノックイン」: 直近1h足で「終値>前日ET16:00終値 AND 1h足が陽線」を満たすか。
+    SPEC 4-2-1-2「1hノックイン」: 直近1h足で「終値<前日ET16:00終値 AND 1h足が陰線」を満たすか。
     前日終値は as_of で当日足を特定し、その1本前の終値を使う。
     """
     daily = sorted(daily, key=lambda b: b.date)
@@ -228,9 +228,28 @@ def _v1_to_v0_knock_in_ok(
     prev_close = daily[prev_idx].close
     latest_1h = sorted(bars_1h, key=lambda b: b.bar_end)[-1]
     return bool(
-        latest_1h.close > prev_close
-        and latest_1h.close > latest_1h.open
+        latest_1h.close < prev_close
+        and latest_1h.close < latest_1h.open
     )
+
+
+def _v1_to_v0_knock_in_bar_end_iso(
+    daily: List[PriceBar],
+    bars_1h: List[PriceBar1h],
+    as_of: date,
+) -> Optional[str]:
+    """
+    ノックイン成立時に記録する bar_end（ISO文字列）を返す。
+    未成立または判定不可の場合は None。
+    """
+    daily = sorted(daily, key=lambda b: b.date)
+    if len(daily) < 2 or not bars_1h:
+        return None
+    _, prev_idx = _settlement_bar_indices_from_date(daily, as_of)
+    prev_close = daily[prev_idx].close
+    latest_1h = sorted(bars_1h, key=lambda b: b.bar_end)[-1]
+    ok = bool(latest_1h.close < prev_close and latest_1h.close < latest_1h.open)
+    return latest_1h.bar_end.isoformat() if ok else None
 
 
 def compute_volatility_signal_from_inputs(
@@ -391,15 +410,26 @@ def compute_volatility_signal_from_snapshot(
     daily = _price_bars_from_snapshot(snapshot, symbol)[-5:]
     bars_1h = _price_bars_1h_from_snapshot(snapshot, symbol)[-24:]
     knock_in = _v1_to_v0_knock_in_ok(daily, bars_1h, as_of)
+    knock_in_bar_end = _v1_to_v0_knock_in_bar_end_iso(daily, bars_1h, as_of)
 
     series = full_series[-5:] if len(full_series) > 5 else full_series
-    return compute_volatility_signal_from_inputs(
+    sig = compute_volatility_signal_from_inputs(
         index_value=v,
         altitude=altitude,
         knock_in=knock_in,
         series=series,
         v1_off_threshold=v1_off_threshold,
         v2_off_threshold=v2_off_threshold,
+    )
+    # knock_in_bar_end は “成立した場合のみ” 入れる。未成立なら None のまま。
+    return VolatilitySignal(
+        index_value=sig.index_value,
+        altitude=sig.altitude,
+        v1_to_v0_knock_in_ok=sig.v1_to_v0_knock_in_ok,
+        knock_in_bar_end=knock_in_bar_end,
+        is_intraday_condition_met=sig.is_intraday_condition_met,
+        recovery_confirm_satisfied_days_v1_off=sig.recovery_confirm_satisfied_days_v1_off,
+        recovery_confirm_satisfied_days_v2_off=sig.recovery_confirm_satisfied_days_v2_off,
     )
 
 
