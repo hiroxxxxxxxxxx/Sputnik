@@ -278,3 +278,51 @@ IBKR_HOST=127.0.0.1 IBKR_PORT=7497 python scripts/telegram_cockpit_bot.py
 3. **テスト**: `docker compose -f docker/docker-compose.yml run --rm runner`
 4. **Cockpit+IB**: `docker compose -f docker/docker-compose.yml run --rm runner python scripts/run_cockpit_with_ib.py`
 5. **Telegram ボット**: `up -d` で cockpit-bot が起動しているので、Telegram で `/ping`（**IB: 127.0.0.1:8888** と出れば OK）→ `/cockpit` を試す
+
+---
+
+## cron で日次バッチ／1h監視を回す（runner を定期起動）
+
+本番（例: AWS EC2）では、`runner` は **常駐させず**、ホスト側の cron から `docker compose run --rm runner ...` を定期実行する。
+
+### 事前準備
+
+- ログ保存先を作る（ホスト側）:
+
+```bash
+mkdir -p /home/hiro/projects/Sputnik/logs
+```
+
+- cron は PATH が限定的なので、**crontab 冒頭に PATH を明記**する（推奨）。
+- また、標準出力が捨てられないように **`>> ... 2>&1` でログへリダイレクト**する（必須）。
+
+### crontab 例
+
+以下は「日次バッチは1日1回」「1h監視は毎時起動（pending が無い日は即終了）」の例。
+環境変数は `docker/.env` を使う前提で `--env-file docker/.env` を付ける。
+
+```cron
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+SHELL=/bin/bash
+
+# 日次バッチ（NY クローズ後に 1 回）
+# ※時刻は運用で確定する（ET と UTC の対応に注意）
+30 5 * * * cd /home/hiro/projects/Sputnik && \
+  /usr/bin/flock -n /tmp/sputnik-daily.lock \
+  /usr/bin/docker compose -f docker/docker-compose.yml --env-file docker/.env run --rm runner \
+  python /app/scripts/run_daily_signal_persist.py \
+  >> /home/hiro/projects/Sputnik/logs/daily-persist.log 2>&1
+
+# 1h監視（毎時起動）
+0 * * * * cd /home/hiro/projects/Sputnik && \
+  /usr/bin/flock -n /tmp/sputnik-vwatch.lock \
+  /usr/bin/docker compose -f docker/docker-compose.yml --env-file docker/.env run --rm runner \
+  python /app/scripts/run_v_knockin_monitor.py \
+  >> /home/hiro/projects/Sputnik/logs/v-monitor.log 2>&1
+```
+
+### 補足
+
+- `flock` は **二重起動防止**（同一ホストで同時に走らないようにする）。
+- `run_v_knockin_monitor.py` は DB の `knockin_watch` を見て、当日 pending が無ければ **即終了**する。
+- 監視日の pending がある場合は、VXN tradingHours から当日のコアタイムを解決し、プロセス内で待機してから 1h ごとに判定する。
