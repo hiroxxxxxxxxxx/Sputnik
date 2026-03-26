@@ -35,6 +35,11 @@ services:
     ports:
       - "127.0.0.1:6080:6080"   # noVNC ブラウザアクセス（localhost にバインド）
       - "127.0.0.1:7497:8888"   # API: イメージは内部で 8888 で待ち受け
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
   runner:
     build:
       context: ..
@@ -62,6 +67,7 @@ services:
       - ../scripts:/app/scripts:ro
       - ../config:/app/config:ro
       - ../migrations:/app/migrations:ro
+      - ../data:/app/data
       - ../tests:/app/tests:ro
     depends_on:
       - ib-gateway
@@ -72,6 +78,11 @@ services:
       - sh
       - -c
       - "python /app/scripts/telegram_startup_notify.py; exec python -m pytest tests/ -v --ignore=tests/avionics/test_factors_config.py"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
 
   # Telegram Cockpit ボット（24h 稼働）。ib-gateway のネットワーク名前空間で動作し 127.0.0.1 で IB に接続（名前解決不要・errorno -3 回避）
   cockpit-bot:
@@ -96,6 +107,7 @@ services:
       - ../scripts:/app/scripts:ro
       - ../config:/app/config:ro
       - ../migrations:/app/migrations:ro
+      - ../data:/app/data
     depends_on:
       - ib-gateway
     # 起動時に Telegram 通知（TELEGRAM_TOKEN/CHAT_ID があれば）してからボット開始
@@ -103,6 +115,11 @@ services:
       - sh
       - -c
       - "python /app/scripts/telegram_startup_notify.py; exec python /app/scripts/telegram_cockpit_bot.py"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
 
 networks:
   sputnik:
