@@ -9,6 +9,7 @@ htmlcov/
 
 # SQLite DB（プロジェクトルート data/）。計画 B1 に従いデフォルトは data/sputnik.db
 data/*.db
+logs/
 
 # Docker: 認証情報と Gateway 設定
 .env
