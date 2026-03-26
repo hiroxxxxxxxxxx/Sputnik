@@ -61,6 +61,7 @@ services:
       - ../src:/app/src:ro
       - ../scripts:/app/scripts:ro
       - ../config:/app/config:ro
+      - ../migrations:/app/migrations:ro
       - ../tests:/app/tests:ro
     depends_on:
       - ib-gateway
@@ -94,6 +95,7 @@ services:
       - ../src:/app/src:ro
       - ../scripts:/app/scripts:ro
       - ../config:/app/config:ro
+      - ../migrations:/app/migrations:ro
     depends_on:
       - ib-gateway
     # 起動時に Telegram 通知（TELEGRAM_TOKEN/CHAT_ID があれば）してからボット開始

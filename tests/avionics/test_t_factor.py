@@ -6,7 +6,7 @@ import pytest
 
 from avionics import TFactor
 from avionics.factors import FactorsConfigError, get_t_thresholds, load_factors_config
-from avionics.data.signals import SignalBundle
+from avionics.data.signals import LiquiditySignals, SignalBundle
 
 
 def _run(coro):
@@ -99,7 +99,13 @@ def test_tfactor_apply_empty_bundle_runs_safely(t_thresholds) -> None:
     tf = TFactor(symbol="NQ", thresholds=t_thresholds)
 
     async def scenario():
-        await tf.apply_signal_bundle("NQ", SignalBundle())
+        await tf.apply_signal_bundle(
+            "NQ",
+            SignalBundle(
+                liquidity_credit_hyg=LiquiditySignals(),
+                liquidity_credit_lqd=LiquiditySignals(),
+            ),
+        )
         assert tf.level in (0, 2)
 
     _run(scenario())

@@ -179,8 +179,9 @@ class IBRawFetcher:
         price_symbols: List[str],
         *,
         volatility_symbols: Optional[Dict[str, str]] = None,
-        liquidity_credit_symbol: Optional[str] = None,
-        liquidity_tip: bool = True,
+        liquidity_credit_hyg_symbol: str,
+        liquidity_credit_lqd_symbol: str,
+        liquidity_tip_symbol: Optional[str] = None,
         account: str = "",
         base_density: float = 1.0,
         v_recovery_params: Optional[Dict[str, dict]] = None,
@@ -213,14 +214,12 @@ class IBRawFetcher:
         coros.append(
             self._fetch_account_summary(account=account, base_density=base_density, as_of=as_of)
         )
-        if liquidity_credit_symbol:
-            coros.append(
-                self._fetch_bars(_contract_for_etf(liquidity_credit_symbol), as_of)
-            )
-            if liquidity_credit_symbol.upper() == "HYG":
-                coros.append(self._fetch_bars(_contract_for_etf("LQD"), as_of))
-        if liquidity_tip:
-            coros.append(self._fetch_bars(_contract_for_etf("TIP"), as_of))
+        coros.append(
+            self._fetch_bars(_contract_for_etf(liquidity_credit_hyg_symbol), as_of)
+        )
+        coros.append(self._fetch_bars(_contract_for_etf(liquidity_credit_lqd_symbol), as_of))
+        if liquidity_tip_symbol:
+            coros.append(self._fetch_bars(_contract_for_etf(liquidity_tip_symbol), as_of))
         for sym in price_symbols:
             coros.append(
                 self._fetch_bars_1h(_contract_for_price(sym), as_of, duration_str="5 D")
@@ -241,14 +240,12 @@ class IBRawFetcher:
         capital: Optional[RawCapitalSnapshot] = results[idx]
         idx += 1
         credit_map: Dict[str, List[PriceBar]] = {}
-        if liquidity_credit_symbol:
-            credit_map[liquidity_credit_symbol] = results[idx]
-            idx += 1
-            if liquidity_credit_symbol.upper() == "HYG":
-                credit_map["LQD"] = results[idx]
-                idx += 1
+        credit_map[liquidity_credit_hyg_symbol] = results[idx]
+        idx += 1
+        credit_map[liquidity_credit_lqd_symbol] = results[idx]
+        idx += 1
         tip: List[PriceBar] = []
-        if liquidity_tip:
+        if liquidity_tip_symbol:
             tip = results[idx]
             idx += 1
         bars_1h: Dict[str, List[PriceBar1h]] = {}

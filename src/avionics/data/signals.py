@@ -14,7 +14,7 @@ from typing import Literal, Optional, Tuple
 TrendType = Literal["up", "down", "flat"]
 AltitudeRegime = Literal["high", "mid", "low"]
 
-# 復帰確認用。1日分の価格シグナル (date, daily_change, cum5_change, downside_gap, trend, cum2_change)。newest first。
+# 復帰確認用。1日分の価格シグナル (date, daily_change, cum5_change, high_20_gap, trend, cum2_change)。newest first。
 PriceDailyRow = Tuple[date, float, float, float, TrendType, Optional[float]]
 
 # 復帰確認用。1日分 (date, below_sma20, daily_change)。newest first。
@@ -34,16 +34,18 @@ class PriceSignals:
     daily_change: float
     cum5_change: float
     cum2_change: Optional[float]
-    downside_gap: float
     last_close: float = 0.0
+    sma20: Optional[float] = None
+    sma20_gap: Optional[float] = None
+    high_20: Optional[float] = None
+    high_20_gap: Optional[float] = None
     daily_history: Tuple[PriceDailyRow, ...] = ()
 
 
 @dataclass(frozen=True)
 class VolatilitySignal:
-    """V 因子用。指数値と高度レジーム。"""
+    """V 因子用。指数値と復帰判定用フラグ。"""
     index_value: float
-    altitude: AltitudeRegime
     v1_to_v0_knock_in_ok: Optional[bool] = None
     knock_in_bar_end: Optional[str] = None
     is_intraday_condition_met: bool = False
@@ -58,12 +60,12 @@ class LiquiditySignals:
     - credit: last_close / sma20 を保持。
     - tip (R): last_close は TIP 当日終値、tip_reference_high はドローダウン比較に使う窓内最高値。
     """
-    altitude: AltitudeRegime
     below_sma20: Optional[bool] = None
     daily_change: Optional[float] = None
     # credit 系: as_of 当日の終値（HYG/LQD）、当日基準 SMA20
     last_close: Optional[float] = None
     sma20: Optional[float] = None
+    sma20_gap: Optional[float] = None
     tip_drawdown_from_high: Optional[float] = None
     # R/TIP: 高値比ドローダウン算出時の比較用高値（rolling 窓の max high）
     tip_reference_high: Optional[float] = None
@@ -84,9 +86,9 @@ class SignalBundle:
     Layer 2 の出力を一括保持する型。Cockpit が因子へ配布するための束。
     定義書「4-2 情報の階層構造」に基づき、apply_all(bundle) で渡す。
     """
+    liquidity_credit_hyg: LiquiditySignals
+    liquidity_credit_lqd: LiquiditySignals
     price_signals: dict[str, PriceSignals] = field(default_factory=dict)
     volatility_signals: dict[str, VolatilitySignal] = field(default_factory=dict)
-    liquidity_credit: Optional[LiquiditySignals] = None
-    liquidity_credit_lqd: Optional[LiquiditySignals] = None
     liquidity_tip: Optional[LiquiditySignals] = None
     capital_signals: Optional[CapitalSignals] = None

@@ -30,6 +30,7 @@ class RFactor(BaseFactor):
         self,
         name: str,
         thresholds: dict,
+        altitude: AltitudeRegime,
         history_size: int = 64,
     ) -> None:
         """
@@ -41,6 +42,7 @@ class RFactor(BaseFactor):
         定義書「4-2-1-4 R因子」参照。
         """
         self.thresholds: dict = dict(thresholds)
+        self._altitude: AltitudeRegime = altitude
         super().__init__(name=name, levels=[0, 2], history_size=history_size)
 
     def _drawdown_L2(self, altitude: AltitudeRegime) -> float:
@@ -74,7 +76,7 @@ class RFactor(BaseFactor):
         if not tip:
             return None
         daily_history_tip = getattr(tip, "daily_history_tip", ()) or ()
-        altitude = getattr(tip, "altitude", "mid")
+        altitude = self._altitude
         count = self._count_recovery_satisfied_days(daily_history_tip, altitude) if daily_history_tip else 0
         confirm = int(self.thresholds["confirm_days"])
         return (min(count, confirm), confirm)
@@ -85,7 +87,7 @@ class RFactor(BaseFactor):
         lt = getattr(bundle, "liquidity_tip", None)
         if lt is not None:
             await self.update_from_signals(
-                altitude=lt.altitude,
+                altitude=self._altitude,
                 tip_drawdown_from_high=lt.tip_drawdown_from_high if lt.tip_drawdown_from_high is not None else -0.001,
                 daily_history_tip=getattr(lt, "daily_history_tip", ()),
             )

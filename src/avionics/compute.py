@@ -87,7 +87,7 @@ def _price_daily_row_at_index(
     i: int,
 ) -> Optional[PriceDailyRow]:
     """
-    bars[i] の日付・daily_change・cum5・downside_gap・trend・cum2 を返す。
+    bars[i] の日付・daily_change・cum5・high_20_gap・trend・cum2 を返す。
     i が 0 未満や範囲外の場合は None。復帰確認の日次カウント用。
     """
     if i < 0 or i >= len(bars):
@@ -118,8 +118,8 @@ def _price_daily_row_at_index(
         trend = "flat"
     high_slice = bars[max(0, i - 19) : i + 1]
     high_20 = max(b.high for b in high_slice) if high_slice else (bar.high or bar.close)
-    downside_gap = (bar.close / high_20 - 1.0) if high_20 else -0.01
-    return (bar.date, daily_change, cum5_change, downside_gap, trend, cum2_change)
+    high_20_gap = (bar.close / high_20 - 1.0) if high_20 else -0.01
+    return (bar.date, daily_change, cum5_change, high_20_gap, trend, cum2_change)
 
 
 def compute_price_signals_from_bars(
@@ -128,7 +128,7 @@ def compute_price_signals_from_bars(
     as_of: date,
 ) -> PriceSignals:
     """
-    終値系列から trend, daily_change, cum5, cum2, downside_gap を算出する。
+    終値系列から trend, daily_change, cum5, cum2, high_20_gap を算出する。
 
     トレンド定義（定義書 4-2-2）: Uptrend = 終値 > SMA20×1.005,
     Downtrend = 終値 < SMA20×0.995。SMA20 は過去20営業日終値の単純移動平均。
@@ -174,7 +174,8 @@ def compute_price_signals_from_bars(
     else:
         high_20_slice = bars[latest_idx - 19 : latest_idx + 1] if latest_idx - 19 >= -len(bars) else bars[: latest_idx + 1]
     high_20 = max(b.high for b in high_20_slice) if high_20_slice else (latest.high or latest.close)
-    downside_gap = (latest.close / high_20 - 1.0) if high_20 else -0.01
+    high_20_gap = (latest.close / high_20 - 1.0) if high_20 else -0.01
+    sma20_gap = (latest.close / sma20 - 1.0) if sma20 else None
 
     # 復帰確認用: 基準日から遡る。各日で SMA20・20日高値を使うため j>=19 の日のみ（20本揃い）
     daily_history_list: List[PriceDailyRow] = []
@@ -191,8 +192,11 @@ def compute_price_signals_from_bars(
         daily_change=daily_change,
         cum5_change=cum5_change,
         cum2_change=cum2_change,
-        downside_gap=downside_gap,
         last_close=latest.close,
+        sma20=float(sma20),
+        sma20_gap=float(sma20_gap) if sma20_gap is not None else None,
+        high_20=float(high_20),
+        high_20_gap=float(high_20_gap),
         daily_history=daily_history,
     )
 
@@ -255,7 +259,6 @@ def _v1_to_v0_knock_in_bar_end_iso(
 def compute_volatility_signal_from_inputs(
     *,
     index_value: float,
-    altitude: AltitudeRegime,
     knock_in: Optional[bool],
     series: List[VolatilitySeriesPoint],
     v1_off_threshold: Optional[float],
@@ -274,7 +277,6 @@ def compute_volatility_signal_from_inputs(
     )
     return VolatilitySignal(
         index_value=index_value,
-        altitude=altitude,
         v1_to_v0_knock_in_ok=knock_in,
         is_intraday_condition_met=is_intraday,
         recovery_confirm_satisfied_days_v1_off=satisfied_v1,
@@ -318,6 +320,7 @@ def compute_liquidity_signals_credit_from_bars(
     sma20 = _sma(sma_bars, 20) if len(sma_bars) >= 20 else prev.close
     below_sma20 = latest.close < sma20 if sma20 else False
     daily_change = (latest.close - prev.close) / prev.close if prev.close else 0.0
+    sma20_gap = (latest.close / sma20 - 1.0) if sma20 else None
 
     daily_history_credit_list: List[CreditDailyRow] = []
     j_min = max(20, latest_idx - RECOVERY_LOOKBACK_DAYS)  # SMA20 のため j>=20 の日のみ
@@ -333,11 +336,11 @@ def compute_liquidity_signals_credit_from_bars(
 
     sma20_f = float(sma20) if sma20 is not None else None
     return LiquiditySignals(
-        altitude=altitude,
         below_sma20=below_sma20,
         daily_change=daily_change,
         last_close=float(latest.close),
         sma20=sma20_f,
+        sma20_gap=(float(sma20_gap) if sma20_gap is not None else None),
         daily_history_credit=daily_history_credit,
     )
 
@@ -379,7 +382,6 @@ def compute_liquidity_signals_tip_from_bars(
     daily_history_tip = tuple(daily_history_tip_list)
 
     return LiquiditySignals(
-        altitude=altitude,
         tip_drawdown_from_high=drawdown,
         last_close=float(latest.close),
         tip_reference_high=float(high_20),
@@ -420,7 +422,6 @@ def compute_volatility_signal_from_snapshot(
     series = full_series[-5:] if len(full_series) > 5 else full_series
     sig = compute_volatility_signal_from_inputs(
         index_value=v,
-        altitude=altitude,
         knock_in=knock_in,
         series=series,
         v1_off_threshold=v1_off_threshold,
@@ -429,7 +430,6 @@ def compute_volatility_signal_from_snapshot(
     # knock_in_bar_end は “成立した場合のみ” 入れる。未成立なら None のまま。
     return VolatilitySignal(
         index_value=sig.index_value,
-        altitude=sig.altitude,
         v1_to_v0_knock_in_ok=sig.v1_to_v0_knock_in_ok,
         knock_in_bar_end=knock_in_bar_end,
         is_intraday_condition_met=sig.is_intraday_condition_met,

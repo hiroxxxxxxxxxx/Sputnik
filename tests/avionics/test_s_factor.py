@@ -6,7 +6,7 @@ import pytest
 
 from avionics import SFactor
 from avionics.factors import FactorsConfigError, get_s_thresholds, load_factors_config
-from avionics.data.signals import SignalBundle
+from avionics.data.signals import LiquiditySignals, SignalBundle
 
 
 def _run(coro):
@@ -100,7 +100,13 @@ def test_sfactor_apply_empty_bundle_runs_safely(s_thresholds) -> None:
     sf = SFactor(thresholds=s_thresholds)
 
     async def scenario():
-        await sf.apply_signal_bundle(None, SignalBundle())
+        await sf.apply_signal_bundle(
+            None,
+            SignalBundle(
+                liquidity_credit_hyg=LiquiditySignals(),
+                liquidity_credit_lqd=LiquiditySignals(),
+            ),
+        )
         assert sf.level in (0, 1, 2)
 
     _run(scenario())

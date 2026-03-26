@@ -62,13 +62,13 @@ class PFactor(BaseFactor):
         for row in daily_history:
             if len(row) < 6:
                 break
-            _date, daily_change, cum5_change, downside_gap, trend, cum2_change = (
+            _date, daily_change, cum5_change, high_20_gap, trend, cum2_change = (
                 row[0], row[1], row[2], row[3], row[4], row[5] if len(row) > 5 else None
             )
             if self._classify(
                 daily_change=daily_change,
                 cum5_change=cum5_change,
-                downside_gap=downside_gap,
+                high_20_gap=high_20_gap,
                 trend=trend,
                 cum2_change=cum2_change,
             ) == 0:
@@ -96,10 +96,12 @@ class PFactor(BaseFactor):
         recovery_satisfied = (
             self._count_recovery_satisfied_days(daily_history) if daily_history else 0
         )
+        if signals.high_20_gap is None:
+            raise ValueError("PriceSignals.high_20_gap is required for PFactor")
         return await self.update_from_signals(
             daily_change=signals.daily_change,
             cum5_change=signals.cum5_change,
-            downside_gap=signals.downside_gap,
+            high_20_gap=signals.high_20_gap,
             trend=signals.trend,
             cum2_change=signals.cum2_change,
             recovery_confirm_satisfied_days=recovery_satisfied,
@@ -109,7 +111,7 @@ class PFactor(BaseFactor):
         self,
         daily_change: float,
         cum5_change: float,
-        downside_gap: float,
+        high_20_gap: float,
         trend: TrendType,
         recovery_confirm_satisfied_days: int,
         cum2_change: Optional[float] = None,
@@ -124,7 +126,7 @@ class PFactor(BaseFactor):
         new_level = self._classify(
             daily_change=daily_change,
             cum5_change=cum5_change,
-            downside_gap=downside_gap,
+            high_20_gap=high_20_gap,
             trend=trend,
             cum2_change=cum2_change,
         )
@@ -147,7 +149,7 @@ class PFactor(BaseFactor):
         self,
         daily_change: float,
         cum5_change: float,
-        downside_gap: float,
+        high_20_gap: float,
         trend: TrendType,
         cum2_change: Optional[float] = None,
     ) -> LevelType:
@@ -161,7 +163,7 @@ class PFactor(BaseFactor):
             return 2
         if cum2_change is not None and cum2_change <= t["P2_cum2_max"]:
             return 2
-        if downside_gap < t["P2_gap_trend"] and trend == "down":
+        if high_20_gap < t["P2_gap_trend"] and trend == "down":
             return 2
 
         # P1: プレッシャー条件
@@ -169,14 +171,14 @@ class PFactor(BaseFactor):
             return 1
         if t["P1_cum5_lo"] <= cum5_change < t["P1_cum5_hi"]:
             return 1
-        if t["P1_gap_lo"] <= downside_gap <= t["P1_gap_hi"]:
+        if t["P1_gap_lo"] <= high_20_gap <= t["P1_gap_hi"]:
             return 1
 
         # P0: Calm（すべて満たす）
         if (
             abs(daily_change) <= t["P0_daily_abs"]
             and cum5_change >= t["P0_cum5_min"]
-            and downside_gap > t["P0_gap_min"]
+            and high_20_gap > t["P0_gap_min"]
             and trend == "up"
         ):
             return 0

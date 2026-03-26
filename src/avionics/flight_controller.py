@@ -58,7 +58,7 @@ class FlightController:
                 limit_factors=list(global_capital_factors or []),
                 global_market_factors=list(global_market_factors or []),
             )
-        self._bundle_build_options = bundle_build_options or BundleBuildOptions()
+        self._bundle_build_options = bundle_build_options
         self._last_bundle: Optional[SignalBundle] = None
         self._last_capital_snapshot: Optional[RawCapitalSnapshot] = None
 
@@ -93,31 +93,29 @@ class FlightController:
         取得した bundle と capital_snapshot は内部に保持し、get_last_bundle() / get_last_capital_snapshot() で参照できる。
         """
         opts = self._bundle_build_options
+        if opts is None:
+            raise ValueError("FlightController.refresh requires bundle_build_options")
         raw_snapshot, capital_snapshot = await data_source.fetch_raw(
             as_of,
             symbols,
             volatility_symbols=opts.volatility_symbols,
-            liquidity_credit_symbol=opts.liquidity_credit_symbol,
-            liquidity_tip=opts.liquidity_tip,
+            liquidity_credit_hyg_symbol=opts.liquidity_credit_hyg_symbol,
+            liquidity_credit_lqd_symbol=opts.liquidity_credit_lqd_symbol,
+            liquidity_tip_symbol=opts.liquidity_tip_symbol,
             account=opts.account,
             base_density=opts.base_density,
             v_recovery_params=opts.v_recovery_params,
         )
-        lqd_symbol: Optional[str] = None
-        if (opts.liquidity_credit_symbol or "").upper() == "HYG" and "LQD" in raw_snapshot.credit_bars:
-            lqd_symbol = "LQD"
         from .bundle_builder import build_signal_bundle
 
         bundle = build_signal_bundle(
             raw_snapshot,
             as_of,
             symbols,
-            liquidity_credit_symbol=opts.liquidity_credit_symbol,
-            liquidity_credit_lqd_symbol=lqd_symbol,
-            liquidity_tip=opts.liquidity_tip,
-            v_altitude=opts.v_altitude,
-            c_altitude=opts.c_altitude,
-            r_altitude=opts.r_altitude,
+            liquidity_credit_hyg_symbol=opts.liquidity_credit_hyg_symbol,
+            liquidity_credit_lqd_symbol=opts.liquidity_credit_lqd_symbol,
+            liquidity_tip_symbol=opts.liquidity_tip_symbol,
+            altitude=opts.altitude,
             v_recovery_params=opts.v_recovery_params,
         )
         self._last_bundle = bundle

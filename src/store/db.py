@@ -80,6 +80,42 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
         conn.commit()
 
 
+def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
+    cur = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+        (table_name,),
+    )
+    return cur.fetchone() is not None
+
+
+def _ensure_core_tables(conn: sqlite3.Connection) -> None:
+    """
+    旧DBとの互換のため、必須テーブル欠損を自己修復する。
+
+    例: schema_version が進んでいるのに state/mode が存在しないケース。
+    003 は IF NOT EXISTS / INSERT OR IGNORE で冪等なので再実行しても安全。
+    """
+    missing_state = not _table_exists(conn, "state")
+    missing_mode = not _table_exists(conn, "mode")
+    if not (missing_state or missing_mode):
+        return
+
+    migration_003 = _migrations_dir() / "003_state_mode.sql"
+    if not migration_003.is_file():
+        missing = []
+        if missing_state:
+            missing.append("state")
+        if missing_mode:
+            missing.append("mode")
+        raise RuntimeError(
+            f"Missing required tables ({', '.join(missing)}) and 003_state_mode.sql is not found"
+        )
+
+    sql = migration_003.read_text(encoding="utf-8")
+    conn.executescript(sql)
+    conn.commit()
+
+
 def get_connection() -> sqlite3.Connection:
     """
     DB ファイルへの接続を返す。必要ならマイグレーションを適用してから返す。
@@ -90,4 +126,5 @@ def get_connection() -> sqlite3.Connection:
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     _apply_migrations(conn)
+    _ensure_core_tables(conn)
     return conn

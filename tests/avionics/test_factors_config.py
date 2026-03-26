@@ -54,7 +54,7 @@ def test_pfactor_from_loaded_config() -> None:
         return await pf.update_from_signals(
             daily_change=-0.04,
             cum5_change=0.0,
-            downside_gap=-0.01,
+            high_20_gap=-0.01,
             trend="up",
             recovery_confirm_satisfied_days=0,
             cum2_change=None,

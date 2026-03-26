@@ -22,6 +22,7 @@ from avionics.data.raw_types import PriceBar, RawCapitalSnapshot
 from avionics.data.raw_market_snapshot import RawMarketSnapshot
 from avionics.data.signals import (
     CapitalSignals,
+    LiquiditySignals,
     PriceSignals,
     SignalBundle,
     VolatilitySignal,
@@ -50,7 +51,7 @@ def test_compute_price_signals_insufficient_bars_raises() -> None:
 
 
 def test_compute_price_signals_from_series() -> None:
-    """十分な本数の価格系列から trend, daily_change, cum5, downside_gap を算出する。"""
+    """十分な本数の価格系列から trend, daily_change, cum5, high_20_gap を算出する。"""
     base = date(2025, 2, 1)
     bars = [
         PriceBar(date=base + timedelta(days=i), close=100.0 + i * 0.5, high=101.0 + i, volume=1000)
@@ -62,7 +63,8 @@ def test_compute_price_signals_from_series() -> None:
     out = compute_price_signals_from_snapshot(snapshot, "NQ", bars[-1].date)
     assert out.symbol == "NQ"
     assert out.daily_change == pytest.approx((102.0 - 101.0) / 101.0)
-    assert out.downside_gap != 0.0
+    assert out.high_20_gap is not None
+    assert out.high_20_gap != 0.0
 
 
 def test_compute_price_signals_settlement_uses_as_of() -> None:
@@ -132,7 +134,7 @@ def test_signal_bundle_apply_all_distributes_to_factors() -> None:
     from avionics.factors import get_t_thresholds
 
     p = PFactor(name="P_NQ", thresholds=get_p_thresholds(_config, "NQ"))
-    v = VFactor(name="V_NQ", thresholds=get_v_thresholds(_config, "NQ"))
+    v = VFactor(name="V_NQ", thresholds=get_v_thresholds(_config, "NQ"), altitude="mid")
     t = TFactor(symbol="NQ", thresholds=get_t_thresholds(_config))
 
     av = FlightController(
@@ -147,10 +149,12 @@ def test_signal_bundle_apply_all_distributes_to_factors() -> None:
         daily_change=-0.04,
         cum5_change=-0.05,
         cum2_change=-0.06,
-        downside_gap=-0.06,
+        high_20_gap=-0.06,
     )
-    vol = VolatilitySignal(index_value=35.0, altitude="mid")
+    vol = VolatilitySignal(index_value=35.0)
     bundle = SignalBundle(
+        liquidity_credit_hyg=LiquiditySignals(),
+        liquidity_credit_lqd=LiquiditySignals(),
         price_signals={"NQ": price},
         volatility_signals={"NQ": vol},
     )
@@ -177,7 +181,11 @@ def test_signal_bundle_apply_all_capital_factors() -> None:
         symbol_factors={},
     )
     cap = CapitalSignals(mm_over_nlv=0.50, span_ratio=1.25)
-    bundle = SignalBundle(capital_signals=cap)
+    bundle = SignalBundle(
+        liquidity_credit_hyg=LiquiditySignals(),
+        liquidity_credit_lqd=LiquiditySignals(),
+        capital_signals=cap,
+    )
 
     _run(av.apply_all(bundle))
 

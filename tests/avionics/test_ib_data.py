@@ -76,8 +76,9 @@ class MockDataSource:
         price_symbols: List[str],
         *,
         volatility_symbols: Optional[Dict[str, str]] = None,
-        liquidity_credit_symbol: Optional[str] = None,
-        liquidity_tip: bool = True,
+        liquidity_credit_hyg_symbol: str,
+        liquidity_credit_lqd_symbol: str,
+        liquidity_tip_symbol: Optional[str] = None,
         account: str = "",
         base_density: float = 1.0,
         v_recovery_params: Optional[Dict[str, dict]] = None,
@@ -94,7 +95,11 @@ def _make_fc(symbols: List[str], options: Optional[BundleBuildOptions] = None) -
     )
     return FlightController(
         mapping=mapping,
-        bundle_build_options=options or BundleBuildOptions(),
+        bundle_build_options=options or BundleBuildOptions(
+            liquidity_credit_hyg_symbol="HYG",
+            liquidity_credit_lqd_symbol="LQD",
+            altitude="mid",
+        ),
     )
 
 
@@ -115,10 +120,21 @@ def test_fc_refresh_returns_bundle_with_price_and_capital() -> None:
         nq_price_bars=bars,
         nq_volatility_series=[(date(2025, 3, 1), 18.5)],
         capital_snapshot=cap,
+        credit_bars={
+            "HYG": bars,
+            "LQD": [
+                PriceBar(date=date(2025, 2, 28), close=99.0, high=100.0, volume=900.0),
+                PriceBar(date=date(2025, 3, 1), close=99.5, high=100.5, volume=950.0),
+            ],
+        },
     )
     ds = MockDataSource(snapshot, capital_snapshot=cap)
-    # このテストは P/V/U/S の最小構成を見たいので、C/R は明示的に無効化する
-    fc = _make_fc(["NQ"], options=BundleBuildOptions(liquidity_credit_symbol=None, liquidity_tip=False))
+    fc = _make_fc(["NQ"], options=BundleBuildOptions(
+        liquidity_credit_hyg_symbol="HYG",
+        liquidity_credit_lqd_symbol="LQD",
+        liquidity_tip_symbol=None,
+        altitude="mid",
+    ))
     _run(fc.refresh(ds, date(2025, 3, 1), ["NQ"]))
     bundle = fc.get_last_bundle()
     assert bundle is not None
@@ -127,13 +143,14 @@ def test_fc_refresh_returns_bundle_with_price_and_capital() -> None:
     assert bundle.volatility_signals.get("NQ") is not None
     assert bundle.capital_signals is not None
     assert bundle.capital_signals.mm_over_nlv > 0
-    assert bundle.liquidity_credit is None
+    assert bundle.liquidity_credit_hyg is not None
+    assert bundle.liquidity_credit_lqd is not None
     assert bundle.liquidity_tip is None
     assert fc.get_last_capital_snapshot() is cap
 
 
 def test_fc_refresh_with_liquidity_options() -> None:
-    """liquidity_credit_symbol / liquidity_tip 指定で C/R 用シグナルが bundle に入る。"""
+    """liquidity_credit_hyg_symbol / liquidity_tip_symbol 指定で C/R 用シグナルが bundle に入る。"""
     cap = RawCapitalSnapshot(
         as_of=date(2025, 3, 1),
         mm=80_000.0,
@@ -157,17 +174,23 @@ def test_fc_refresh_with_liquidity_options() -> None:
             "HYG": [
                 PriceBar(date=date(2025, 2, 28), close=100.0, high=101.0, volume=1000.0),
                 PriceBar(date=date(2025, 3, 1), close=101.0, high=102.0, volume=1100.0),
-            ]
+            ],
+            "LQD": [
+                PriceBar(date=date(2025, 2, 28), close=99.0, high=100.0, volume=900.0),
+                PriceBar(date=date(2025, 3, 1), close=99.5, high=100.5, volume=950.0),
+            ],
         },
     )
     ds = MockDataSource(snapshot, capital_snapshot=cap)
     options = BundleBuildOptions(
-        liquidity_credit_symbol="HYG",
-        liquidity_tip=True,
+        liquidity_credit_hyg_symbol="HYG",
+        liquidity_credit_lqd_symbol="LQD",
+        liquidity_tip_symbol="TIP",
+        altitude="mid",
     )
     fc = _make_fc(["NQ"], options=options)
     _run(fc.refresh(ds, date(2025, 3, 1), ["NQ"]))
     bundle = fc.get_last_bundle()
     assert bundle is not None
-    assert bundle.liquidity_credit is not None
+    assert bundle.liquidity_credit_hyg is not None
     assert bundle.liquidity_tip is not None

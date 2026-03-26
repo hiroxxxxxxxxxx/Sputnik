@@ -16,6 +16,7 @@ RUN pip install --no-cache-dir pytest pytest-cov
 COPY src ./src
 COPY scripts ./scripts
 COPY config ./config
+COPY migrations ./migrations
 COPY tests ./tests
 COPY pyproject.toml .
 

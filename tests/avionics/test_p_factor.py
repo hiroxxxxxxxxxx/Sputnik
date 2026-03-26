@@ -6,7 +6,7 @@ import pytest
 
 from avionics import PFactor
 from avionics.factors import FactorsConfigError, get_p_thresholds, load_factors_config
-from avionics.data.signals import SignalBundle
+from avionics.data.signals import LiquiditySignals, SignalBundle
 
 try:
     _config = load_factors_config()
@@ -38,7 +38,7 @@ def test_downgrade_immediate() -> None:
         level = await pf.update_from_signals(
             daily_change=-0.04,
             cum5_change=-0.04,
-            downside_gap=-0.06,
+            high_20_gap=-0.06,
             trend="down",
             recovery_confirm_satisfied_days=0,
             cum2_change=-0.06,
@@ -60,7 +60,7 @@ def test_upgrade_delayed() -> None:
         calm_kwargs = dict(
             daily_change=0.0,
             cum5_change=0.0,
-            downside_gap=-0.01,
+            high_20_gap=-0.01,
             trend="up",
             recovery_confirm_satisfied_days=1,
             cum2_change=-0.01,
@@ -82,7 +82,7 @@ def test_level_calculation_nq_vs_gc() -> None:
         level_nq = await pf_nq.update_from_signals(
             daily_change=-0.02,
             cum5_change=-0.04,
-            downside_gap=-0.035,
+            high_20_gap=-0.035,
             trend="flat",
             recovery_confirm_satisfied_days=0,
             cum2_change=-0.03,
@@ -93,7 +93,7 @@ def test_level_calculation_nq_vs_gc() -> None:
         level_gc = await pf_gc.update_from_signals(
             daily_change=0.01,
             cum5_change=-0.02,
-            downside_gap=-0.02,
+            high_20_gap=-0.02,
             trend="up",
             recovery_confirm_satisfied_days=0,
             cum2_change=-0.01,
@@ -110,7 +110,13 @@ def test_pfactor_apply_empty_bundle_runs_safely() -> None:
     pf = PFactor(name="P_NQ", thresholds=_p_nq())
 
     async def scenario():
-        await pf.apply_signal_bundle("NQ", SignalBundle())
+        await pf.apply_signal_bundle(
+            "NQ",
+            SignalBundle(
+                liquidity_credit_hyg=LiquiditySignals(),
+                liquidity_credit_lqd=LiquiditySignals(),
+            ),
+        )
         assert pf.level in (0, 1, 2)
 
     _run(scenario())
@@ -126,7 +132,7 @@ def test_classify_nq_fallback_to_p1() -> None:
         level = await pf.update_from_signals(
             daily_change=0.02,
             cum5_change=0.0,
-            downside_gap=-0.02,
+            high_20_gap=-0.02,
             trend="down",
             recovery_confirm_satisfied_days=0,
             cum2_change=0.0,
@@ -145,7 +151,7 @@ def test_classify_gc_p2_and_fallback_p1() -> None:
         level_p2 = await pf_p2.update_from_signals(
             daily_change=-0.04,
             cum5_change=-0.04,
-            downside_gap=-0.05,
+            high_20_gap=-0.05,
             trend="down",
             recovery_confirm_satisfied_days=0,
             cum2_change=-0.06,
@@ -156,7 +162,7 @@ def test_classify_gc_p2_and_fallback_p1() -> None:
         level_fb = await pf_fb.update_from_signals(
             daily_change=0.02,
             cum5_change=0.01,
-            downside_gap=-0.01,
+            high_20_gap=-0.01,
             trend="down",
             recovery_confirm_satisfied_days=0,
             cum2_change=0.0,
@@ -176,7 +182,7 @@ def test_classify_gc_p1_gap_edge_case() -> None:
         level = await pf.update_from_signals(
             daily_change=0.0,
             cum5_change=0.0,
-            downside_gap=-0.03,
+            high_20_gap=-0.03,
             trend="flat",
             recovery_confirm_satisfied_days=0,
             cum2_change=0.0,

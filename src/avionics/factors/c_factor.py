@@ -8,7 +8,7 @@ HYG/LQD の below_sma20 または前日比で C0/C2 を判定する。C1廃止�
 
 from __future__ import annotations
 
-from typing import Any, Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING
 
 from .base_factor import BaseFactor, LevelType
 
@@ -93,35 +93,33 @@ class CFactor(BaseFactor):
                 break
         return count
 
-    def get_recovery_progress_from_bundle(self, symbol: str, bundle: Any) -> Optional[tuple[int, int]]:
-        """bundle の liquidity_credit（と liquidity_credit_lqd）から復帰 x/N を算出。定義書: HYG AND LQD とも維持。"""
-        credit_hyg = getattr(bundle, "liquidity_credit", None)
-        if not credit_hyg:
-            return None
-        daily_hyg = getattr(credit_hyg, "daily_history_credit", ()) or ()
-        credit_lqd = getattr(bundle, "liquidity_credit_lqd", None)
-        if credit_lqd is not None:
-            daily_lqd = getattr(credit_lqd, "daily_history_credit", ()) or ()
-            count = self._count_recovery_satisfied_days_two_symbols(daily_hyg, daily_lqd)
-        else:
-            count = self._count_recovery_satisfied_days(daily_hyg) if daily_hyg else 0
+    def get_recovery_progress_from_bundle(self, symbol: str, bundle: "SignalBundle") -> Optional[tuple[int, int]]:
+        """bundle の liquidity_credit_hyg（と liquidity_credit_lqd）から復帰 x/N を算出。定義書: HYG AND LQD とも維持。"""
+        credit_hyg = bundle.liquidity_credit_hyg
+        credit_lqd = bundle.liquidity_credit_lqd
+        daily_hyg = credit_hyg.daily_history_credit
+        daily_lqd = credit_lqd.daily_history_credit
+        count = self._count_recovery_satisfied_days_two_symbols(daily_hyg, daily_lqd)
         confirm = int(self.thresholds["confirm_days"])
         return (min(count, confirm), confirm)
 
     async def apply_signal_bundle(
         self, symbol: Optional[str], bundle: "SignalBundle"
     ) -> None:
-        lc = getattr(bundle, "liquidity_credit", None)
-        if lc is not None:
-            lc_lqd = getattr(bundle, "liquidity_credit_lqd", None)
-            await self.update_from_signals(
-                below_sma20=lc.below_sma20 is True,
-                daily_change=lc.daily_change if lc.daily_change is not None else 0.0,
-                daily_history_credit=getattr(lc, "daily_history_credit", ()),
-                below_sma20_lqd=lc_lqd.below_sma20 if lc_lqd is not None else None,
-                daily_change_lqd=lc_lqd.daily_change if lc_lqd and lc_lqd.daily_change is not None else None,
-                daily_history_credit_lqd=getattr(lc_lqd, "daily_history_credit", ()) if lc_lqd else (),
-            )
+        lc = bundle.liquidity_credit_hyg
+        lc_lqd = bundle.liquidity_credit_lqd
+        if lc.below_sma20 is None or lc.daily_change is None:
+            raise ValueError("CFactor requires HYG credit signals (below_sma20, daily_change)")
+        if lc_lqd.below_sma20 is None or lc_lqd.daily_change is None:
+            raise ValueError("CFactor requires LQD credit signals (below_sma20, daily_change)")
+        await self.update_from_signals(
+            below_sma20=lc.below_sma20,
+            daily_change=lc.daily_change,
+            daily_history_credit=lc.daily_history_credit,
+            below_sma20_lqd=lc_lqd.below_sma20,
+            daily_change_lqd=lc_lqd.daily_change,
+            daily_history_credit_lqd=lc_lqd.daily_history_credit,
+        )
 
     async def update_from_signals(
         self,

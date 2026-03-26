@@ -8,7 +8,7 @@ import asyncio
 import pytest
 
 from avionics import FlightController
-from avionics.data.signals import SignalBundle
+from avionics.data.signals import LiquiditySignals, SignalBundle
 
 
 def _run(coro):
@@ -16,7 +16,10 @@ def _run(coro):
     return asyncio.run(coro)
 
 
-_EMPTY_BUNDLE = SignalBundle()
+_EMPTY_BUNDLE = SignalBundle(
+    liquidity_credit_hyg=LiquiditySignals(),
+    liquidity_credit_lqd=LiquiditySignals(),
+)
 
 
 class _MockFactor:
@@ -115,7 +118,7 @@ def test_avionics_get_individual_control_level_excludes_t() -> None:
     except FactorsConfigError:
         pytest.skip("config/factors.toml required")
     p = PFactor(name="P_NQ", thresholds=get_p_thresholds(config, "NQ"))
-    v = VFactor(name="V_NQ", thresholds=get_v_thresholds(config, "NQ"))
+    v = VFactor(name="V_NQ", thresholds=get_v_thresholds(config, "NQ"), altitude="mid")
     t = TFactor(symbol="NQ", thresholds=get_t_thresholds(config))
     av = FlightController(
         global_market_factors=[],
@@ -164,7 +167,7 @@ def test_avionics_get_effective_level_is_max_of_three_layers() -> None:
             pytest.skip("config/factors.toml required")
         raise
     p = PFactor(name="P_NQ", thresholds=get_p_thresholds(config, "NQ"))
-    v = VFactor(name="V_NQ", thresholds=get_v_thresholds(config, "NQ"))
+    v = VFactor(name="V_NQ", thresholds=get_v_thresholds(config, "NQ"), altitude="mid")
     t = TFactor(symbol="NQ", thresholds=get_t_thresholds(config))
     av = FlightController(
         global_market_factors=[],

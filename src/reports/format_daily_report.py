@@ -37,8 +37,8 @@ def _build_icl_sections(
     sections: list[dict[str, Any]] = []
 
     c_val = "—"
-    if bundle.liquidity_credit:
-        c_val = "Below SMA20" if bundle.liquidity_credit.below_sma20 else "Above SMA20"
+    if bundle.liquidity_credit_hyg:
+        c_val = "Below SMA20" if bundle.liquidity_credit_hyg.below_sma20 else "Above SMA20"
     r_val = "—"
     if bundle.liquidity_tip and bundle.liquidity_tip.tip_drawdown_from_high is not None:
         r_val = f"{bundle.liquidity_tip.tip_drawdown_from_high * 100:.1f}%"

@@ -6,7 +6,7 @@ import pytest
 
 from avionics import UFactor
 from avionics.factors import FactorsConfigError, get_u_thresholds, load_factors_config
-from avionics.data.signals import SignalBundle
+from avionics.data.signals import LiquiditySignals, SignalBundle
 
 
 def _run(coro):
@@ -100,7 +100,13 @@ def test_ufactor_apply_empty_bundle_runs_safely(u_thresholds) -> None:
     uf = UFactor(thresholds=u_thresholds)
 
     async def scenario():
-        await uf.apply_signal_bundle(None, SignalBundle())
+        await uf.apply_signal_bundle(
+            None,
+            SignalBundle(
+                liquidity_credit_hyg=LiquiditySignals(),
+                liquidity_credit_lqd=LiquiditySignals(),
+            ),
+        )
         assert uf.level in (0, 1, 2)
 
     _run(scenario())

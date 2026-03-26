@@ -30,6 +30,14 @@ def _kv(label: str, value: str) -> dict[str, str]:
     return {"label": label, "value": value}
 
 
+def _fmt_price(value: float | None) -> str:
+    return "—" if value is None else f"{float(value):,.2f}"
+
+
+def _fmt_pct(value: float | None) -> str:
+    return "—" if value is None else f"{float(value) * 100:.2f}%"
+
+
 def _liquidity_credit_section(
     section_id: str,
     title: str,
@@ -37,16 +45,16 @@ def _liquidity_credit_section(
 ) -> dict[str, Any]:
     """C（credit）1本ぶん: スナップショット行 + 日次履歴テーブル用行。"""
     below_txt = "—" if lc.below_sma20 is None else ("Below SMA20" if lc.below_sma20 else "Above SMA20")
-    dc = lc.daily_change
-    dc_txt = "—" if dc is None else f"{float(dc):.4f}"
-    close_txt = "—" if lc.last_close is None else f"{float(lc.last_close):,.4f}"
-    sma_txt = "—" if lc.sma20 is None else f"{float(lc.sma20):,.4f}"
+    dc_txt = _fmt_pct(lc.daily_change)
+    close_txt = _fmt_price(lc.last_close)
+    sma_txt = _fmt_price(lc.sma20)
+    sma_gap_txt = _fmt_pct(lc.sma20_gap)
     rows = [
         _kv("終値", close_txt),
         _kv("SMA20", sma_txt),
+        _kv("SMA20乖離率", sma_gap_txt),
         _kv("SMA20 位置", below_txt),
         _kv("日次変化率", dc_txt),
-        _kv("高度 (altitude)", str(lc.altitude)),
     ]
     history_rows: list[dict[str, str]] = []
     for row in lc.daily_history_credit[:_MAX_CREDIT_HISTORY_ROWS]:
@@ -55,7 +63,7 @@ def _liquidity_credit_section(
         history_rows.append({
             "date": d.isoformat(),
             "below": btxt,
-            "daily_change": f"{dc_h:.4f}",
+            "daily_change": _fmt_pct(dc_h),
         })
     return {
         "section_id": section_id,
@@ -79,17 +87,22 @@ def _build_breakdown_report_context(fc: "FlightController", bundle: "SignalBundl
     for idx, sym in enumerate(price_symbols):
         ps = bundle.price_signals[sym]
         sid = _PT_IDS[idx] if idx < len(_PT_IDS) else str(idx + 1)
+        settlement_txt = _fmt_price(ps.last_close)
+        sma20_txt = _fmt_price(ps.sma20)
+        sma20_gap_txt = _fmt_pct(ps.sma20_gap)
+        high20_txt = _fmt_price(ps.high_20)
+        high20_gap_txt = _fmt_pct(ps.high_20_gap)
         rows = [
-            _kv("終値", f"{ps.last_close:,.4f}"),
+            _kv("清算値", settlement_txt),
+            _kv("20SMA", sma20_txt),
+            _kv("20SMA乖離率", sma20_gap_txt),
             _kv("トレンド", ps.trend),
-            _kv("日次変化率", f"{ps.daily_change:.4f}"),
-            _kv("cum5", f"{ps.cum5_change:.4f}"),
-            _kv("cum2", str(ps.cum2_change)),
-            _kv("downside_gap", f"{ps.downside_gap:.4f}"),
+            _kv("日次変化率", _fmt_pct(ps.daily_change)),
+            _kv("2日累積変動率", _fmt_pct(ps.cum2_change)),
+            _kv("5日累積変動率", _fmt_pct(ps.cum5_change)),
+            _kv("20日高値", high20_txt),
+            _kv("20日高値乖離率", high20_gap_txt),
         ]
-        prog = fc.mapping.get_recovery_progress(sym, bundle)
-        if prog:
-            rows.append(_kv("復帰進捗 (x/N)", " ".join(f"{k}={v}" for k, v in sorted(prog.items()))))
         price_sections.append({
             "section_id": sid,
             "title": f"P/T 入力 <{sym}>",
@@ -108,7 +121,6 @@ def _build_breakdown_report_context(fc: "FlightController", bundle: "SignalBundl
         sid = _V_IDS[idx] if idx < len(_V_IDS) else str(idx + 10)
         rows = [
             _kv("ボラ指数 (VXN/GVZ 相当)", f"{vs.index_value:.2f}"),
-            _kv("高度 (altitude)", str(vs.altitude)),
             _kv("V1→V0 ノックイン判定", knock_txt),
             _kv("ノックイン足 (bar_end)", vs.knock_in_bar_end or "—"),
             _kv("イントラ条件成立", intraday_txt),
@@ -122,12 +134,12 @@ def _build_breakdown_report_context(fc: "FlightController", bundle: "SignalBundl
         })
 
     credit_sections: list[dict[str, Any]] = []
-    if bundle.liquidity_credit:
+    if bundle.liquidity_credit_hyg:
         credit_sections.append(
             _liquidity_credit_section(
                 _C_IDS[0],
                 "C（HYG）",
-                bundle.liquidity_credit,
+                bundle.liquidity_credit_hyg,
             )
         )
     lc_lqd = getattr(bundle, "liquidity_credit_lqd", None)
@@ -143,16 +155,14 @@ def _build_breakdown_report_context(fc: "FlightController", bundle: "SignalBundl
     r_section: dict[str, Any] | None = None
     if bundle.liquidity_tip:
         lt = bundle.liquidity_tip
-        dd = lt.tip_drawdown_from_high
-        dd_txt = "—" if dd is None else f"{float(dd) * 100:.2f}%"
-        close_txt = "—" if lt.last_close is None else f"{float(lt.last_close):,.4f}"
-        ref_high_txt = "—" if lt.tip_reference_high is None else f"{float(lt.tip_reference_high):,.4f}"
+        dd_txt = _fmt_pct(lt.tip_drawdown_from_high)
+        close_txt = _fmt_price(lt.last_close)
+        ref_high_txt = _fmt_price(lt.tip_reference_high)
         r_section = {
             "rows": [
-                _kv("終値 (TIP)", close_txt),
-                _kv("比較用高値 (窓内 max high)", ref_high_txt),
-                _kv("高値比ドローダウン", dd_txt),
-                _kv("高度 (altitude)", str(lt.altitude)),
+                _kv("終値", close_txt),
+                _kv("20日高値", ref_high_txt),
+                _kv("20日高値乖離率", dd_txt),
             ],
         }
 
@@ -161,8 +171,8 @@ def _build_breakdown_report_context(fc: "FlightController", bundle: "SignalBundl
         cs = bundle.capital_signals
         capital_section = {
             "rows": [
-                _kv("MM/NLV", f"{cs.mm_over_nlv:.4f} ({cs.mm_over_nlv * 100:.2f}%)"),
-                _kv("SPAN 比 (span_ratio)", f"{cs.span_ratio:.4f}"),
+                _kv("MM/NLV", f"{cs.mm_over_nlv:.2f} ({cs.mm_over_nlv * 100:.2f}%)"),
+                _kv("SPAN 比 (span_ratio)", f"{cs.span_ratio:.2f}"),
             ],
         }
 

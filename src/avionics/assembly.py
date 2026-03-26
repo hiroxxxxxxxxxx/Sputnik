@@ -8,6 +8,7 @@ scripts（telegram_cockpit_bot, run_cockpit_with_ib）やテストは build_flig
 from __future__ import annotations
 
 from .data.factor_mapping import EngineFactorMapping
+from .data.signals import AltitudeRegime
 from .bundle_builder import BundleBuildOptions
 from .flight_controller import FlightController
 from .factors import (
@@ -32,7 +33,7 @@ from .factors.factors_config import (
 )
 
 
-def build_flight_controller(symbols: list[str]) -> FlightController:
+def build_flight_controller(symbols: list[str], *, altitude: AltitudeRegime) -> FlightController:
     """
     config/factors.toml に基づき因子を登録した FlightController を組み立てる。
 
@@ -42,8 +43,14 @@ def build_flight_controller(symbols: list[str]) -> FlightController:
     """
     config = load_factors_config()
 
-    v_recovery_params = {s: get_v_thresholds(config, s)["mid"] for s in symbols}
-    bundle_build_options = BundleBuildOptions(v_recovery_params=v_recovery_params)
+    v_recovery_params = {s: get_v_thresholds(config, s)[altitude] for s in symbols}
+    bundle_build_options = BundleBuildOptions(
+        altitude=altitude,
+        v_recovery_params=v_recovery_params,
+        liquidity_credit_hyg_symbol="HYG",
+        liquidity_credit_lqd_symbol="LQD",
+        liquidity_tip_symbol="TIP",
+    )
 
     global_market_factors: list = []
     limit_factors: list = []
@@ -54,7 +61,7 @@ def build_flight_controller(symbols: list[str]) -> FlightController:
         v_th = get_v_thresholds(config, sym)
         t_th = get_t_thresholds(config)
         symbol_factors[sym].append(PFactor(name="P", thresholds=p_th))
-        symbol_factors[sym].append(VFactor(name="V", thresholds=v_th))
+        symbol_factors[sym].append(VFactor(name="V", thresholds=v_th, altitude=altitude))
         symbol_factors[sym].append(TFactor(symbol=sym, thresholds=t_th))
         try:
             c_th = get_c_thresholds(config, sym)
@@ -63,7 +70,7 @@ def build_flight_controller(symbols: list[str]) -> FlightController:
             pass
         try:
             r_th = get_r_thresholds(config, sym)
-            symbol_factors[sym].append(RFactor(name="R", thresholds=r_th))
+            symbol_factors[sym].append(RFactor(name="R", thresholds=r_th, altitude=altitude))
         except FactorsConfigError:
             pass
 

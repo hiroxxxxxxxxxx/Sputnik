@@ -31,6 +31,7 @@ class VFactor(BaseFactor):
         self,
         name: str,
         thresholds: dict,
+        altitude: AltitudeRegime,
         history_size: int = 64,
     ) -> None:
         """
@@ -42,6 +43,7 @@ class VFactor(BaseFactor):
         定義書「3-1 PFD」「4-2-1-2 V因子」参照。
         """
         self._thresholds_by_altitude: dict = dict(thresholds)
+        self._altitude: AltitudeRegime = altitude
         super().__init__(name=name, levels=[0, 1, 2], history_size=history_size)
 
     def _get_thresholds(self, altitude: AltitudeRegime) -> dict:
@@ -58,7 +60,7 @@ class VFactor(BaseFactor):
         sig = getattr(bundle, "volatility_signals", {}).get(symbol)
         if not sig:
             return None
-        th = self._get_thresholds(getattr(sig, "altitude", "mid"))
+        th = self._get_thresholds(self._altitude)
         if self.level == 2:
             required = int(th["V2_confirm_days"])
             satisfied = getattr(sig, "recovery_confirm_satisfied_days_v2_off", 0)
@@ -92,7 +94,7 @@ class VFactor(BaseFactor):
             buffer_condition_v1_to_v0 = lambda _f, _l: signal.is_intraday_condition_met
         return await self.update_from_index(
             index_value=signal.index_value,
-            altitude=signal.altitude,
+            altitude=self._altitude,
             recovery_confirm_satisfied_days_v1_off=signal.recovery_confirm_satisfied_days_v1_off,
             recovery_confirm_satisfied_days_v2_off=signal.recovery_confirm_satisfied_days_v2_off,
             buffer_condition_v1_to_v0=buffer_condition_v1_to_v0,
