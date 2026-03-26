@@ -82,6 +82,10 @@ async def check_ib_connection(
     Gateway 起動完了通知用。呼び出し側は ib_async を import しない。
     """
     try:
+        from ib_async import IB  # type: ignore
+    except ImportError:
+        return False
+    try:
         ib = IB()
         await ib.connectAsync(host=host, port=port, clientId=client_id, timeout=timeout)
         ib.disconnect()

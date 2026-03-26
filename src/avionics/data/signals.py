@@ -53,11 +53,20 @@ class VolatilitySignal:
 
 @dataclass(frozen=True)
 class LiquiditySignals:
-    """C 因子（credit）・R 因子（tip）用。"""
+    """C 因子（credit）・R 因子（tip）用。
+
+    - credit: last_close / sma20 を保持。
+    - tip (R): last_close は TIP 当日終値、tip_reference_high はドローダウン比較に使う窓内最高値。
+    """
     altitude: AltitudeRegime
     below_sma20: Optional[bool] = None
     daily_change: Optional[float] = None
+    # credit 系: as_of 当日の終値（HYG/LQD）、当日基準 SMA20
+    last_close: Optional[float] = None
+    sma20: Optional[float] = None
     tip_drawdown_from_high: Optional[float] = None
+    # R/TIP: 高値比ドローダウン算出時の比較用高値（rolling 窓の max high）
+    tip_reference_high: Optional[float] = None
     daily_history_credit: Tuple[CreditDailyRow, ...] = ()
     daily_history_tip: Tuple[TipDailyRow, ...] = ()
 

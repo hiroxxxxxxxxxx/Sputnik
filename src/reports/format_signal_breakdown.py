@@ -1,44 +1,151 @@
 """
 Layer 2 シグナルの整形表示。定義は avionics.data.signals / avionics.compute にあり、ここでは format のみ。
+`format_breakdown_report`（テンプレート）と同じレイアウト意図で CLI 向けに直列化する。
 定義書「4-2 情報の階層構造」参照。
 """
 
 from __future__ import annotations
 
+from datetime import date
+from typing import TYPE_CHECKING, Optional
+
 from avionics.data.signals import SignalBundle
 
+if TYPE_CHECKING:
+    from avionics.data.factor_mapping import EngineFactorMapping
 
-def format_signal_breakdown(bundle: SignalBundle) -> str:
+_MAX_CREDIT_HISTORY_ROWS = 15
+_PT_IDS = ("1-A", "1-B")
+_V_IDS = ("2-A", "2-B")
+_C_IDS = ("3-A", "3-B")
+
+
+def format_signal_breakdown(
+    bundle: SignalBundle,
+    mapping: Optional["EngineFactorMapping"] = None,
+    *,
+    date_iso: Optional[str] = None,
+) -> str:
     """
     Layer 2 シグナル（各因子の入力）を人が読める文字列で返す。
-    因子の計算内訳確認用。
+
+    :param mapping: 指定時は銘柄ごとの復帰 x/N を P/T ブロック末尾に付記する。
+    :param date_iso: 見出し日付（省略時は当日 UTC カレンダー日）。
     """
-    lines: list[str] = ["【Layer 2 シグナル内訳】"]
-    for sym, ps in bundle.price_signals.items():
-        lines.append(
-            f"  P/T入力({sym}): trend={ps.trend} "
-            f"daily_change={ps.daily_change:.4f} cum5={ps.cum5_change:.4f} "
-            f"cum2={ps.cum2_change!s} downside_gap={ps.downside_gap:.4f}"
-        )
-    for sym, vs in bundle.volatility_signals.items():
-        extra = f" 1h_knock_in_ok={vs.v1_to_v0_knock_in_ok}" if vs.v1_to_v0_knock_in_ok is not None else ""
-        lines.append(f"  V入力({sym}): index_value={vs.index_value:.2f} altitude={vs.altitude}{extra}")
+    header_d = date_iso or date.today().isoformat()
+    lines: list[str] = [
+        f"📐 【LAYER 2 BREAKDOWN】 {header_d}",
+        "━━━━━━━━━━━━━━━━━━━━",
+        "Layer 2 シグナル（各因子の入力値）内訳",
+        "━━━━━━━━━━━━━━━━━━━━",
+    ]
+
+    price_symbols = [s for s in ("NQ", "GC") if s in bundle.price_signals]
+    price_symbols += sorted(s for s in bundle.price_signals if s not in ("NQ", "GC"))
+    for idx, sym in enumerate(price_symbols):
+        ps = bundle.price_signals[sym]
+        sid = _PT_IDS[idx] if idx < len(_PT_IDS) else str(idx + 1)
+        lines.append("────────────────────")
+        lines.append(f"[{sid}] P/T 入力 <{sym}>")
+        lines.append(f"終値 | {ps.last_close:,.4f}")
+        lines.append(f"トレンド | {ps.trend}")
+        lines.append(f"日次変化率 | {ps.daily_change:.4f}")
+        lines.append(f"cum5 | {ps.cum5_change:.4f}")
+        lines.append(f"cum2 | {ps.cum2_change!s}")
+        lines.append(f"downside_gap | {ps.downside_gap:.4f}")
+        if mapping is not None:
+            prog = mapping.get_recovery_progress(sym, bundle)
+            if prog:
+                tail = " ".join(f"{k}={v}" for k, v in sorted(prog.items()))
+                lines.append(f"復帰進捗 (x/N) | {tail}")
+        lines.append("")
+
+    vol_symbols = [s for s in ("NQ", "GC") if s in bundle.volatility_signals]
+    vol_symbols += sorted(s for s in bundle.volatility_signals if s not in ("NQ", "GC"))
+    for idx, sym in enumerate(vol_symbols):
+        vs = bundle.volatility_signals[sym]
+        knock = vs.v1_to_v0_knock_in_ok
+        knock_txt = "—" if knock is None else ("はい" if knock else "いいえ")
+        intraday_txt = "はい" if vs.is_intraday_condition_met else "いいえ"
+        sid = _V_IDS[idx] if idx < len(_V_IDS) else str(idx + 10)
+        lines.append("────────────────────")
+        lines.append(f"[{sid}] V 入力 <{sym}>")
+        lines.append(f"ボラ指数 (VXN/GVZ 相当) | {vs.index_value:.2f}")
+        lines.append(f"高度 (altitude) | {vs.altitude}")
+        lines.append(f"V1→V0 ノックイン判定 | {knock_txt}")
+        lines.append(f"ノックイン足 (bar_end) | {vs.knock_in_bar_end or '—'}")
+        lines.append(f"イントラ条件成立 | {intraday_txt}")
+        lines.append(f"V1_off 連続日数 | {vs.recovery_confirm_satisfied_days_v1_off}")
+        lines.append(f"V2_off 連続日数 | {vs.recovery_confirm_satisfied_days_v2_off}")
+        lines.append("")
+
     if bundle.liquidity_credit:
         lc = bundle.liquidity_credit
-        lines.append(
-            f"  C(HYG): below_sma20={lc.below_sma20} daily_change={lc.daily_change!s} altitude={lc.altitude}"
-        )
+        below_txt = "—" if lc.below_sma20 is None else ("Below SMA20" if lc.below_sma20 else "Above SMA20")
+        dc = lc.daily_change
+        dc_txt = "—" if dc is None else f"{float(dc):.4f}"
+        lines.append("────────────────────")
+        lines.append(f"[{_C_IDS[0]}] C（HYG / credit）")
+        close_txt = "—" if lc.last_close is None else f"{float(lc.last_close):,.4f}"
+        sma_txt = "—" if lc.sma20 is None else f"{float(lc.sma20):,.4f}"
+        lines.append(f"終値 | {close_txt}")
+        lines.append(f"SMA20 | {sma_txt}")
+        lines.append(f"SMA20 位置 | {below_txt}")
+        lines.append(f"日次変化率 | {dc_txt}")
+        lines.append(f"高度 (altitude) | {lc.altitude}")
+        lines.append("（日次履歴・newest first）")
+        lines.append("日付 | SMA20 | 日次変化率")
+        for row in lc.daily_history_credit[:_MAX_CREDIT_HISTORY_ROWS]:
+            d, below, dc_h = row[0], row[1], row[2]
+            btxt = "Below" if below else "Above"
+            lines.append(f"{d.isoformat()} | {btxt} | {dc_h:.4f}")
+        lines.append("")
+
     lc_lqd = getattr(bundle, "liquidity_credit_lqd", None)
     if lc_lqd:
-        lines.append(
-            f"  C(LQD): below_sma20={lc_lqd.below_sma20} daily_change={lc_lqd.daily_change!s} altitude={lc_lqd.altitude}"
-        )
+        lc = lc_lqd
+        below_txt = "—" if lc.below_sma20 is None else ("Below SMA20" if lc.below_sma20 else "Above SMA20")
+        dc = lc.daily_change
+        dc_txt = "—" if dc is None else f"{float(dc):.4f}"
+        cid = _C_IDS[1] if len(_C_IDS) > 1 else "3-B"
+        lines.append("────────────────────")
+        lines.append(f"[{cid}] C（LQD / credit）")
+        close_txt = "—" if lc.last_close is None else f"{float(lc.last_close):,.4f}"
+        sma_txt = "—" if lc.sma20 is None else f"{float(lc.sma20):,.4f}"
+        lines.append(f"終値 | {close_txt}")
+        lines.append(f"SMA20 | {sma_txt}")
+        lines.append(f"SMA20 位置 | {below_txt}")
+        lines.append(f"日次変化率 | {dc_txt}")
+        lines.append(f"高度 (altitude) | {lc.altitude}")
+        lines.append("（日次履歴・newest first）")
+        lines.append("日付 | SMA20 | 日次変化率")
+        for row in lc.daily_history_credit[:_MAX_CREDIT_HISTORY_ROWS]:
+            d, below, dc_h = row[0], row[1], row[2]
+            btxt = "Below" if below else "Above"
+            lines.append(f"{d.isoformat()} | {btxt} | {dc_h:.4f}")
+        lines.append("")
+
     if bundle.liquidity_tip:
         lt = bundle.liquidity_tip
-        lines.append(
-            f"  R(tip): tip_drawdown_from_high={lt.tip_drawdown_from_high!s} altitude={lt.altitude}"
-        )
+        dd = lt.tip_drawdown_from_high
+        dd_txt = "—" if dd is None else f"{float(dd) * 100:.2f}%"
+        close_txt = "—" if lt.last_close is None else f"{float(lt.last_close):,.4f}"
+        ref_high_txt = "—" if lt.tip_reference_high is None else f"{float(lt.tip_reference_high):,.4f}"
+        lines.append("────────────────────")
+        lines.append("[4] R（TIP）")
+        lines.append(f"終値 (TIP) | {close_txt}")
+        lines.append(f"比較用高値 (窓内 max high) | {ref_high_txt}")
+        lines.append(f"高値比ドローダウン | {dd_txt}")
+        lines.append(f"高度 (altitude) | {lt.altitude}")
+        lines.append("")
+
     if bundle.capital_signals:
         cs = bundle.capital_signals
-        lines.append(f"  U/S入力: mm_over_nlv={cs.mm_over_nlv:.4f} span_ratio={cs.span_ratio:.4f}")
+        lines.append("────────────────────")
+        lines.append("[5] U/S（資本）")
+        lines.append(f"MM/NLV | {cs.mm_over_nlv:.4f} ({cs.mm_over_nlv * 100:.2f}%)")
+        lines.append(f"SPAN 比 (span_ratio) | {cs.span_ratio:.4f}")
+        lines.append("")
+
+    lines.append("━━━━━━━━━━━━━━━━━━━━")
     return "\n".join(lines)

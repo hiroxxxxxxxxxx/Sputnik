@@ -79,7 +79,7 @@ async def main() -> int:
 
             if args.breakdown and bundle:
                 from reports.format_signal_breakdown import format_signal_breakdown
-                print(format_signal_breakdown(bundle))
+                print(format_signal_breakdown(bundle, fc.mapping, date_iso=as_of.isoformat()))
                 print("---")
 
             print("--- FlightController 計器シグナル ---")

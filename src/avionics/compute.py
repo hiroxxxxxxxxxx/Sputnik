@@ -331,10 +331,13 @@ def compute_liquidity_signals_credit_from_bars(
         daily_history_credit_list.append((b.date, below, dc))
     daily_history_credit = tuple(daily_history_credit_list)
 
+    sma20_f = float(sma20) if sma20 is not None else None
     return LiquiditySignals(
         altitude=altitude,
         below_sma20=below_sma20,
         daily_change=daily_change,
+        last_close=float(latest.close),
+        sma20=sma20_f,
         daily_history_credit=daily_history_credit,
     )
 
@@ -378,6 +381,8 @@ def compute_liquidity_signals_tip_from_bars(
     return LiquiditySignals(
         altitude=altitude,
         tip_drawdown_from_high=drawdown,
+        last_close=float(latest.close),
+        tip_reference_high=float(high_20),
         daily_history_tip=daily_history_tip,
     )
 
