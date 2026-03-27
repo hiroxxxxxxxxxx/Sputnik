@@ -220,14 +220,14 @@ def _v1_to_v0_knock_in_ok(
     daily: List[PriceBar],
     bars_1h: List[PriceBar1h],
     as_of: date,
-) -> Optional[bool]:
+) -> bool:
     """
     SPEC 4-2-1-2「1hノックイン」: 直近1h足で「終値<前日ET16:00終値 AND 1h足が陰線」を満たすか。
     前日終値は as_of で当日足を特定し、その1本前の終値を使う。
     """
     daily = sorted(daily, key=lambda b: b.date)
     if len(daily) < 2 or not bars_1h:
-        return None
+        return False
     _, prev_idx = _settlement_bar_indices_from_date(daily, as_of)
     prev_close = daily[prev_idx].close
     latest_1h = sorted(bars_1h, key=lambda b: b.bar_end)[-1]
@@ -260,12 +260,11 @@ def compute_volatility_signal_from_inputs(
     *,
     index_value: float,
     high_20: Optional[float],
-    knock_in: Optional[bool],
+    knock_in: bool,
     series: List[VolatilitySeriesPoint],
     v1_off_threshold: Optional[float],
     v2_off_threshold: Optional[float],
 ) -> VolatilitySignal:
-    is_intraday = knock_in is True
     satisfied_v1 = (
         _count_consecutive_days_below(series, v1_off_threshold)
         if v1_off_threshold is not None
@@ -280,7 +279,6 @@ def compute_volatility_signal_from_inputs(
         index_value=index_value,
         high_20=high_20,
         v1_to_v0_knock_in_ok=knock_in,
-        is_intraday_condition_met=is_intraday,
         recovery_confirm_satisfied_days_v1_off=satisfied_v1,
         recovery_confirm_satisfied_days_v2_off=satisfied_v2,
     )
@@ -452,7 +450,6 @@ def compute_volatility_signal_from_snapshot(
         high_20=sig.high_20,
         v1_to_v0_knock_in_ok=sig.v1_to_v0_knock_in_ok,
         knock_in_bar_end=knock_in_bar_end,
-        is_intraday_condition_met=sig.is_intraday_condition_met,
         recovery_confirm_satisfied_days_v1_off=sig.recovery_confirm_satisfied_days_v1_off,
         recovery_confirm_satisfied_days_v2_off=sig.recovery_confirm_satisfied_days_v2_off,
     )

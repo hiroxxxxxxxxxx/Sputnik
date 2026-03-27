@@ -199,7 +199,6 @@ def test_vfactor_update_from_volatility_signal_uses_1h_knock_in() -> None:
         sig_false = VolatilitySignal(
             index_value=27.0,
             v1_to_v0_knock_in_ok=False,
-            is_intraday_condition_met=False,
             recovery_confirm_satisfied_days_v1_off=1,
             recovery_confirm_satisfied_days_v2_off=0,
         )
@@ -211,7 +210,6 @@ def test_vfactor_update_from_volatility_signal_uses_1h_knock_in() -> None:
         sig_true = VolatilitySignal(
             index_value=27.0,
             v1_to_v0_knock_in_ok=True,
-            is_intraday_condition_met=True,
             recovery_confirm_satisfied_days_v1_off=1,
             recovery_confirm_satisfied_days_v2_off=0,
         )

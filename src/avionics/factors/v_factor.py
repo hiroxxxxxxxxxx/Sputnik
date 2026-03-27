@@ -91,7 +91,7 @@ class VFactor(BaseFactor):
         呼び出し元が buffer_condition を渡さない場合は signal.v1_to_v0_knock_in_ok を用いる。
         """
         if buffer_condition_v1_to_v0 is None:
-            buffer_condition_v1_to_v0 = lambda _f, _l: signal.is_intraday_condition_met
+            buffer_condition_v1_to_v0 = lambda _f, _l: signal.v1_to_v0_knock_in_ok
         return await self.update_from_index(
             index_value=signal.index_value,
             altitude=self._altitude,

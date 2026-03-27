@@ -94,21 +94,18 @@ def format_signal_breakdown(
     vol_symbols += sorted(s for s in bundle.volatility_signals if s not in ("NQ", "GC"))
     for idx, sym in enumerate(vol_symbols):
         vs = bundle.volatility_signals[sym]
-        knock = vs.v1_to_v0_knock_in_ok
-        knock_txt = "—" if knock is None else ("はい" if knock else "いいえ")
-        knockin_txt = "はい" if vs.is_intraday_condition_met else "いいえ"
+        knock_txt = "はい" if vs.v1_to_v0_knock_in_ok else "いいえ"
         v1_days, v2_days = _v_confirm_days(mapping, sym)
         sid = _V_IDS[idx] if idx < len(_V_IDS) else str(idx + 10)
         lines.append("────────────────────")
         lines.append(f"[{sid}] V 入力 <{sym}>")
         lines.append(f"ボラ指数 (VXN/GVZ 相当) | {vs.index_value:.2f}")
         lines.append(f"20日高値 | {_fmt_price(vs.high_20)}")
-        lines.append(f"V1→V0 ノックイン判定 | {knock_txt}")
-        lines.append(f"ノックイン足 (bar_end) | {vs.knock_in_bar_end or '—'}")
-        lines.append(f"ノックイン成立 | {knockin_txt}")
         lines.append(
             f"V1→V0復帰判定 | {_fmt_progress(vs.recovery_confirm_satisfied_days_v1_off, v1_days)}"
         )
+        lines.append(f" ・ノックイン成立 | {knock_txt}")
+        lines.append(f" ・ノックイン判定時刻 | {vs.knock_in_bar_end or '—'}")
         lines.append(
             f"V2→V1復帰判定 | {_fmt_progress(vs.recovery_confirm_satisfied_days_v2_off, v2_days)}"
         )
@@ -116,7 +113,6 @@ def format_signal_breakdown(
 
     if bundle.liquidity_credit_hyg:
         lc = bundle.liquidity_credit_hyg
-        below_txt = "—" if lc.below_sma20 is None else ("Below SMA20" if lc.below_sma20 else "Above SMA20")
         dc_txt = _fmt_pct(lc.daily_change)
         lines.append("────────────────────")
         lines.append(f"[{_C_IDS[0]}] C（HYG / credit）")
@@ -126,20 +122,12 @@ def format_signal_breakdown(
         lines.append(f"終値 | {close_txt}")
         lines.append(f"SMA20 | {sma_txt}")
         lines.append(f"SMA20乖離率 | {sma_gap_txt}")
-        lines.append(f"SMA20 位置 | {below_txt}")
         lines.append(f"日次変化率 | {dc_txt}")
-        lines.append("（日次履歴・newest first）")
-        lines.append("日付 | SMA20 | 日次変化率")
-        for row in lc.daily_history_credit[:_MAX_CREDIT_HISTORY_ROWS]:
-            d, below, dc_h = row[0], row[1], row[2]
-            btxt = "Below" if below else "Above"
-            lines.append(f"{d.isoformat()} | {btxt} | {_fmt_pct(dc_h)}")
         lines.append("")
 
     lc_lqd = getattr(bundle, "liquidity_credit_lqd", None)
     if lc_lqd:
         lc = lc_lqd
-        below_txt = "—" if lc.below_sma20 is None else ("Below SMA20" if lc.below_sma20 else "Above SMA20")
         dc_txt = _fmt_pct(lc.daily_change)
         cid = _C_IDS[1] if len(_C_IDS) > 1 else "3-B"
         lines.append("────────────────────")
@@ -150,14 +138,7 @@ def format_signal_breakdown(
         lines.append(f"終値 | {close_txt}")
         lines.append(f"SMA20 | {sma_txt}")
         lines.append(f"SMA20乖離率 | {sma_gap_txt}")
-        lines.append(f"SMA20 位置 | {below_txt}")
         lines.append(f"日次変化率 | {dc_txt}")
-        lines.append("（日次履歴・newest first）")
-        lines.append("日付 | SMA20 | 日次変化率")
-        for row in lc.daily_history_credit[:_MAX_CREDIT_HISTORY_ROWS]:
-            d, below, dc_h = row[0], row[1], row[2]
-            btxt = "Below" if below else "Above"
-            lines.append(f"{d.isoformat()} | {btxt} | {_fmt_pct(dc_h)}")
         lines.append("")
 
     if bundle.liquidity_tip:

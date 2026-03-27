@@ -25,13 +25,6 @@ Layer 2 シグナル（各因子の入力値）内訳
 {% for row in csec.rows %}
 {{ row.label }} | {{ row.value }}
 {% endfor %}
-{% if csec.history_rows %}
-（日次履歴・newest first）
-日付 | SMA20 | 日次変化率
-{% for h in csec.history_rows %}
-{{ h.date }} | {{ h.below }} | {{ h.daily_change }}
-{% endfor %}
-{% endif %}
 {% endfor %}
 
 {% if r_section %}

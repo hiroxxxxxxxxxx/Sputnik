@@ -132,11 +132,11 @@ class IBRawFetcher:
         return [_bar_to_price_bar_1h(b) for b in bars]
 
     async def _fetch_volatility_series(
-        self, contract: Any, as_of: date, limit: int = 5
+        self, contract: Any, as_of: date, limit: int = 20
     ) -> List[VolatilitySeriesPoint]:
         """直近 limit 営業日分の (日付, 終値) を取得。"""
         bars = await self._fetch_bars(
-            contract, as_of, duration_str="15 D", bar_size="1 day"
+            contract, as_of, duration_str="40 D", bar_size="1 day"
         )
         points: List[VolatilitySeriesPoint] = []
         for b in sorted(bars, key=lambda x: x.date):
@@ -196,11 +196,11 @@ class IBRawFetcher:
 
         def _series_limit(sym: str) -> int:
             if not v_recovery_params or sym not in v_recovery_params:
-                return 5
+                return 20
             th = v_recovery_params[sym]
             v1 = int(th.get("V1_confirm_days", 1))
             v2 = int(th.get("V2_confirm_days", 2))
-            return max(v1, v2, 1)
+            return max(v1, v2, 20)
 
         coros: List[Any] = []
         for sym in price_symbols:

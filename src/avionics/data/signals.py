@@ -47,9 +47,8 @@ class VolatilitySignal:
     """V 因子用。指数値と復帰判定用フラグ。"""
     index_value: float
     high_20: Optional[float] = None
-    v1_to_v0_knock_in_ok: Optional[bool] = None
+    v1_to_v0_knock_in_ok: bool = False
     knock_in_bar_end: Optional[str] = None
-    is_intraday_condition_met: bool = False
     recovery_confirm_satisfied_days_v1_off: int = 0
     recovery_confirm_satisfied_days_v2_off: int = 0
 

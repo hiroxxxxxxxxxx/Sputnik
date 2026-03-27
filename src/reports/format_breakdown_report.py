@@ -19,8 +19,6 @@ if TYPE_CHECKING:
 
 BREAKDOWN_TEMPLATE = "breakdown_report.txt"
 
-_MAX_CREDIT_HISTORY_ROWS = 15
-
 _PT_IDS = ("1-A", "1-B")
 _V_IDS = ("2-A", "2-B")
 _C_IDS = ("3-A", "3-B")
@@ -60,7 +58,7 @@ def _liquidity_credit_section(
     title: str,
     lc: "LiquiditySignals",
 ) -> dict[str, Any]:
-    """C（credit）1本ぶん: スナップショット行 + 日次履歴テーブル用行。"""
+    """C（credit）1本ぶん: スナップショット行のみ。"""
     below_txt = "—" if lc.below_sma20 is None else ("Below SMA20" if lc.below_sma20 else "Above SMA20")
     dc_txt = _fmt_pct(lc.daily_change)
     close_txt = _fmt_price(lc.last_close)
@@ -73,20 +71,10 @@ def _liquidity_credit_section(
         _kv("SMA20 位置", below_txt),
         _kv("日次変化率", dc_txt),
     ]
-    history_rows: list[dict[str, str]] = []
-    for row in lc.daily_history_credit[:_MAX_CREDIT_HISTORY_ROWS]:
-        d, below, dc_h = row[0], row[1], row[2]
-        btxt = "Below" if below else "Above"
-        history_rows.append({
-            "date": d.isoformat(),
-            "below": btxt,
-            "daily_change": _fmt_pct(dc_h),
-        })
     return {
         "section_id": section_id,
         "title": title,
         "rows": rows,
-        "history_rows": history_rows,
     }
 
 
@@ -132,21 +120,19 @@ def _build_breakdown_report_context(fc: "FlightController", bundle: "SignalBundl
     volatility_sections: list[dict[str, Any]] = []
     for idx, sym in enumerate(vol_symbols):
         vs = bundle.volatility_signals[sym]
-        knock_ok = vs.v1_to_v0_knock_in_ok
-        knock_txt = "—" if knock_ok is None else ("はい" if knock_ok else "いいえ")
-        knockin_txt = "はい" if vs.is_intraday_condition_met else "いいえ"
+        knock_txt = "はい" if vs.v1_to_v0_knock_in_ok else "いいえ"
         v1_days, v2_days = _v_confirm_days(fc, sym)
         sid = _V_IDS[idx] if idx < len(_V_IDS) else str(idx + 10)
         rows = [
             _kv("ボラ指数 (VXN/GVZ 相当)", f"{vs.index_value:.2f}"),
             _kv("20日高値", _fmt_price(vs.high_20)),
-            _kv("V1→V0 ノックイン判定", knock_txt),
-            _kv("ノックイン足 (bar_end)", vs.knock_in_bar_end or "—"),
-            _kv("ノックイン成立", knockin_txt),
             _kv(
                 "V1→V0復帰判定",
                 _fmt_progress(vs.recovery_confirm_satisfied_days_v1_off, v1_days),
             ),
+            _kv(" ・ノックイン成立", knock_txt),
+            _kv(" ・ノックイン判定時刻", vs.knock_in_bar_end or "—"),
+
             _kv(
                 "V2→V1復帰判定",
                 _fmt_progress(vs.recovery_confirm_satisfied_days_v2_off, v2_days),

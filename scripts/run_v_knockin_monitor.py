@@ -136,7 +136,7 @@ async def main() -> int:
                 raise RuntimeError("fc.refresh did not set bundle")
             for sym in pending:
                 vs = bundle.volatility_signals.get(sym)
-                if vs and vs.is_intraday_condition_met:
+                if vs and vs.v1_to_v0_knock_in_ok:
                     # 成立した 1h 足の bar_end（ISO文字列）をそのまま保存する
                     return (sym, vs.knock_in_bar_end or "")
             return None
