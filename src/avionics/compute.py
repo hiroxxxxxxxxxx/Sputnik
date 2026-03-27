@@ -259,6 +259,7 @@ def _v1_to_v0_knock_in_bar_end_iso(
 def compute_volatility_signal_from_inputs(
     *,
     index_value: float,
+    high_20: Optional[float],
     knock_in: Optional[bool],
     series: List[VolatilitySeriesPoint],
     v1_off_threshold: Optional[float],
@@ -277,6 +278,7 @@ def compute_volatility_signal_from_inputs(
     )
     return VolatilitySignal(
         index_value=index_value,
+        high_20=high_20,
         v1_to_v0_knock_in_ok=knock_in,
         is_intraday_condition_met=is_intraday,
         recovery_confirm_satisfied_days_v1_off=satisfied_v1,
@@ -422,9 +424,13 @@ def compute_volatility_signal_from_snapshot(
 ) -> VolatilitySignal:
     """RawMarketSnapshot から VolatilitySignal を算出する（Phase3: snapshot直）。"""
     full_series = _volatility_series_from_snapshot(snapshot, symbol)
+    series_candidates = [(d, val) for d, val in full_series if d <= as_of]
     v = _volatility_index_from_series(full_series, as_of)
     if v is None:
         raise ValueError(f"No volatility index data for {symbol} as of {as_of}")
+    if not series_candidates:
+        raise ValueError(f"No volatility series candidates for {symbol} as of {as_of}")
+    high_20 = max(val for _d, val in series_candidates[-20:])
 
     daily = _price_bars_from_snapshot(snapshot, symbol)[-5:]
     bars_1h = _price_bars_1h_from_snapshot(snapshot, symbol)[-24:]
@@ -434,6 +440,7 @@ def compute_volatility_signal_from_snapshot(
     series = full_series[-5:] if len(full_series) > 5 else full_series
     sig = compute_volatility_signal_from_inputs(
         index_value=v,
+        high_20=high_20,
         knock_in=knock_in,
         series=series,
         v1_off_threshold=v1_off_threshold,
@@ -442,6 +449,7 @@ def compute_volatility_signal_from_snapshot(
     # knock_in_bar_end は “成立した場合のみ” 入れる。未成立なら None のまま。
     return VolatilitySignal(
         index_value=sig.index_value,
+        high_20=sig.high_20,
         v1_to_v0_knock_in_ok=sig.v1_to_v0_knock_in_ok,
         knock_in_bar_end=knock_in_bar_end,
         is_intraday_condition_met=sig.is_intraday_condition_met,

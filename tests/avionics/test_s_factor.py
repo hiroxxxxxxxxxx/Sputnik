@@ -47,25 +47,17 @@ def test_downgrade_immediate(s_thresholds) -> None:
 
 
 def test_upgrade_delayed(s_thresholds) -> None:
-    """
-    S2→S1が2日、S1→S0が3日連続確認で復帰することを確認する。
-    """
+    """復帰は確認日数なしで即時。閾値を下回った時点で1段階ずつ復帰する。"""
     sf = SFactor(thresholds=s_thresholds)
     sf.level = 2
 
     async def scenario():
-        # S2→S1 復帰テスト
-        for i in range(2):
-            await sf.update_from_ratio(1.19)
-            if i == 0:
-                assert sf.level == 2
+        # 復帰は floor 判定。1.299 は floor(2桁)=1.29 なので S2→S1
+        await sf.update_from_ratio(1.299)
         assert sf.level == 1
 
-        # S1→S0 復帰テスト
-        for i in range(3):
-            await sf.update_from_ratio(1.04)
-            if i < 2:
-                assert sf.level == 1
+        # 1.099 は floor(2桁)=1.09 なので S1→S0
+        await sf.update_from_ratio(1.099)
         assert sf.level == 0
 
     _run(scenario())
@@ -137,7 +129,7 @@ def test_sfactor_current2_stays_s2_when_above_threshold(s_thresholds) -> None:
     sf.level = 2
 
     async def scenario():
-        level = await sf.update_from_ratio(1.25)
+        level = await sf.update_from_ratio(1.30)
         assert level == 2
 
     _run(scenario())
@@ -151,25 +143,20 @@ def test_sfactor_current1_middle_band_between_recovery_and_reactivation(s_thresh
     sf.level = 1
 
     async def scenario():
-        level = await sf.update_from_ratio(1.06)
+        level = await sf.update_from_ratio(1.10)
         assert level == 1
 
     _run(scenario())
 
 
 def test_update_from_ratio_exact_threshold_1_2_current2(s_thresholds) -> None:
-    """
-    current=S2かつsがちょうど1.2未満でS1候補になる境界をカバーする。
-    定義書: S2→S1復帰は s < 1.2（2日確認）。
-    """
+    """current=S2かつfloor(2桁)<1.3で即S1復帰する境界をカバーする。"""
     sf = SFactor(thresholds=s_thresholds)
     sf.level = 2
 
     async def scenario():
-        level = await sf.update_from_ratio(1.19)
-        assert level == 2  # 1日目はまだS2
-        level = await sf.update_from_ratio(1.19)
-        assert level == 1  # 2日目でS1復帰
+        level = await sf.update_from_ratio(1.299)
+        assert level == 1
 
     _run(scenario())
 
@@ -197,16 +184,40 @@ def test_update_from_ratio_s2_no_direct_jump_to_s0(s_thresholds) -> None:
     sf.level = 2
 
     async def scenario():
-        # 1日目: s<1.2 で candidate=1 だが confirm_days=2 のためまだ S2
-        level = await sf.update_from_ratio(1.04)
-        assert level == 2
-        # 2日目: S2→S1 復帰
-        level = await sf.update_from_ratio(1.04)
+        # floor 判定で S2→S1 の1段階復帰のみ
+        level = await sf.update_from_ratio(1.099)
         assert level == 1
-        # さらに3日で S1→S0
-        for _ in range(3):
-            await sf.update_from_ratio(1.04)
+        # 次の判定で S1→S0
+        await sf.update_from_ratio(1.099)
         assert sf.level == 0
+
+    _run(scenario())
+
+
+def test_sfactor_activation_uses_ceil_second_decimal(s_thresholds) -> None:
+    """発動判定は小数点第二位切上げを使う。"""
+    sf = SFactor(thresholds=s_thresholds)
+
+    async def scenario():
+        # 1.291 -> ceil(2桁)=1.30 なので S2 発動
+        level = await sf.update_from_ratio(1.291)
+        assert level == 2
+
+    _run(scenario())
+
+
+def test_sfactor_recovery_uses_floor_second_decimal(s_thresholds) -> None:
+    """復帰判定は小数点第二位切捨てを使う。"""
+    sf = SFactor(thresholds=s_thresholds)
+    sf.level = 2
+
+    async def scenario():
+        # 1.3001 -> floor(2桁)=1.30 のため S2 維持
+        level = await sf.update_from_ratio(1.3001)
+        assert level == 2
+        # 1.2999 -> floor(2桁)=1.29 で S2→S1
+        level = await sf.update_from_ratio(1.2999)
+        assert level == 1
 
     _run(scenario())
 

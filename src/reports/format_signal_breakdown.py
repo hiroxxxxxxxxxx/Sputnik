@@ -28,6 +28,25 @@ def _fmt_pct(value: float | None) -> str:
     return "—" if value is None else f"{float(value) * 100:.2f}%"
 
 
+def _v_confirm_days(mapping: Optional["EngineFactorMapping"], symbol: str) -> tuple[int, int]:
+    """V因子の confirm_days（V1/V2）を取得する。取得できない場合は例外。"""
+    if mapping is None:
+        raise ValueError("format_signal_breakdown requires mapping to render V x/N progress")
+    from avionics.factors.v_factor import VFactor
+
+    for f in mapping.symbol_factors.get(symbol, []):
+        if isinstance(f, VFactor):
+            th = f._get_thresholds(f._altitude)
+            return (int(th["V1_confirm_days"]), int(th["V2_confirm_days"]))
+    raise ValueError(f"VFactor not found for symbol={symbol!r} in EngineFactorMapping")
+
+
+def _fmt_progress(x: int, total: int) -> str:
+    if total <= 0:
+        raise ValueError(f"confirm_days must be positive, got {total}")
+    return f"{x}/{total}日目"
+
+
 def format_signal_breakdown(
     bundle: SignalBundle,
     mapping: Optional["EngineFactorMapping"] = None,
@@ -77,16 +96,22 @@ def format_signal_breakdown(
         vs = bundle.volatility_signals[sym]
         knock = vs.v1_to_v0_knock_in_ok
         knock_txt = "—" if knock is None else ("はい" if knock else "いいえ")
-        intraday_txt = "はい" if vs.is_intraday_condition_met else "いいえ"
+        knockin_txt = "はい" if vs.is_intraday_condition_met else "いいえ"
+        v1_days, v2_days = _v_confirm_days(mapping, sym)
         sid = _V_IDS[idx] if idx < len(_V_IDS) else str(idx + 10)
         lines.append("────────────────────")
         lines.append(f"[{sid}] V 入力 <{sym}>")
         lines.append(f"ボラ指数 (VXN/GVZ 相当) | {vs.index_value:.2f}")
+        lines.append(f"20日高値 | {_fmt_price(vs.high_20)}")
         lines.append(f"V1→V0 ノックイン判定 | {knock_txt}")
         lines.append(f"ノックイン足 (bar_end) | {vs.knock_in_bar_end or '—'}")
-        lines.append(f"イントラ条件成立 | {intraday_txt}")
-        lines.append(f"V1_off 連続日数 | {vs.recovery_confirm_satisfied_days_v1_off}")
-        lines.append(f"V2_off 連続日数 | {vs.recovery_confirm_satisfied_days_v2_off}")
+        lines.append(f"ノックイン成立 | {knockin_txt}")
+        lines.append(
+            f"V1→V0復帰判定 | {_fmt_progress(vs.recovery_confirm_satisfied_days_v1_off, v1_days)}"
+        )
+        lines.append(
+            f"V2→V1復帰判定 | {_fmt_progress(vs.recovery_confirm_satisfied_days_v2_off, v2_days)}"
+        )
         lines.append("")
 
     if bundle.liquidity_credit_hyg:
