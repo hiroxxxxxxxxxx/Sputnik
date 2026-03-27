@@ -20,7 +20,7 @@
 - **spec:** ARCHITECTURE.md, PHASE2_TABLE_SPEC.md, DATA_FLOW_API_TO_FC.md, TODO.md
 - **runbooks:** DOCKER.md
 - **proposals:** （現在なし。検討案が出たら配置する）
-- **plans:** SQLITE_IMPLEMENTATION_PLAN.md
+- **plans:** TODO.md（進行中タスクの一元管理）
 - **archive:** 採用済み提案（FC_AS_SINGLE_ENTRY_POINT, IB_FETCHER_IB_DATA_RESPONSIBILITY, LAYER_SCRIPT_REPORTS_FC, SIGNAL_BUNDLE_AND_ALTITUDE 等）、照合結果、旧ドラフト
 
 新規ドキュメントは上記分類に従って配置する。仕様は spec、進行中計画は plans、検討中提案は proposals。完了・古い・照合結果は archive。

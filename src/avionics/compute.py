@@ -295,10 +295,18 @@ def compute_capital_signals_from_cap(cap: Optional[RawCapitalSnapshot]) -> Capit
         raise ValueError("RawCapitalSnapshot is required but got None")
     if cap.nlv <= 0:
         raise ValueError(f"RawCapitalSnapshot.nlv must be > 0, got {cap.nlv}")
+    if cap.current_value <= 0:
+        raise ValueError(f"RawCapitalSnapshot.current_value must be > 0, got {cap.current_value}")
+    if cap.futures_multiplier <= 0:
+        raise ValueError(
+            f"RawCapitalSnapshot.futures_multiplier must be > 0, got {cap.futures_multiplier}"
+        )
+    if cap.base_density <= 0:
+        raise ValueError(f"RawCapitalSnapshot.base_density must be > 0, got {cap.base_density}")
     mm_over_nlv = cap.mm / cap.nlv
     denom = cap.current_value * cap.futures_multiplier
-    current_density = cap.mm / denom if denom > 0 else 0.0
-    span_ratio = current_density / cap.base_density if cap.base_density > 0 else 1.0
+    current_density = cap.mm / denom
+    span_ratio = current_density / cap.base_density
     return CapitalSignals(mm_over_nlv=mm_over_nlv, span_ratio=span_ratio)
 
 
@@ -377,7 +385,11 @@ def compute_liquidity_signals_tip_from_bars(
         b = bars[j]
         high_slice = bars[max(0, j - 19) : j + 1]
         h = max(bar.high for bar in high_slice) if high_slice else (b.high or b.close)
-        dd = (b.close / h - 1.0) if h and h > 0 else -0.001
+        if not h or h <= 0:
+            raise ValueError(
+                f"compute_liquidity_signals_tip_from_bars: reference high must be > 0, got {h}"
+            )
+        dd = b.close / h - 1.0
         daily_history_tip_list.append((b.date, dd))
     daily_history_tip = tuple(daily_history_tip_list)
 

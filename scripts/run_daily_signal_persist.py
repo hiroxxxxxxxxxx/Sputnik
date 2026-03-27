@@ -2,7 +2,7 @@
 """
 NY クローズ後の日次ジョブ: IB から Raw を取得し FC を更新して ``signal_daily`` に 1 行 upsert する。
 
-計画書 ``docs/plans/SQLITE_IMPLEMENTATION_PLAN.md`` の 0.6・P2-4b 参照。
+計画書 ``docs/plans/TODO.md``（SQLite 関連項目）参照。
 cron / systemd / EventBridge 等で **1 日 1 回**（NY RTH 終了後）だけ実行すること。
 
 用法:

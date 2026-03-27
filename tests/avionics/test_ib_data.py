@@ -114,6 +114,8 @@ def test_fc_refresh_returns_bundle_with_price_and_capital() -> None:
         mm=80_000.0,
         nlv=1_000_000.0,
         base_density=1.0,
+        current_value=1_000_000.0,
+        futures_multiplier=1.0,
     )
     snapshot = RawMarketSnapshot(
         as_of=date(2025, 3, 1),
@@ -156,6 +158,8 @@ def test_fc_refresh_with_liquidity_options() -> None:
         mm=80_000.0,
         nlv=1_000_000.0,
         base_density=1.0,
+        current_value=1_000_000.0,
+        futures_multiplier=1.0,
     )
     tip_bars = [
         PriceBar(date=date(2025, 2, i), close=105.0, high=106.0, volume=2000.0)

@@ -42,20 +42,18 @@ class CFactor(BaseFactor):
         self.thresholds: dict = dict(thresholds)
         super().__init__(name=name, levels=[0, 2], history_size=history_size)
 
-    def _row_satisfies_c0(self, row: tuple, c2_th: float) -> bool:
-        """1日分 (date, below_sma20, daily_change) が C0 を満たすか。"""
-        return len(row) >= 3 and not row[1] and row[2] > c2_th
+    def _row_satisfies_c0(self, row: tuple) -> bool:
+        """1日分 (date, below_sma20, daily_change) が C0 を満たすか（SPEC準拠: SMA20以上のみ）。"""
+        return len(row) >= 3 and not row[1]
 
     def _count_recovery_satisfied_days(
         self,
         daily_history_credit: tuple,
     ) -> int:
-        """基準日から遡り、C0 条件（not below_sma20 and daily_change > C2）を満たす連続日数を返す。(date, below_sma20, daily_change)。"""
-        th = self.thresholds
-        c2_th = float(th["daily_change_C2"])
+        """基準日から遡り、C0 条件（not below_sma20）を満たす連続日数を返す。(date, below_sma20, daily_change)。"""
         count = 0
         for row in daily_history_credit:
-            if self._row_satisfies_c0(row, c2_th):
+            if self._row_satisfies_c0(row):
                 count += 1
             else:
                 break
@@ -67,20 +65,18 @@ class CFactor(BaseFactor):
         daily_history_lqd: tuple,
     ) -> int:
         """HYG AND LQD とも C0 を満たす連続日数（newest first）。日付で揃えて両方満たす日のみカウント。"""
-        th = self.thresholds
-        c2_th = float(th["daily_change_C2"])
         by_date: dict = {}
         for row in daily_history_hyg:
             if len(row) >= 1:
                 d = row[0]
-                by_date[d] = [self._row_satisfies_c0(row, c2_th), False]
+                by_date[d] = [self._row_satisfies_c0(row), False]
         for row in daily_history_lqd:
             if len(row) >= 1:
                 d = row[0]
                 if d in by_date:
-                    by_date[d][1] = self._row_satisfies_c0(row, c2_th)
+                    by_date[d][1] = self._row_satisfies_c0(row)
                 else:
-                    by_date[d] = [False, self._row_satisfies_c0(row, c2_th)]
+                    by_date[d] = [False, self._row_satisfies_c0(row)]
         count = 0
         for row in daily_history_hyg:
             if len(row) < 1:

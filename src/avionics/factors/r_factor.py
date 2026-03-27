@@ -86,9 +86,11 @@ class RFactor(BaseFactor):
     ) -> None:
         lt = getattr(bundle, "liquidity_tip", None)
         if lt is not None:
+            if lt.tip_drawdown_from_high is None:
+                raise ValueError("RFactor requires liquidity_tip.tip_drawdown_from_high")
             await self.update_from_signals(
                 altitude=self._altitude,
-                tip_drawdown_from_high=lt.tip_drawdown_from_high if lt.tip_drawdown_from_high is not None else -0.001,
+                tip_drawdown_from_high=lt.tip_drawdown_from_high,
                 daily_history_tip=getattr(lt, "daily_history_tip", ()),
             )
 
