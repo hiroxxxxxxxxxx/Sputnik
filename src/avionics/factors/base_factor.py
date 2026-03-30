@@ -46,7 +46,8 @@ class BaseFactor:
         self.levels: list[LevelType] = sorted(levels)
         self.level: LevelType = self.levels[0]
 
-        # U/S 用の stateful カウンタ（証拠金は日次履歴を取らないため）
+        # upgrade(..., recovery_confirm_satisfied_days=None) 用のメモリ内カウンタ。
+        # 量産因子では P/V/C/R/T がステートレス日数を渡し、U/S は即時復帰で upgrade 非使用。
         self._target_level: Optional[LevelType] = None
         self._confirm_counter: int = 0
         self._confirm_days_required: Optional[int] = None
@@ -88,7 +89,9 @@ class BaseFactor:
 
     def recovery_confirm_progress(self) -> Optional[tuple[int, int]]:
         """
-        復帰ヒステリシスの「x日目 / N日」。U/S の stateful 時のみ。ステートレス因子は bundle から get_recovery_progress_from_bundle で算出。
+        復帰ヒステリシスの「x日目 / N日」。
+        upgrade を recovery_confirm_satisfied_days 省略で呼ぶ場合のみ（主にテスト）。
+        ステートレス因子は get_recovery_progress_from_bundle。U/S は即時復帰のため通常 None。
         """
         if self._target_level is not None and self._confirm_days_required is not None:
             return (self._confirm_counter, self._confirm_days_required)
@@ -146,8 +149,8 @@ class BaseFactor:
         """
         改善方向のレベル遷移を、継続確認とバッファ条件付きで適用する。
 
-        :param recovery_confirm_satisfied_days: None なら stateful（U/S 用・カウンタ加算）。
-            int ならステートレス（P/R/C/T: API から遡って数えた連続日数）。
+        :param recovery_confirm_satisfied_days: None なら呼び出し回数ベースの内部カウンタ（主にテスト）。
+            int ならステートレス（P/R/C/T/V: 系列から数えた連続日数を渡す）。
         """
         if new_level not in self.levels:
             raise ValueError(f"invalid level {new_level} for factor {self.name}")
@@ -208,52 +211,6 @@ class BaseFactor:
             trigger()
         self.record_level()
         return True
-
-    async def _apply_two_level_ratio(
-        self,
-        value: float,
-        *,
-        lv2_on: float,
-        lv2_off: float,
-        lv1_on: float,
-        lv1_off: float,
-        lv2_confirm_days: int,
-        lv1_confirm_days: int,
-    ) -> LevelType:
-        """
-        U/S 共通の 0/1/2 三段階 ratio 判定。
-        悪化は即時 downgrade、復帰は confirm_days 付き upgrade。
-        """
-        current = self.level
-        if current == 2:
-            candidate: LevelType = 1 if value < lv2_off else 2
-        elif current == 1:
-            if value >= lv2_on:
-                candidate = 2
-            elif value < lv1_off:
-                candidate = 0
-            else:
-                candidate = 1
-        else:
-            if value >= lv2_on:
-                candidate = 2
-            elif value >= lv1_on:
-                candidate = 1
-            else:
-                candidate = 0
-
-        if candidate > self.level:
-            self.downgrade(candidate)
-        elif candidate < self.level:
-            if self.level == 2 and candidate == 1:
-                await self.upgrade(candidate, confirm_days=lv2_confirm_days)
-            elif self.level == 1 and candidate == 0:
-                await self.upgrade(candidate, confirm_days=lv1_confirm_days)
-            else:
-                await self.upgrade(candidate, confirm_days=1)
-        else:
-            self.record_level()
-        return self.level
 
     def test_downgrade(self) -> bool:
         """

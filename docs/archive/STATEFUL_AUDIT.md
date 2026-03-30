@@ -4,15 +4,16 @@
 
 ---
 
-## 1. 判定ロジックに影響（要対応）
+## 1. 判定ロジックに影響
 
-### 1.1 復帰ヒステリシスの stateful カウンタ（U/S 因子）
+### 1.1 U/S 因子（対応済み・2026-03）
 
-| 場所 | 変数 | 説明 |
-|------|------|------|
-| `base_factor.py` | `_target_level`, `_confirm_counter`, `_confirm_days_required` | U 因子・S 因子が `upgrade(..., recovery_confirm_satisfied_days=None)` で使用。日をまたいで加算され、再起動で 0 に戻る。復帰判定が「やり直し」になる。 |
+| 項目 | 内容 |
+|------|------|
+| 実装 | `UFactor` / `SFactor` は **即時復帰**（on/off バッファ）。`upgrade()` 不使用。 |
+| `BaseFactor` の `_confirm_*` | `upgrade(..., recovery_confirm_satisfied_days=None)` 用。**量産 U/S からは未使用**（テスト・他用途向け経路）。 |
 
-**対応方針**: 証拠金（U/S）の日次履歴を API または DB で取得し、基準日から遡って連続日数を数えるステートレス化（P/R/C/T と同様）。取得できない場合は「再起動後は復帰カウント 0 から」を仕様として明示。
+旧案の「証拠金日次でステートレス化／DB 連続日数」は、SPEC 変更により **不要**（`docs/plans/TODO.md` 項目 7 クローズ）。
 
 ---
 
@@ -28,7 +29,7 @@ V はステートレス専用に変更済み。`update_from_index` は `recovery
 |------|------|------|
 | `base_factor.py` | `history` (deque) | レベル履歴。`record_level()` で append。本番では参照していない（テストのみ）。再起動で空になる。 |
 
-**対応方針（実施済み）**: 復帰「x/N日目」の表示用キャッシュ（`_last_recovery_display`, V の `_last_recovery_*`）は廃止した。表示時は `get_cockpit_signal(symbol, bundle)` に bundle を渡し、`EngineFactorMapping.get_recovery_progress(symbol, bundle)` 内で各ステートレス因子の `get_recovery_progress_from_bundle(symbol, bundle)` を呼んでその場で算出する。bundle 未渡しの場合は U/S のみ `recovery_confirm_progress()` で stateful な値を返す。呼び出し元（`run_cockpit_with_ib.py`, `format_daily_report.py`, `format_cockpit_report`）は bundle を渡すよう変更済み。
+**対応方針（実施済み）**: 復帰「x/N日目」の表示用キャッシュ（`_last_recovery_display`, V の `_last_recovery_*`）は廃止した。表示時は `get_cockpit_signal(symbol, bundle)` に bundle を渡し、`EngineFactorMapping.get_recovery_progress(symbol, bundle)` 内で各ステートレス因子の `get_recovery_progress_from_bundle(symbol, bundle)` を呼んでその場で算出する。bundle 未渡しの場合は `recovery_confirm_progress()` にフォールバック（U/S は即時復帰のため通常 None）。呼び出し元（`run_cockpit_with_ib.py`, `format_daily_report.py`, `format_cockpit_report`）は bundle を渡すよう変更済み。
 
 ---
 
@@ -75,7 +76,7 @@ V はステートレス専用に変更済み。`update_from_index` は `recovery
 
 | # | 箇所 | 内容 | 推奨 |
 |---|------|------|------|
-| 1 | BaseFactor（U/S） | 復帰カウンタ stateful | 証拠金の日次履歴でステートレス化、または仕様明示 |
+| 1 | ~~BaseFactor（U/S）~~ | ~~復帰カウンタ stateful~~ | **対応済み**: U/S 即時復帰。DB 化は不採用 |
 | 2 | ~~VFactor~~ | ~~stateful フォールバック~~ | **対応済み**: ステートレス専用・必須引数化 |
 | 3 | FlightController | 現在モード・承認待ち | 再起動で初期値／失効を仕様として明記 |
 | 4 | Part | ~~_last_instruction~~ | **削除済み** |
