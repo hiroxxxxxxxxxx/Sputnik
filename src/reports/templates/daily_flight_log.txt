@@ -31,8 +31,39 @@
 {% if cash_buffer_line %}{{ cash_buffer_line }}
 {% endif %}
 
+{% if futures_rows or options_rows %}
 ────────────────────
-[4] 24H MAINTENANCE SCHEDULE
+[4] POSITIONS DETAIL
+{% if futures_rows %}
+Futures (Buy/Sell per contract)
+{% for row in futures_rows %}
+{% if row.symbol == "NQ" %}
+{{ row.symbol }} | NQ B={{ row.nq_buy }} S={{ row.nq_sell }} | MNQ B={{ row.mnq_buy }} S={{ row.mnq_sell }}
+{% elif row.symbol == "GC" %}
+{{ row.symbol }} | GC B={{ row.gc_buy }} S={{ row.gc_sell }} | MGC B={{ row.mgc_buy }} S={{ row.mgc_sell }}
+{% else %}
+{{ row.symbol }} | NQ B={{ row.nq_buy }} S={{ row.nq_sell }} | MNQ B={{ row.mnq_buy }} S={{ row.mnq_sell }} | GC B={{ row.gc_buy }} S={{ row.gc_sell }} | MGC B={{ row.mgc_buy }} S={{ row.mgc_sell }}
+{% endif %}
+{% endfor %}
+{% endif %}
+
+{% if options_rows %}
+Options (Call/Put Buy/Sell)
+{% for row in options_rows %}
+{% if row.symbol == "NQ" %}
+{{ row.symbol }} | NQ C B={{ row.nq_call_buy }} S={{ row.nq_call_sell }} / P B={{ row.nq_put_buy }} S={{ row.nq_put_sell }} | MNQ C B={{ row.mnq_call_buy }} S={{ row.mnq_call_sell }} / P B={{ row.mnq_put_buy }} S={{ row.mnq_put_sell }}
+{% elif row.symbol == "GC" %}
+{{ row.symbol }} | GC C B={{ row.gc_call_buy }} S={{ row.gc_call_sell }} / P B={{ row.gc_put_buy }} S={{ row.gc_put_sell }} | MGC C B={{ row.mgc_call_buy }} S={{ row.mgc_call_sell }} / P B={{ row.mgc_put_buy }} S={{ row.mgc_put_sell }}
+{% else %}
+{{ row.symbol }} | NQ C B={{ row.nq_call_buy }} S={{ row.nq_call_sell }} / P B={{ row.nq_put_buy }} S={{ row.nq_put_sell }} | MNQ C B={{ row.mnq_call_buy }} S={{ row.mnq_call_sell }} / P B={{ row.mnq_put_buy }} S={{ row.mnq_put_sell }} | GC C B={{ row.gc_call_buy }} S={{ row.gc_call_sell }} / P B={{ row.gc_put_buy }} S={{ row.gc_put_sell }} | MGC C B={{ row.mgc_call_buy }} S={{ row.mgc_call_sell }} / P B={{ row.mgc_put_buy }} S={{ row.mgc_put_sell }}
+{% endif %}
+{% endfor %}
+{% endif %}
+
+{% endif %}
+
+────────────────────
+[5] 24H MAINTENANCE SCHEDULE
 {% for line in maintenance_lines %}
 - {{ line }}
 {% endfor %}

@@ -101,7 +101,7 @@ async def _refreshed_fc(
             fc, _ = build_cockpit_stack(symbols, altitude=altitude)
             as_of = as_of_for_bundle()
             await fc.refresh(fetcher, as_of, symbols, altitude=altitude)
-            yield fc
+            yield fc, fetcher
     finally:
         conn.close()
 
@@ -116,7 +116,7 @@ async def _fetch_cockpit_report(
 ) -> str:
     from reports.format_cockpit_report import format_cockpit_report
 
-    async with _refreshed_fc(host, port, symbols, client_id=client_id, timeout=timeout) as fc:
+    async with _refreshed_fc(host, port, symbols, client_id=client_id, timeout=timeout) as (fc, _fetcher):
         now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         return await format_cockpit_report(fc, symbols, now_utc)
 
@@ -131,7 +131,7 @@ async def _fetch_breakdown_report(
 ) -> str:
     from reports.format_breakdown_report import format_breakdown_report
 
-    async with _refreshed_fc(host, port, symbols, client_id=client_id, timeout=timeout) as fc:
+    async with _refreshed_fc(host, port, symbols, client_id=client_id, timeout=timeout) as (fc, _fetcher):
         return format_breakdown_report(fc)
 
 
@@ -145,8 +145,13 @@ async def _fetch_daily_report(
 ) -> str:
     from reports.format_daily_report import format_daily_report
 
-    async with _refreshed_fc(host, port, symbols, client_id=client_id, timeout=timeout) as fc:
-        return await format_daily_report(fc, symbols)
+    async with _refreshed_fc(host, port, symbols, client_id=client_id, timeout=timeout) as (fc, fetcher):
+        positions_detail = await fetcher.fetch_position_detail(symbols)
+        return await format_daily_report(
+            fc,
+            symbols,
+            positions_detail=positions_detail,
+        )
 
 
 async def cockpit_command(update, context: ContextTypes.DEFAULT_TYPE) -> None:

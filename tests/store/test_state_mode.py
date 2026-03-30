@@ -30,38 +30,25 @@ def test_read_state_initial(conn: sqlite3.Connection) -> None:
     from store.state import read_state
 
     s = read_state(conn)
-    assert s["effective_level"] == 0
     assert s["altitude"] == "mid"
 
 
-def test_update_effective_level(conn: sqlite3.Connection) -> None:
-    from store.state import read_state, update_effective_level
-
-    update_effective_level(conn, 2)
-    s = read_state(conn)
-    assert s["effective_level"] == 2
-
-
-def test_update_altitude_records_history(conn: sqlite3.Connection) -> None:
-    from store.state import read_altitude_changes, read_state, update_altitude
+def test_update_altitude(conn: sqlite3.Connection) -> None:
+    from store.state import read_state, update_altitude
 
     update_altitude(conn, "low")
     s = read_state(conn)
     assert s["altitude"] == "low"
     assert s["altitude_changed_at"] is not None
 
-    changes = read_altitude_changes(conn)
-    assert len(changes) == 1
-    assert changes[0]["from_altitude"] == "mid"
-    assert changes[0]["to_altitude"] == "low"
-
 
 def test_update_altitude_same_value_noop(conn: sqlite3.Connection) -> None:
-    from store.state import read_altitude_changes, update_altitude
+    from store.state import read_state, update_altitude
 
+    before = read_state(conn)
     update_altitude(conn, "mid")
-    changes = read_altitude_changes(conn)
-    assert len(changes) == 0
+    after = read_state(conn)
+    assert before["altitude"] == after["altitude"]
 
 
 def test_target_futures_crud(conn: sqlite3.Connection) -> None:

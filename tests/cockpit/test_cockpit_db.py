@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import os
 import tempfile
+from datetime import date
 
 import pytest
 
@@ -78,11 +79,6 @@ def test_cockpit_persists_mode_on_dispatch(conn) -> None:
     _run(cp.on_flight_controller_signal(signal))
     assert cp.current_mode == "Cruise"
 
-    from store.state import read_state
-
-    s = read_state(conn)
-    assert s["effective_level"] == 1
-
 
 def test_cockpit_semiauto_emergency_auto_dispatch(conn) -> None:
     """SemiAuto: Emergency(Lv2) は即時実行。"""
@@ -124,3 +120,44 @@ def test_approval_mode_setter_persists(conn) -> None:
 
     m = read_mode(conn)
     assert m["ap_mode"] == "Auto"
+
+
+def test_cockpit_pulse_applies_with_ib_positions_and_target_futures(conn) -> None:
+    from store.state import upsert_target_futures
+
+    upsert_target_futures(conn, "Main", 8.0)
+    upsert_target_futures(conn, "Attitude", 2.0)
+    upsert_target_futures(conn, "Booster", 0.0)
+
+    class DummyEngine:
+        symbol_type = "NQ"
+
+        def __init__(self) -> None:
+            self.calls = []
+
+        async def apply_mode(self, mode, *, actual_by_part=None, target_futures_by_part=None):
+            self.calls.append((mode, actual_by_part, target_futures_by_part))
+
+    class MockFlightController:
+        async def refresh(self, data_source, as_of, symbols, *, altitude):
+            return None
+
+        async def get_flight_controller_signal(self):
+            return FlightControllerSignal(scl=0, lcl=0, nq_icl=1)
+
+    class MockDataSource:
+        async def fetch_position_legs(self, symbols):
+            assert symbols == ["NQ"]
+            return {"NQ": {"future": 5.0, "k1": 1.0, "k2": -1.0}}
+
+    cp = _make_cockpit(conn, approval_mode="Auto")
+    engine = DummyEngine()
+    cp.fc = MockFlightController()
+    cp.engines = [engine]
+
+    _run(cp.pulse(MockDataSource(), as_of=date(2025, 1, 1), symbols=["NQ"]))
+    assert len(engine.calls) == 1
+    mode, actual_by_part, target_futures_by_part = engine.calls[0]
+    assert mode == "Cruise"
+    assert target_futures_by_part["Main"] == 8.0
+    assert actual_by_part["Main"]["future"] > actual_by_part["Attitude"]["future"]

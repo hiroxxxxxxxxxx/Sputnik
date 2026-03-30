@@ -26,6 +26,58 @@ LEVEL_STR = {0: "0", 1: "1", 2: "2"}
 _DEFAULT_TEMPLATE = "daily_flight_log.txt"
 
 
+def _build_position_rows(
+    symbols: list[str],
+    positions_detail: Optional[dict[str, dict[str, dict[str, float]]]],
+) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    """先物行とオプション行を返す。"""
+    if not positions_detail:
+        return [], []
+    futures_rows: list[dict[str, str]] = []
+    options_rows: list[dict[str, str]] = []
+    for sym in symbols:
+        detail = positions_detail.get(sym)
+        if detail is None:
+            continue
+        fut = detail.get("futures", {})
+        opt = detail.get("options", {})
+        futures_rows.append(
+            {
+                "symbol": sym,
+                "nq_buy": f"{float(fut.get('nq_buy', 0.0)):.0f}",
+                "nq_sell": f"{float(fut.get('nq_sell', 0.0)):.0f}",
+                "mnq_buy": f"{float(fut.get('mnq_buy', 0.0)):.0f}",
+                "mnq_sell": f"{float(fut.get('mnq_sell', 0.0)):.0f}",
+                "gc_buy": f"{float(fut.get('gc_buy', 0.0)):.0f}",
+                "gc_sell": f"{float(fut.get('gc_sell', 0.0)):.0f}",
+                "mgc_buy": f"{float(fut.get('mgc_buy', 0.0)):.0f}",
+                "mgc_sell": f"{float(fut.get('mgc_sell', 0.0)):.0f}",
+            }
+        )
+        options_rows.append(
+            {
+                "symbol": sym,
+                "nq_call_buy": f"{float(opt.get('nq_call_buy', 0.0)):.0f}",
+                "nq_call_sell": f"{float(opt.get('nq_call_sell', 0.0)):.0f}",
+                "nq_put_buy": f"{float(opt.get('nq_put_buy', 0.0)):.0f}",
+                "nq_put_sell": f"{float(opt.get('nq_put_sell', 0.0)):.0f}",
+                "mnq_call_buy": f"{float(opt.get('mnq_call_buy', 0.0)):.0f}",
+                "mnq_call_sell": f"{float(opt.get('mnq_call_sell', 0.0)):.0f}",
+                "mnq_put_buy": f"{float(opt.get('mnq_put_buy', 0.0)):.0f}",
+                "mnq_put_sell": f"{float(opt.get('mnq_put_sell', 0.0)):.0f}",
+                "gc_call_buy": f"{float(opt.get('gc_call_buy', 0.0)):.0f}",
+                "gc_call_sell": f"{float(opt.get('gc_call_sell', 0.0)):.0f}",
+                "gc_put_buy": f"{float(opt.get('gc_put_buy', 0.0)):.0f}",
+                "gc_put_sell": f"{float(opt.get('gc_put_sell', 0.0)):.0f}",
+                "mgc_call_buy": f"{float(opt.get('mgc_call_buy', 0.0)):.0f}",
+                "mgc_call_sell": f"{float(opt.get('mgc_call_sell', 0.0)):.0f}",
+                "mgc_put_buy": f"{float(opt.get('mgc_put_buy', 0.0)):.0f}",
+                "mgc_put_sell": f"{float(opt.get('mgc_put_sell', 0.0)):.0f}",
+            }
+        )
+    return futures_rows, options_rows
+
+
 def _build_icl_sections(
     symbols: list[str],
     signal: "FlightControllerSignal",
@@ -131,6 +183,7 @@ def _build_scl_lcl_rows(
 async def _build_daily_flight_log_context(
     fc: "FlightController",
     symbols: list[str],
+    positions_detail: Optional[dict[str, dict[str, dict[str, float]]]] = None,
     as_of: Optional[date] = None,
 ) -> dict[str, Any]:
     """FlightController から Daily Flight Log 用のテンプレートコンテキストを組み立てる。"""
@@ -155,6 +208,7 @@ async def _build_daily_flight_log_context(
     scl_level, scl_rows, lcl_level, lcl_rows = _build_scl_lcl_rows(
         signal, bundle, mapping, symbols, altitude=altitude
     )
+    futures_rows, options_rows = _build_position_rows(symbols, positions_detail)
 
     return {
         "date_iso": d.isoformat(),
@@ -165,6 +219,8 @@ async def _build_daily_flight_log_context(
         "scl_rows": scl_rows,
         "lcl_level": lcl_level,
         "lcl_rows": lcl_rows,
+        "futures_rows": futures_rows,
+        "options_rows": options_rows,
         "nlv_line": nlv_line,
         "cash_buffer_line": cash_buffer_line,
         "maintenance_lines": ["カレンダー連携は未実装のためスキップ"],
@@ -174,6 +230,7 @@ async def _build_daily_flight_log_context(
 async def format_daily_report(
     fc: "FlightController",
     symbols: list[str],
+    positions_detail: Optional[dict[str, dict[str, dict[str, float]]]] = None,
     as_of: Optional[date] = None,
     template_name: str = _DEFAULT_TEMPLATE,
 ) -> str:
@@ -183,9 +240,13 @@ async def format_daily_report(
 
     :param fc: refresh 済みの FlightController。
     :param symbols: 銘柄リスト（例: ["NQ", "GC"]）。
+    :param positions_detail: 銘柄別ポジション詳細。
+        futures は nq_buy/nq_sell, mnq_*, gc_*, mgc_*（オプションは call_buy 等）。
     :param as_of: 基準日。未指定なら date.today()。
     :param template_name: 使用するテンプレートファイル名。
     :return: Telegram 送信用のテキスト。
     """
-    context = await _build_daily_flight_log_context(fc, symbols, as_of=as_of)
+    context = await _build_daily_flight_log_context(
+        fc, symbols, positions_detail=positions_detail, as_of=as_of
+    )
     return render(template_name, context)

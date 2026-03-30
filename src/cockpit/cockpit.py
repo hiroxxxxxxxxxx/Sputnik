@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import sqlite3
 from datetime import date
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, List, Optional
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Optional
 
 from avionics.data.flight_controller_signal import FlightControllerSignal
 from avionics.data.data_source import DataSource
@@ -31,6 +31,33 @@ APPROVAL_TIMEOUT_SEC = 600
 def _mode_severity(mode: ModeType) -> int:
     """Emergency=2, Cruise=1, Boost=0。最悪モード比較用。"""
     return 2 if mode == EMERGENCY else (1 if mode == CRUISE else 0)
+
+
+def _split_actual_by_target(
+    symbol_actual: Dict[str, float],
+    target_futures_by_part: Dict[str, float],
+) -> Dict[str, Dict[str, float]]:
+    """
+    銘柄の実ポジション（future/k1/k2）を target_futures 比率で Part に配賦する。
+    """
+    from engines.blueprint import PART_NAMES
+
+    missing = [p for p in PART_NAMES if p not in target_futures_by_part]
+    if missing:
+        raise ValueError(f"target_futures missing part rows: {missing}")
+    weights = {p: abs(float(target_futures_by_part[p])) for p in PART_NAMES}
+    total_weight = sum(weights.values())
+    if total_weight <= 0:
+        raise ValueError("target_futures total weight must be > 0")
+    out: Dict[str, Dict[str, float]] = {}
+    for part in PART_NAMES:
+        share = weights[part] / total_weight
+        out[part] = {
+            "future": float(symbol_actual["future"]) * share,
+            "k1": float(symbol_actual["k1"]) * share,
+            "k2": float(symbol_actual["k2"]) * share,
+        }
+    return out
 
 
 class Cockpit:
@@ -82,24 +109,12 @@ class Cockpit:
     def _restore_from_db(self, conn: sqlite3.Connection) -> None:
         """DB の state / mode テーブルから起動時の状態を復元する。"""
         from store.mode import read_mode
-        from store.state import read_state
-
-        state = read_state(conn)
         mode_row = read_mode(conn)
 
         ap = mode_row["ap_mode"]
         if ap in ("Manual", "SemiAuto", "Auto"):
             self._approval_mode = ap  # type: ignore[assignment]
         self._execution_lock = bool(mode_row["execution_lock"])
-
-    def _persist_mode(self) -> None:
-        """現在のスロットルモード・effective_level を DB に書き込む。"""
-        if self._conn is None:
-            return
-        from store.state import update_effective_level
-
-        severity = _mode_severity(self._current_mode)
-        update_effective_level(self._conn, severity)
 
     def _persist_approval_mode(self) -> None:
         """ap_mode を DB に書き込む。"""
@@ -216,7 +231,6 @@ class Cockpit:
                 protocol = EmergencyProtocol(self.engines)
                 await protocol.execute()
         self._current_mode = target_mode
-        self._persist_mode()
         if not self._execution_lock:
             for engine in self.engines:
                 await engine.apply_mode(self._current_mode)
@@ -237,12 +251,21 @@ class Cockpit:
         定義書「0-4」「4-2」「0-1-Ⅲ」参照。
         """
         if self._conn is not None:
-            from store.state import read_altitude_regime
+            from store.state import read_altitude_regime, read_target_futures
 
             db_altitude = read_altitude_regime(self._conn)
             await self.fc.refresh(data_source, as_of, symbols, altitude=db_altitude)
+            if not hasattr(data_source, "fetch_position_legs"):
+                raise ValueError(
+                    "Cockpit.pulse requires data_source.fetch_position_legs(...) when conn is provided"
+                )
+            fetch_position_legs = getattr(data_source, "fetch_position_legs")
+            positions_by_symbol = await fetch_position_legs(symbols)
+            target_futures = read_target_futures(self._conn)
         elif altitude is not None:
             await self.fc.refresh(data_source, as_of, symbols, altitude=altitude)
+            positions_by_symbol = {}
+            target_futures = {}
         else:
             raise ValueError(
                 "Cockpit.pulse requires conn=... or altitude=... (tests only)"
@@ -269,10 +292,22 @@ class Cockpit:
                 await protocol.execute()
         if worst_mode != self._current_mode:
             self._current_mode = worst_mode
-            self._persist_mode()
         if not self._execution_lock:
             for engine, target_mode in engine_modes:
-                await engine.apply_mode(target_mode)
+                if self._conn is not None:
+                    symbol_actual = positions_by_symbol.get(engine.symbol_type)
+                    if symbol_actual is None:
+                        raise ValueError(
+                            f"IB positions missing symbol: {engine.symbol_type}"
+                        )
+                    actual_by_part = _split_actual_by_target(symbol_actual, target_futures)
+                    await engine.apply_mode(
+                        target_mode,
+                        actual_by_part=actual_by_part,
+                        target_futures_by_part=target_futures,
+                    )
+                else:
+                    await engine.apply_mode(target_mode)
 
     def _level_to_mode(self, level: int) -> ModeType:
         """実行レベル 0/1/2 をスロットルモード（Boost/Cruise/Emergency）に変換。定義書 4-2 対応表。"""

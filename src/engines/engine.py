@@ -138,18 +138,32 @@ class Engine:
                 )
         return out
 
-    async def apply_mode(self, mode: ModeType) -> None:
+    async def apply_mode(
+        self,
+        mode: ModeType,
+        *,
+        actual_by_part: Optional[Dict[str, Dict[str, float]]] = None,
+        target_futures_by_part: Optional[Dict[str, float]] = None,
+    ) -> None:
         """
         管制からモード指令を受け、抽象モードを「目標値」に翻訳して差分を算出。
         Blueprint ベースで不足分を集約し、ExecutionProvider に渡す。
         定義書「1-4」「1-5」「Phase 4」参照。
         """
         base = self.config["base_unit"]
-        actual = None
         all_deltas: list[PartDelta] = []
         for part_name in PART_NAMES:
             target = self._target_for_part(part_name, mode, base)
-            all_deltas.extend(self.calculate_deltas(part_name, target=target, actual=actual))
+            if target_futures_by_part is not None and part_name in target_futures_by_part:
+                target["future"] = float(target_futures_by_part[part_name])
+            part_actual = (
+                actual_by_part.get(part_name, None)
+                if actual_by_part is not None
+                else None
+            )
+            all_deltas.extend(
+                self.calculate_deltas(part_name, target=target, actual=part_actual)
+            )
         if all_deltas and getattr(self, "_executor", None) is not None:
             await self._executor.execute(all_deltas)
 
