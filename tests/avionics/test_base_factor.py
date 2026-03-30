@@ -234,7 +234,7 @@ def test_basefactor_apply_signal_bundle_not_implemented() -> None:
 
     async def scenario() -> None:
         with pytest.raises(NotImplementedError):
-            await base.apply_signal_bundle(None, object())  # type: ignore[arg-type]
+            await base.apply_signal_bundle(None, object(), altitude="mid")  # type: ignore[arg-type]
 
     _run(scenario())
 

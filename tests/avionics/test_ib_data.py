@@ -137,7 +137,7 @@ def test_fc_refresh_returns_bundle_with_price_and_capital() -> None:
         liquidity_tip_symbol=None,
         altitude="mid",
     ))
-    _run(fc.refresh(ds, date(2025, 3, 1), ["NQ"]))
+    _run(fc.refresh(ds, date(2025, 3, 1), ["NQ"], altitude="mid"))
     bundle = fc.get_last_bundle()
     assert bundle is not None
     assert bundle.price_signals.get("NQ") is not None
@@ -193,7 +193,7 @@ def test_fc_refresh_with_liquidity_options() -> None:
         altitude="mid",
     )
     fc = _make_fc(["NQ"], options=options)
-    _run(fc.refresh(ds, date(2025, 3, 1), ["NQ"]))
+    _run(fc.refresh(ds, date(2025, 3, 1), ["NQ"], altitude="mid"))
     bundle = fc.get_last_bundle()
     assert bundle is not None
     assert bundle.liquidity_credit_hyg is not None

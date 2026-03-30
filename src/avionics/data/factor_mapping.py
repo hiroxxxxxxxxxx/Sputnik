@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 if TYPE_CHECKING:
-    from avionics.data.signals import SignalBundle
+    from avionics.data.signals import AltitudeRegime, SignalBundle
 
 
 @dataclass
@@ -35,12 +35,15 @@ class EngineFactorMapping:
         self,
         symbol: str,
         bundle: Optional["SignalBundle"] = None,
+        *,
+        altitude: "AltitudeRegime",
     ) -> Dict[str, str]:
         """
         復帰ヒステリシス中の因子について「x/N日目」を収集する。
         bundle を渡すときは get_recovery_progress_from_bundle を優先し、
         未実装（None）の場合のみ recovery_confirm_progress にフォールバック。
         bundle 未指定時は recovery_confirm_progress のみ。
+        :param altitude: 本ティックの運用高度（DB 由来を呼び出し側で渡す）。
         """
         result: Dict[str, str] = {}
         sym_factors = self.symbol_factors.get(symbol, [])
@@ -55,7 +58,7 @@ class EngineFactorMapping:
             if bundle is not None:
                 from_bundle = getattr(f, "get_recovery_progress_from_bundle", None)
                 if callable(from_bundle):
-                    p = from_bundle(symbol, bundle)
+                    p = from_bundle(symbol, bundle, altitude=altitude)
                 if p is None:
                     prog = getattr(f, "recovery_confirm_progress", None)
                     if callable(prog):

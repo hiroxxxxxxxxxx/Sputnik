@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, Awaitable, Callable, List, Optional
 
 from avionics.data.flight_controller_signal import FlightControllerSignal
 from avionics.data.data_source import DataSource
+from avionics.data.signals import AltitudeRegime
 from avionics.flight_controller import FlightController
 from protocols.emergency_protocol import EmergencyProtocol
 
@@ -220,13 +221,32 @@ class Cockpit:
             for engine in self.engines:
                 await engine.apply_mode(self._current_mode)
 
-    async def pulse(self, data_source: DataSource, as_of: date, symbols: List[str]) -> None:
+    async def pulse(
+        self,
+        data_source: DataSource,
+        as_of: date,
+        symbols: List[str],
+        *,
+        altitude: Optional[AltitudeRegime] = None,
+    ) -> None:
         """
         管制サイクル。DataSource から FC.refresh（Raw 取得 → bundle → 因子更新）を行い、
         三層方式で銘柄ごとにスロットルモード取得 → 遷移 → 全エンジンへ指令。
+        conn があるときは DB から altitude を読み、refresh(..., altitude=...) を呼ぶ。
+        conn がないときはテスト用に altitude= のみ許可。
         定義書「0-4」「4-2」「0-1-Ⅲ」参照。
         """
-        await self.fc.refresh(data_source, as_of, symbols)
+        if self._conn is not None:
+            from store.state import read_altitude_regime
+
+            db_altitude = read_altitude_regime(self._conn)
+            await self.fc.refresh(data_source, as_of, symbols, altitude=db_altitude)
+        elif altitude is not None:
+            await self.fc.refresh(data_source, as_of, symbols, altitude=altitude)
+        else:
+            raise ValueError(
+                "Cockpit.pulse requires conn=... or altitude=... (tests only)"
+            )
         signal = await self.fc.get_flight_controller_signal()
         worst_mode: ModeType = BOOST
         any_emergency = False

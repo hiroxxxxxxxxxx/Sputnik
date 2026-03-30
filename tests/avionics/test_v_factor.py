@@ -27,7 +27,7 @@ def test_downgrade_immediate() -> None:
     """
     V因子が閾値接触時に即時で V1/V2 へ降格することを確認する。
     """
-    vf = VFactor(name="V_NQ", thresholds=_v_nq(), altitude="mid")
+    vf = VFactor(name="V_NQ", thresholds=_v_nq())
     assert vf.level == 0
 
     async def scenario():
@@ -50,7 +50,7 @@ def test_upgrade_delayed_v2_to_v1() -> None:
     """
     V2→V1 復帰には 2 日間の閾値未満継続が必要なことを確認する。
     """
-    vf = VFactor(name="V_NQ", thresholds=_v_nq(), altitude="mid")
+    vf = VFactor(name="V_NQ", thresholds=_v_nq())
     vf.level = 2
 
     async def scenario():
@@ -73,7 +73,7 @@ def test_v_recovery_with_1h_knockin() -> None:
     """
     V1→V0 復帰が 1 日確認＋1h ノックイン条件（buffer_condition）で制御されることを確認する。
     """
-    vf = VFactor(name="V_NQ", thresholds=_v_nq(), altitude="mid")
+    vf = VFactor(name="V_NQ", thresholds=_v_nq())
     vf.level = 1
 
     async def scenario():
@@ -110,7 +110,7 @@ def test_level_calculation_altitude_tables() -> None:
     """
     高・中高度と低高度で異なる閾値テーブルが適用されることを確認する。
     """
-    vf = VFactor(name="V_NQ", thresholds=_v_nq(), altitude="mid")
+    vf = VFactor(name="V_NQ", thresholds=_v_nq())
 
     async def scenario():
         level_high = await vf.update_from_index(
@@ -133,7 +133,7 @@ def test_vfactor_apply_empty_bundle_runs_safely() -> None:
     """
     VFactor.apply_signal_bundle が空の SignalBundle で正常終了することを確認する。
     """
-    vf = VFactor(name="V_NQ", thresholds=_v_nq(), altitude="mid")
+    vf = VFactor(name="V_NQ", thresholds=_v_nq())
 
     async def scenario():
         await vf.apply_signal_bundle(
@@ -142,6 +142,7 @@ def test_vfactor_apply_empty_bundle_runs_safely() -> None:
                 liquidity_credit_hyg=LiquiditySignals(),
                 liquidity_credit_lqd=LiquiditySignals(),
             ),
+            altitude="mid",
         )
         assert vf.level in (0, 1, 2)
 
@@ -152,7 +153,7 @@ def test_vfactor_no_change_records_history() -> None:
     """
     閾値の外側でレベルが変わらない場合に record_level のみ行われるパスを確認する。
     """
-    vf = VFactor(name="V_NQ", thresholds=_v_nq(), altitude="mid")
+    vf = VFactor(name="V_NQ", thresholds=_v_nq())
     assert vf.level == 0
 
     async def scenario():
@@ -171,7 +172,7 @@ def test_vfactor_v1_to_v0_without_buffer_condition() -> None:
     """
     V1→V0 復帰時に buffer_condition=None → buf_ok=False で V1 に留まることを確認する。
     """
-    vf = VFactor(name="V_NQ", thresholds=_v_nq(), altitude="mid")
+    vf = VFactor(name="V_NQ", thresholds=_v_nq())
     vf.level = 1
 
     async def scenario():
@@ -191,7 +192,7 @@ def test_vfactor_update_from_volatility_signal_uses_1h_knock_in() -> None:
     """
     from avionics.data.signals import VolatilitySignal
 
-    vf = VFactor(name="V_NQ", thresholds=_v_nq(), altitude="mid")
+    vf = VFactor(name="V_NQ", thresholds=_v_nq())
     vf.level = 1
 
     async def scenario():
@@ -202,8 +203,8 @@ def test_vfactor_update_from_volatility_signal_uses_1h_knock_in() -> None:
             recovery_confirm_satisfied_days_v1_off=1,
             recovery_confirm_satisfied_days_v2_off=0,
         )
-        await vf.update_from_volatility_signal(sig_false)
-        await vf.update_from_volatility_signal(sig_false)
+        await vf.update_from_volatility_signal(sig_false, altitude="mid")
+        await vf.update_from_volatility_signal(sig_false, altitude="mid")
         assert vf.level == 1
 
         # 1h ノックイン達成で V0 復帰（連続1日＋is_intraday で一発昇格）
@@ -213,7 +214,7 @@ def test_vfactor_update_from_volatility_signal_uses_1h_knock_in() -> None:
             recovery_confirm_satisfied_days_v1_off=1,
             recovery_confirm_satisfied_days_v2_off=0,
         )
-        await vf.update_from_volatility_signal(sig_true)
+        await vf.update_from_volatility_signal(sig_true, altitude="mid")
         assert vf.level == 0
 
     _run(scenario())
@@ -223,7 +224,7 @@ def test_vfactor_update_from_index_v1_unchanged_records_history() -> None:
     """
     V1 のまま指数が V1 閾値内でレベル不変のとき record_level が呼ばれるパスをカバーする。
     """
-    vf = VFactor(name="V_NQ", thresholds=_v_nq(), altitude="mid")
+    vf = VFactor(name="V_NQ", thresholds=_v_nq())
     vf.level = 1
 
     async def scenario():
@@ -242,7 +243,7 @@ def test_vfactor_update_from_index_v2_to_v0_upgrade_confirm_days_1() -> None:
     """
     current=V2 かつ v < V1_off のとき candidate=0 となり、1 日確認で V0 復帰する。
     """
-    vf = VFactor(name="V_NQ", thresholds=_v_nq(), altitude="mid")
+    vf = VFactor(name="V_NQ", thresholds=_v_nq())
     vf.level = 2
 
     async def scenario():

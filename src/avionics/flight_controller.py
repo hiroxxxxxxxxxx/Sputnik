@@ -10,13 +10,14 @@ DataSource を注入して refresh すると、内部で fetch_raw → build_sig
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from datetime import date
 from typing import Any, Dict, List, Optional
 
 from .data.factor_mapping import EngineFactorMapping
 from .data.flight_controller_signal import FlightControllerSignal
 from .data.raw_types import RawCapitalSnapshot
-from .data.signals import SignalBundle
+from .data.signals import AltitudeRegime, SignalBundle
 from .bundle_builder import BundleBuildOptions
 from .data.data_source import DataSource
 
@@ -61,13 +62,15 @@ class FlightController:
         self._bundle_build_options = bundle_build_options
         self._last_bundle: Optional[SignalBundle] = None
         self._last_capital_snapshot: Optional[RawCapitalSnapshot] = None
+        self._last_altitude_regime: Optional[AltitudeRegime] = None
+        self._is_ready: bool = False
 
     def register_factor(self, group: str, factor: Any) -> None:
         """
         因子を登録する。マッピングのリストに追加する（組み立て時・テスト用）。
 
         :param group: "GLOBAL_M"（L）, "GLOBAL_C"（U,S）, "NQ", "GC" 等
-        :param factor: .apply_signal_bundle() と .level を持つ因子インスタンス
+        :param factor: .apply_signal_bundle(..., altitude=...) と .level を持つ因子インスタンス
         """
         m = self._mapping
         if group == "GLOBAL_M":
@@ -87,14 +90,29 @@ class FlightController:
         data_source: DataSource,
         as_of: date,
         symbols: List[str],
+        *,
+        altitude: AltitudeRegime,
     ) -> None:
         """
         DataSource から Raw を取得し、build_signal_bundle → apply_all で最新状態に更新する。
+        運用高度は呼び出し側（オーケストレーション層）で解決した altitude を受け取る。
+
         取得した bundle と capital_snapshot は内部に保持し、get_last_bundle() / get_last_capital_snapshot() で参照できる。
         """
-        opts = self._bundle_build_options
-        if opts is None:
+        opts0 = self._bundle_build_options
+        if opts0 is None:
             raise ValueError("FlightController.refresh requires bundle_build_options")
+        from avionics.factors.factors_config import get_v_thresholds, load_factors_config
+
+        config = load_factors_config()
+        v_recovery_params = {s: get_v_thresholds(config, s)[altitude] for s in symbols}
+        opts = replace(
+            opts0,
+            altitude=altitude,
+            v_recovery_params=v_recovery_params,
+        )
+        self._bundle_build_options = opts
+
         raw_snapshot, capital_snapshot = await data_source.fetch_raw(
             as_of,
             symbols,
@@ -104,7 +122,7 @@ class FlightController:
             liquidity_tip_symbol=opts.liquidity_tip_symbol,
             account=opts.account,
             base_density=opts.base_density,
-            v_recovery_params=opts.v_recovery_params,
+            v_recovery_params=v_recovery_params,
         )
         from .bundle_builder import build_signal_bundle
 
@@ -115,12 +133,12 @@ class FlightController:
             liquidity_credit_hyg_symbol=opts.liquidity_credit_hyg_symbol,
             liquidity_credit_lqd_symbol=opts.liquidity_credit_lqd_symbol,
             liquidity_tip_symbol=opts.liquidity_tip_symbol,
-            altitude=opts.altitude,
-            v_recovery_params=opts.v_recovery_params,
+            altitude=altitude,
+            v_recovery_params=v_recovery_params,
         )
         self._last_bundle = bundle
         self._last_capital_snapshot = capital_snapshot
-        await self.apply_all(bundle)
+        await self.apply_all(bundle, altitude=altitude)
 
     def get_last_bundle(self) -> Optional[SignalBundle]:
         """最後に refresh した SignalBundle。未 refresh の場合は None。"""
@@ -130,23 +148,35 @@ class FlightController:
         """最後に refresh した RawCapitalSnapshot。未 refresh の場合は None。"""
         return self._last_capital_snapshot
 
-    async def apply_all(self, bundle: SignalBundle) -> None:
+    @property
+    def last_altitude_regime(self) -> Optional[AltitudeRegime]:
+        """最後に apply_all / refresh で使った運用高度。未適用時は None。"""
+        return self._last_altitude_regime
+
+    @property
+    def is_ready(self) -> bool:
+        """初回 apply_all / refresh 成功後に True。"""
+        return self._is_ready
+
+    async def apply_all(self, bundle: SignalBundle, *, altitude: AltitudeRegime) -> None:
         """
         SignalBundle を登録された全因子に配布して更新する。
 
-        各因子の apply_signal_bundle(symbol, bundle) を呼び、因子の level を最新にする。
+        各因子の apply_signal_bundle(symbol, bundle, altitude=...) を呼び、因子の level を最新にする。
         定義書「4-2 情報の階層構造」参照。
         """
+        self._last_altitude_regime = altitude
         tasks = []
         for symbol, factors in self._mapping.symbol_factors.items():
             for f in factors:
-                tasks.append(f.apply_signal_bundle(symbol, bundle))
+                tasks.append(f.apply_signal_bundle(symbol, bundle, altitude=altitude))
         for f in self._mapping.global_market_factors:
-            tasks.append(f.apply_signal_bundle(None, bundle))
+            tasks.append(f.apply_signal_bundle(None, bundle, altitude=altitude))
         for f in self._mapping.limit_factors:
-            tasks.append(f.apply_signal_bundle(None, bundle))
+            tasks.append(f.apply_signal_bundle(None, bundle, altitude=altitude))
         if tasks:
             await asyncio.gather(*tasks)
+        self._is_ready = True
 
     def get_individual_control_level(self, symbol: str) -> int:
         """
@@ -216,6 +246,11 @@ class FlightController:
         NQ/GC 固定のフィールドに ICL/SCL/LCL と因子レベル（P,V,C,R,T,U,S）を包含する。
         Cockpit の承認ゲートや Protocol 起動の入力。定義書「Phase 5 Signal」参照。
         """
+        if not self._is_ready:
+            raise ValueError(
+                "FlightController is not ready; call refresh() or apply_all(..., altitude=...) first"
+            )
+
         def _collect_symbol_metrics(symbol: str) -> Dict[str, int]:
             metrics: Dict[str, int] = {"P": 0, "V": 0, "C": 0, "R": 0, "T": 0}
             sym_factors = self._mapping.symbol_factors.get(symbol, [])

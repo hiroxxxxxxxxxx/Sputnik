@@ -15,6 +15,8 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -29,13 +31,6 @@ if str(_root / "src") not in sys.path:
     sys.path.insert(0, str(_root / "src"))
 if str(_scripts) not in sys.path:
     sys.path.insert(0, str(_scripts))
-
-from reports.fetch_reports import (
-    fetch_breakdown_report,
-    fetch_cockpit_report,
-    fetch_daily_report,
-)
-
 
 def _env_host_port_symbols() -> tuple[str, int, list[str], int, float]:
     """env から host, port, symbols, client_id, timeout を読み、レポート取得 API に渡す値として返す。"""
@@ -83,6 +78,77 @@ async def ping_command(update, context: ContextTypes.DEFAULT_TYPE) -> None:
 COCKPIT_FETCH_TIMEOUT = 90
 
 
+@asynccontextmanager
+async def _refreshed_fc(
+    host: str,
+    port: int,
+    symbols: list[str],
+    *,
+    client_id: int = 3,
+    timeout: float = 75.0,
+):
+    """IB 接続 → FC refresh の共通処理。"""
+    from avionics.ib import with_ib_fetcher
+    from avionics.calendar import as_of_for_bundle
+    from cockpit.stack import build_cockpit_stack
+    from store.db import get_connection
+    from store.state import read_altitude_regime
+
+    conn = get_connection()
+    try:
+        altitude = read_altitude_regime(conn)
+        async with with_ib_fetcher(host, port, client_id=client_id, timeout=timeout) as fetcher:
+            fc, _ = build_cockpit_stack(symbols, altitude=altitude)
+            as_of = as_of_for_bundle()
+            await fc.refresh(fetcher, as_of, symbols, altitude=altitude)
+            yield fc
+    finally:
+        conn.close()
+
+
+async def _fetch_cockpit_report(
+    host: str,
+    port: int,
+    symbols: list[str],
+    *,
+    client_id: int = 3,
+    timeout: float = 75.0,
+) -> str:
+    from reports.format_cockpit_report import format_cockpit_report
+
+    async with _refreshed_fc(host, port, symbols, client_id=client_id, timeout=timeout) as fc:
+        now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        return await format_cockpit_report(fc, symbols, now_utc)
+
+
+async def _fetch_breakdown_report(
+    host: str,
+    port: int,
+    symbols: list[str],
+    *,
+    client_id: int = 3,
+    timeout: float = 75.0,
+) -> str:
+    from reports.format_breakdown_report import format_breakdown_report
+
+    async with _refreshed_fc(host, port, symbols, client_id=client_id, timeout=timeout) as fc:
+        return format_breakdown_report(fc)
+
+
+async def _fetch_daily_report(
+    host: str,
+    port: int,
+    symbols: list[str],
+    *,
+    client_id: int = 3,
+    timeout: float = 75.0,
+) -> str:
+    from reports.format_daily_report import format_daily_report
+
+    async with _refreshed_fc(host, port, symbols, client_id=client_id, timeout=timeout) as fc:
+        return await format_daily_report(fc, symbols)
+
+
 async def cockpit_command(update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """ /cockpit および /status で現在の計器内容を取得して返す。"""
     msg = update.effective_message
@@ -95,7 +161,7 @@ async def cockpit_command(update, context: ContextTypes.DEFAULT_TYPE) -> None:
         pass
     try:
         report = await asyncio.wait_for(
-            fetch_cockpit_report(host, port, symbols, client_id=client_id, timeout=ib_timeout),
+            _fetch_cockpit_report(host, port, symbols, client_id=client_id, timeout=ib_timeout),
             timeout=COCKPIT_FETCH_TIMEOUT,
         )
         await msg.reply_text(report)
@@ -139,7 +205,7 @@ async def breakdown_command(update: object, context: ContextTypes.DEFAULT_TYPE) 
         pass
     try:
         report = await asyncio.wait_for(
-            fetch_breakdown_report(host, port, symbols, client_id=client_id, timeout=ib_timeout),
+            _fetch_breakdown_report(host, port, symbols, client_id=client_id, timeout=ib_timeout),
             timeout=COCKPIT_FETCH_TIMEOUT,
         )
         await msg.reply_text(report[:4000])
@@ -167,7 +233,7 @@ async def daily_command(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
         pass
     try:
         report = await asyncio.wait_for(
-            fetch_daily_report(host, port, symbols, client_id=client_id, timeout=ib_timeout),
+            _fetch_daily_report(host, port, symbols, client_id=client_id, timeout=ib_timeout),
             timeout=COCKPIT_FETCH_TIMEOUT,
         )
         await msg.reply_text(report[:4000])

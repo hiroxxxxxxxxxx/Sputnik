@@ -61,7 +61,7 @@ def build_flight_controller(symbols: list[str], *, altitude: AltitudeRegime) -> 
         v_th = get_v_thresholds(config, sym)
         t_th = get_t_thresholds(config)
         symbol_factors[sym].append(PFactor(name="P", thresholds=p_th))
-        symbol_factors[sym].append(VFactor(name="V", thresholds=v_th, altitude=altitude))
+        symbol_factors[sym].append(VFactor(name="V", thresholds=v_th))
         symbol_factors[sym].append(TFactor(symbol=sym, thresholds=t_th))
         try:
             c_th = get_c_thresholds(config, sym)
@@ -70,7 +70,7 @@ def build_flight_controller(symbols: list[str], *, altitude: AltitudeRegime) -> 
             pass
         try:
             r_th = get_r_thresholds(config, sym)
-            symbol_factors[sym].append(RFactor(name="R", thresholds=r_th, altitude=altitude))
+            symbol_factors[sym].append(RFactor(name="R", thresholds=r_th))
         except FactorsConfigError:
             pass
 

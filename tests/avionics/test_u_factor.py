@@ -98,6 +98,7 @@ def test_ufactor_apply_empty_bundle_runs_safely(u_thresholds) -> None:
                 liquidity_credit_hyg=LiquiditySignals(),
                 liquidity_credit_lqd=LiquiditySignals(),
             ),
+            altitude="mid",
         )
         assert uf.level in (0, 1, 2)
 

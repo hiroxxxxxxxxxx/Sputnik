@@ -21,6 +21,18 @@ def read_state(conn: sqlite3.Connection) -> dict:
     return dict(row)
 
 
+def read_altitude_regime(conn: sqlite3.Connection) -> AltitudeRegime:
+    """
+    state.altitude を AltitudeRegime として返す。
+
+    不正値・欠損時は ValueError（暗黙デフォルトは付与しない）。
+    """
+    raw = str(read_state(conn).get("altitude", "")).strip()
+    if raw not in ("high", "mid", "low"):
+        raise ValueError(f"Invalid state.altitude in DB: {raw!r}")
+    return raw  # type: ignore[return-value]
+
+
 def update_effective_level(conn: sqlite3.Connection, level: int) -> None:
     """effective_level を更新する。"""
     now = datetime.now(timezone.utc).isoformat()

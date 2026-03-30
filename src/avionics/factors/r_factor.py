@@ -30,7 +30,6 @@ class RFactor(BaseFactor):
         self,
         name: str,
         thresholds: dict,
-        altitude: AltitudeRegime,
         history_size: int = 64,
     ) -> None:
         """
@@ -39,10 +38,10 @@ class RFactor(BaseFactor):
         :param name: 表示用ラベル（例: "R"）。
         :param thresholds: しきい値辞書（drawdown_*_L2, drawdown_*_L0, confirm_days）。factors_config.get_r_thresholds で注入。
         :param history_size: レベル履歴バッファ長
+        運用高度は apply_signal_bundle で毎回指定する（DB 由来）。
         定義書「4-2-1-4 R因子」参照。
         """
         self.thresholds: dict = dict(thresholds)
-        self._altitude: AltitudeRegime = altitude
         super().__init__(name=name, levels=[0, 2], history_size=history_size)
 
     def _drawdown_L2(self, altitude: AltitudeRegime) -> float:
@@ -70,26 +69,35 @@ class RFactor(BaseFactor):
                 break
         return count
 
-    def get_recovery_progress_from_bundle(self, symbol: str, bundle: Any) -> Optional[tuple[int, int]]:
+    def get_recovery_progress_from_bundle(
+        self,
+        symbol: str,
+        bundle: Any,
+        *,
+        altitude: AltitudeRegime,
+    ) -> Optional[tuple[int, int]]:
         """bundle の liquidity_tip から復帰 x/N を算出。"""
         tip = getattr(bundle, "liquidity_tip", None)
         if not tip:
             return None
         daily_history_tip = getattr(tip, "daily_history_tip", ()) or ()
-        altitude = self._altitude
         count = self._count_recovery_satisfied_days(daily_history_tip, altitude) if daily_history_tip else 0
         confirm = int(self.thresholds["confirm_days"])
         return (min(count, confirm), confirm)
 
     async def apply_signal_bundle(
-        self, symbol: Optional[str], bundle: "SignalBundle"
+        self,
+        symbol: Optional[str],
+        bundle: "SignalBundle",
+        *,
+        altitude: AltitudeRegime,
     ) -> None:
         lt = getattr(bundle, "liquidity_tip", None)
         if lt is not None:
             if lt.tip_drawdown_from_high is None:
                 raise ValueError("RFactor requires liquidity_tip.tip_drawdown_from_high")
             await self.update_from_signals(
-                altitude=self._altitude,
+                altitude=altitude,
                 tip_drawdown_from_high=lt.tip_drawdown_from_high,
                 daily_history_tip=getattr(lt, "daily_history_tip", ()),
             )

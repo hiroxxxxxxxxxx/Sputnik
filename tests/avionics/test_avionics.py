@@ -28,13 +28,14 @@ class _MockFactor:
     def __init__(self, level: int = 0) -> None:
         self.level = level
 
-    async def apply_signal_bundle(self, symbol, bundle) -> None:
+    async def apply_signal_bundle(self, symbol, bundle, *, altitude) -> None:
         pass
 
 
 def test_avionics_empty_factors_effective_zero() -> None:
-    """因子が空のとき get_flight_controller_signal().throttle_level(sym) は 0 を返す。"""
+    """初回 apply_all 後、因子が空なら throttle_level(sym) は 0 を返す。"""
     av = FlightController(global_market_factors=[], global_capital_factors=[], symbol_factors={"NQ": []})
+    _run(av.apply_all(_EMPTY_BUNDLE, altitude="mid"))
     sig = _run(av.get_flight_controller_signal())
     assert sig.throttle_level("NQ") == 0
 
@@ -45,6 +46,7 @@ def test_avionics_effective_is_max_of_three_layers() -> None:
     f1 = _MockFactor(1)
     f2 = _MockFactor(2)
     av = FlightController(global_capital_factors=[f0, f1, f2], symbol_factors={"NQ": []})
+    _run(av.apply_all(_EMPTY_BUNDLE, altitude="mid"))
     sig = _run(av.get_flight_controller_signal())
     assert sig.throttle_level("NQ") == 2
 
@@ -54,8 +56,16 @@ def test_avionics_limit_layer_only() -> None:
     u = _MockFactor(0)
     s = _MockFactor(1)
     av = FlightController(global_capital_factors=[u, s], symbol_factors={"NQ": []})
+    _run(av.apply_all(_EMPTY_BUNDLE, altitude="mid"))
     sig = _run(av.get_flight_controller_signal())
     assert sig.throttle_level("NQ") == 1
+
+
+def test_avionics_get_signal_before_refresh_raises() -> None:
+    """初回 refresh/apply_all 前は get_flight_controller_signal を許可しない。"""
+    av = FlightController(global_market_factors=[], global_capital_factors=[], symbol_factors={"NQ": []})
+    with pytest.raises(ValueError, match="not ready"):
+        _run(av.get_flight_controller_signal())
 
 
 # --- apply_all + get_flight_controller_signal ---
@@ -68,7 +78,7 @@ def test_avionics_subscription_effective_per_symbol() -> None:
         global_capital_factors=[_MockFactor(0)],
         symbol_factors={"NQ": [_MockFactor(1)], "GC": [_MockFactor(2)]},
     )
-    _run(av.apply_all(_EMPTY_BUNDLE))
+    _run(av.apply_all(_EMPTY_BUNDLE, altitude="mid"))
     sig = _run(av.get_flight_controller_signal())
     assert sig.throttle_level("NQ") == 0
     assert sig.throttle_level("GC") == 0
@@ -83,7 +93,7 @@ def test_avionics_subscription_limit_control_level() -> None:
         global_capital_factors=[u, s],
         symbol_factors={},
     )
-    _run(av.apply_all(_EMPTY_BUNDLE))
+    _run(av.apply_all(_EMPTY_BUNDLE, altitude="mid"))
     lim = av.get_limit_control_level()
     assert lim == 2
 
@@ -97,7 +107,7 @@ def test_avionics_register_factor_subscription() -> None:
     )
     f = _MockFactor(1)
     av.register_factor("NQ", f)
-    _run(av.apply_all(_EMPTY_BUNDLE))
+    _run(av.apply_all(_EMPTY_BUNDLE, altitude="mid"))
     sig = _run(av.get_flight_controller_signal())
     assert sig.throttle_level("NQ") >= 0
 
@@ -118,14 +128,14 @@ def test_avionics_get_individual_control_level_excludes_t() -> None:
     except FactorsConfigError:
         pytest.skip("config/factors.toml required")
     p = PFactor(name="P_NQ", thresholds=get_p_thresholds(config, "NQ"))
-    v = VFactor(name="V_NQ", thresholds=get_v_thresholds(config, "NQ"), altitude="mid")
+    v = VFactor(name="V_NQ", thresholds=get_v_thresholds(config, "NQ"))
     t = TFactor(symbol="NQ", thresholds=get_t_thresholds(config))
     av = FlightController(
         global_market_factors=[],
         global_capital_factors=[_MockFactor(0)],
         symbol_factors={"NQ": [p, v, t]},
     )
-    _run(av.apply_all(_EMPTY_BUNDLE))
+    _run(av.apply_all(_EMPTY_BUNDLE, altitude="mid"))
     ind = av.get_individual_control_level("NQ")
     assert ind == max(p.level, v.level)
 
@@ -145,7 +155,7 @@ def test_avionics_get_synchronous_control_level_from_t_factors() -> None:
         global_capital_factors=[_MockFactor(0)],
         symbol_factors={"NQ": [t0]},
     )
-    _run(av.apply_all(_EMPTY_BUNDLE))
+    _run(av.apply_all(_EMPTY_BUNDLE, altitude="mid"))
     syn = av.get_synchronous_control_level()
     assert syn in (0, 2)
 
@@ -167,14 +177,14 @@ def test_avionics_get_effective_level_is_max_of_three_layers() -> None:
             pytest.skip("config/factors.toml required")
         raise
     p = PFactor(name="P_NQ", thresholds=get_p_thresholds(config, "NQ"))
-    v = VFactor(name="V_NQ", thresholds=get_v_thresholds(config, "NQ"), altitude="mid")
+    v = VFactor(name="V_NQ", thresholds=get_v_thresholds(config, "NQ"))
     t = TFactor(symbol="NQ", thresholds=get_t_thresholds(config))
     av = FlightController(
         global_market_factors=[],
         global_capital_factors=[_MockFactor(0)],
         symbol_factors={"NQ": [p, v, t]},
     )
-    _run(av.apply_all(_EMPTY_BUNDLE))
+    _run(av.apply_all(_EMPTY_BUNDLE, altitude="mid"))
     sig = _run(av.get_flight_controller_signal())
     ind = av.get_individual_control_level("NQ")
     syn = av.get_synchronous_control_level()

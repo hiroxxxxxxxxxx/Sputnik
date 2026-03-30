@@ -66,7 +66,8 @@ async def main() -> int:
     from avionics.calendar import as_of_for_daily_signal_persist, next_ny_business_day
     from cockpit.stack import build_cockpit_stack
     from store.db import get_connection
-    from store.daily_signal import persist_signal_daily_after_refresh
+    from store.signal_daily import upsert_signal_daily
+    from store.state import read_altitude_regime
     from store.knockin_watch import create_watch
     from notifications.telegram import send_telegram_message
     from reports.format_daily_report import format_daily_report
@@ -77,7 +78,6 @@ async def main() -> int:
         print("config/factors.toml が必要です。", file=sys.stderr)
         return 1
 
-    fc, _engines = build_cockpit_stack(args.symbols)
     as_of_resolved: date
     if args.as_of:
         as_of_resolved = date.fromisoformat(args.as_of)
@@ -86,26 +86,24 @@ async def main() -> int:
 
     conn = get_connection()
     try:
+        altitude = read_altitude_regime(conn)
+        fc, _engines = build_cockpit_stack(args.symbols, altitude=altitude)
         async with with_ib_fetcher(
             args.host,
             args.port,
             client_id=args.client_id,
             timeout=120.0,
         ) as fetcher:
-            used = await persist_signal_daily_after_refresh(
-                conn,
-                fc,
-                fetcher,
-                list(args.symbols),
-                as_of=as_of_resolved,
-            )
+            used = as_of_resolved
+            await fc.refresh(fetcher, used, list(args.symbols), altitude=altitude)
+            signal = await fc.get_flight_controller_signal()
+            upsert_signal_daily(conn, as_of=used, signal=signal)
 
             # V 1h ノックイン監視日のレコード作成（監視が必要な銘柄だけ）
             # 監視日は「直近セッション日 used の Step1 成立」→「次営業日」に作る。
             bundle = fc.get_last_bundle()
             if bundle is None:
-                raise RuntimeError("persist_signal_daily_after_refresh did not set bundle")
-            signal = await fc.get_flight_controller_signal()
+                raise RuntimeError("run_daily_signal_persist: fc.refresh did not set bundle")
             watch_day = next_ny_business_day(used)
 
             for sym in ("NQ", "GC"):
@@ -114,8 +112,10 @@ async def main() -> int:
                 vs = bundle.volatility_signals.get(sym)
                 if vs is None:
                     continue
-                # required_days は factors.toml から（現状 v_altitude は mid 前提）
-                required_days = int(get_v_thresholds(config, sym)["mid"]["V1_confirm_days"])
+                alt = fc.last_altitude_regime
+                if alt is None:
+                    raise RuntimeError("run_daily_signal_persist: last_altitude_regime unset")
+                required_days = int(get_v_thresholds(config, sym)[alt]["V1_confirm_days"])
                 v_lv = int(signal.nq_v) if sym == "NQ" else int(signal.gc_v)
                 step1_ok = vs.recovery_confirm_satisfied_days_v1_off >= required_days
                 if v_lv == 1 and step1_ok and not (vs.v1_to_v0_knock_in_ok is True):

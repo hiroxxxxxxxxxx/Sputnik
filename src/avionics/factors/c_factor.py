@@ -13,7 +13,7 @@ from typing import Optional, TYPE_CHECKING
 from .base_factor import BaseFactor, LevelType
 
 if TYPE_CHECKING:
-    from avionics.data.signals import SignalBundle
+    from avionics.data.signals import AltitudeRegime, SignalBundle
 
 
 class CFactor(BaseFactor):
@@ -89,7 +89,13 @@ class CFactor(BaseFactor):
                 break
         return count
 
-    def get_recovery_progress_from_bundle(self, symbol: str, bundle: "SignalBundle") -> Optional[tuple[int, int]]:
+    def get_recovery_progress_from_bundle(
+        self,
+        symbol: str,
+        bundle: "SignalBundle",
+        *,
+        altitude: "AltitudeRegime",
+    ) -> Optional[tuple[int, int]]:
         """bundle の liquidity_credit_hyg（と liquidity_credit_lqd）から復帰 x/N を算出。定義書: HYG AND LQD とも維持。"""
         credit_hyg = bundle.liquidity_credit_hyg
         credit_lqd = bundle.liquidity_credit_lqd
@@ -100,7 +106,11 @@ class CFactor(BaseFactor):
         return (min(count, confirm), confirm)
 
     async def apply_signal_bundle(
-        self, symbol: Optional[str], bundle: "SignalBundle"
+        self,
+        symbol: Optional[str],
+        bundle: "SignalBundle",
+        *,
+        altitude: "AltitudeRegime",
     ) -> None:
         lc = bundle.liquidity_credit_hyg
         lc_lqd = bundle.liquidity_credit_lqd

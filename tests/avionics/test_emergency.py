@@ -85,12 +85,20 @@ def test_fc_pulse_entering_emergency_runs_protocol(engine_with_fc: tuple[Cockpit
             raise AssertionError("Mock FC.refresh は fetch を呼ばない")
 
     class MockEmergencyEvaluator:
-        async def refresh(self, data_source: object, as_of: date, symbols: list[str]) -> None:
+        async def refresh(
+            self,
+            data_source: object,
+            as_of: date,
+            symbols: list[str],
+            *,
+            conn=None,
+            altitude=None,
+        ) -> None:
             pass
 
         async def get_flight_controller_signal(self):
             return FlightControllerSignal(scl=0, lcl=2, nq_icl=0, gc_icl=0)
 
     fc.fc = MockEmergencyEvaluator()  # type: ignore[assignment]
-    asyncio.run(fc.pulse(_DummyDataSource(), date(2025, 1, 1), [sym]))
+    asyncio.run(fc.pulse(_DummyDataSource(), date(2025, 1, 1), [sym], altitude="mid"))
     assert fc.current_mode == "Emergency"

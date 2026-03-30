@@ -134,7 +134,7 @@ def test_signal_bundle_apply_all_distributes_to_factors() -> None:
     from avionics.factors import get_t_thresholds
 
     p = PFactor(name="P_NQ", thresholds=get_p_thresholds(_config, "NQ"))
-    v = VFactor(name="V_NQ", thresholds=get_v_thresholds(_config, "NQ"), altitude="mid")
+    v = VFactor(name="V_NQ", thresholds=get_v_thresholds(_config, "NQ"))
     t = TFactor(symbol="NQ", thresholds=get_t_thresholds(_config))
 
     av = FlightController(
@@ -159,7 +159,7 @@ def test_signal_bundle_apply_all_distributes_to_factors() -> None:
         volatility_signals={"NQ": vol},
     )
 
-    _run(av.apply_all(bundle))
+    _run(av.apply_all(bundle, altitude="mid"))
 
     assert p.level == 2
     assert t.level == 2
@@ -187,7 +187,7 @@ def test_signal_bundle_apply_all_capital_factors() -> None:
         capital_signals=cap,
     )
 
-    _run(av.apply_all(bundle))
+    _run(av.apply_all(bundle, altitude="mid"))
 
     assert u.level == 2
     assert s.level >= 1

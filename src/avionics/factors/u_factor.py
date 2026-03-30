@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Optional
 from .base_factor import BaseFactor, LevelType
 
 if TYPE_CHECKING:
-    from avionics.data.signals import SignalBundle
+    from avionics.data.signals import AltitudeRegime, SignalBundle
 
 
 class UFactor(BaseFactor):
@@ -28,7 +28,11 @@ class UFactor(BaseFactor):
         super().__init__(name="U", levels=[0, 1, 2], history_size=history_size)
 
     async def apply_signal_bundle(
-        self, symbol: Optional[str], bundle: "SignalBundle"
+        self,
+        symbol: Optional[str],
+        bundle: "SignalBundle",
+        *,
+        altitude: "AltitudeRegime",
     ) -> None:
         cap = getattr(bundle, "capital_signals", None)
         if cap is not None:

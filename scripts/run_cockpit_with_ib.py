@@ -57,15 +57,19 @@ async def main() -> int:
     from avionics.factors.factors_config import FactorsConfigError, load_factors_config
     from cockpit.stack import build_cockpit_stack
     from avionics.calendar import ny_date_now
+    from store.db import get_connection
+    from store.state import read_altitude_regime
 
-    fc, _engines = build_cockpit_stack(args.symbols)
     try:
         load_factors_config()
         print("FlightController: config/factors.toml に基づき因子を登録しました。")
     except FactorsConfigError:
         print("FlightController: 因子設定なしで起動（config/factors.toml なし）")
 
+    conn = get_connection()
     try:
+        altitude = read_altitude_regime(conn)
+        fc, _engines = build_cockpit_stack(args.symbols, altitude=altitude)
         async with with_ib_fetcher(
             args.host,
             args.port,
@@ -74,7 +78,7 @@ async def main() -> int:
         ) as fetcher:
             as_of = ny_date_now()
             print(f"取得中（as_of={as_of}, symbols={args.symbols}）...")
-            await fc.refresh(fetcher, as_of, args.symbols)
+            await fc.refresh(fetcher, as_of, args.symbols, altitude=altitude)
             bundle = fc.get_last_bundle()
 
             if args.breakdown and bundle:
@@ -99,6 +103,8 @@ async def main() -> int:
     except Exception as e:
         print(f"IB 接続失敗: {e}", file=sys.stderr)
         return 1
+    finally:
+        conn.close()
 
 
 if __name__ == "__main__":

@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from avionics.data.flight_controller_signal import FlightControllerSignal
     from avionics.data.factor_mapping import EngineFactorMapping
     from avionics.data.raw_types import RawCapitalSnapshot
-    from avionics.data.signals import SignalBundle
+    from avionics.data.signals import AltitudeRegime, SignalBundle
 
 LEVEL_STR = {0: "0", 1: "1", 2: "2"}
 
@@ -31,6 +31,8 @@ def _build_icl_sections(
     signal: "FlightControllerSignal",
     bundle: "SignalBundle",
     mapping: "EngineFactorMapping",
+    *,
+    altitude: "AltitudeRegime",
 ) -> list[dict[str, Any]]:
     """銘柄別 ICL セクション（P,V,C/R の因子行付き）を組み立てる。定義書 4-2-1-3/4-2-1-4 参照。"""
     _icl_ids = ("1-A", "1-B")
@@ -56,7 +58,7 @@ def _build_icl_sections(
         price_str = f"{ps.last_close:,.2f}" if ps else "—"
         p_trend = ps.trend if ps else "—"
         sym_vol = f"{vs.index_value:.1f}" if vs else "—"
-        rec = mapping.get_recovery_progress(sym, bundle)
+        rec = mapping.get_recovery_progress(sym, bundle, altitude=altitude)
 
         if sym == "NQ":
             icl_level = max(int(icl_level), int(p_lv), int(v_lv), int(c_lv))
@@ -94,6 +96,8 @@ def _build_scl_lcl_rows(
     bundle: "SignalBundle",
     mapping: "EngineFactorMapping",
     symbols: list[str],
+    *,
+    altitude: "AltitudeRegime",
 ) -> tuple[str, list[dict[str, Any]], str, list[dict[str, Any]]]:
     """SCL / LCL セクションの level 文字列と行データを返す。"""
     scl_value = "—"
@@ -107,7 +111,7 @@ def _build_scl_lcl_rows(
         m0 = signal.get_factor_levels(symbols[0])
         u_lv = int(m0.get("U", 0))
         s_lv = int(m0.get("S", 0))
-        first_sig_recovery = mapping.get_recovery_progress(symbols[0], bundle)
+        first_sig_recovery = mapping.get_recovery_progress(symbols[0], bundle, altitude=altitude)
 
     cap = bundle.capital_signals
     u_pct = f"{cap.mm_over_nlv * 100:.1f}" if cap else "0.0"
@@ -133,6 +137,9 @@ async def _build_daily_flight_log_context(
     bundle = fc.get_last_bundle()
     if bundle is None:
         raise ValueError("_build_daily_flight_log_context requires fc.refresh() to have been called first")
+    altitude = fc.last_altitude_regime
+    if altitude is None:
+        raise ValueError("_build_daily_flight_log_context requires fc.refresh() or fc.apply_all with altitude")
     capital_snapshot = fc.get_last_capital_snapshot()
     d = as_of or date.today()
 
@@ -143,9 +150,11 @@ async def _build_daily_flight_log_context(
             worst_level = max(worst_level, signal.throttle_level(sym))
 
     mapping = fc.mapping
-    icl_sections = _build_icl_sections(symbols, signal, bundle, mapping)
+    icl_sections = _build_icl_sections(symbols, signal, bundle, mapping, altitude=altitude)
     nlv_line, cash_buffer_line = _build_capital_lines(capital_snapshot)
-    scl_level, scl_rows, lcl_level, lcl_rows = _build_scl_lcl_rows(signal, bundle, mapping, symbols)
+    scl_level, scl_rows, lcl_level, lcl_rows = _build_scl_lcl_rows(
+        signal, bundle, mapping, symbols, altitude=altitude
+    )
 
     return {
         "date_iso": d.isoformat(),

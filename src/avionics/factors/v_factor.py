@@ -31,19 +31,18 @@ class VFactor(BaseFactor):
         self,
         name: str,
         thresholds: dict,
-        altitude: AltitudeRegime,
         history_size: int = 64,
     ) -> None:
         """
         V因子を初期化する。
 
         :param name: 表示用ラベル（例: "V_NQ"）。銘柄の「意味」は持たない。
-        :param thresholds: 高度レジーム別しきい値。{"high_mid": {...}, "low": {...}}。
+        :param thresholds: 高度レジーム別しきい値（high/mid/low 全キー）。
         :param history_size: レベル履歴バッファ長
+        運用高度は apply_signal_bundle に渡すたびに指定する（DB 由来）。
         定義書「3-1 PFD」「4-2-1-2 V因子」参照。
         """
         self._thresholds_by_altitude: dict = dict(thresholds)
-        self._altitude: AltitudeRegime = altitude
         super().__init__(name=name, levels=[0, 1, 2], history_size=history_size)
 
     def _get_thresholds(self, altitude: AltitudeRegime) -> dict:
@@ -55,12 +54,18 @@ class VFactor(BaseFactor):
             )
         return self._thresholds_by_altitude[altitude]
 
-    def get_recovery_progress_from_bundle(self, symbol: str, bundle: Any) -> Optional[tuple[int, int]]:
+    def get_recovery_progress_from_bundle(
+        self,
+        symbol: str,
+        bundle: Any,
+        *,
+        altitude: AltitudeRegime,
+    ) -> Optional[tuple[int, int]]:
         """bundle の volatility_signals[symbol] から復帰 x/N を算出。"""
         sig = getattr(bundle, "volatility_signals", {}).get(symbol)
         if not sig:
             return None
-        th = self._get_thresholds(self._altitude)
+        th = self._get_thresholds(altitude)
         if self.level == 2:
             required = int(th["V2_confirm_days"])
             satisfied = getattr(sig, "recovery_confirm_satisfied_days_v2_off", 0)
@@ -72,15 +77,21 @@ class VFactor(BaseFactor):
         return None
 
     async def apply_signal_bundle(
-        self, symbol: Optional[str], bundle: "SignalBundle"
+        self,
+        symbol: Optional[str],
+        bundle: "SignalBundle",
+        *,
+        altitude: AltitudeRegime,
     ) -> None:
         vol = getattr(bundle, "volatility_signals", {}).get(symbol) if symbol else None
         if vol is not None:
-            await self.update_from_volatility_signal(vol)
+            await self.update_from_volatility_signal(vol, altitude=altitude)
 
     async def update_from_volatility_signal(
         self,
         signal: VolatilitySignal,
+        *,
+        altitude: AltitudeRegime,
         buffer_condition_v1_to_v0: Optional[BufferCondition] = None,
     ) -> LevelType:
         """
@@ -94,7 +105,7 @@ class VFactor(BaseFactor):
             buffer_condition_v1_to_v0 = lambda _f, _l: signal.v1_to_v0_knock_in_ok
         return await self.update_from_index(
             index_value=signal.index_value,
-            altitude=self._altitude,
+            altitude=altitude,
             recovery_confirm_satisfied_days_v1_off=signal.recovery_confirm_satisfied_days_v1_off,
             recovery_confirm_satisfied_days_v2_off=signal.recovery_confirm_satisfied_days_v2_off,
             buffer_condition_v1_to_v0=buffer_condition_v1_to_v0,

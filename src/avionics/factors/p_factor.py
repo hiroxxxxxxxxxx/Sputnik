@@ -14,7 +14,7 @@ from typing import Any, Literal, Optional, Sequence, TYPE_CHECKING
 from .base_factor import BaseFactor, LevelType
 
 if TYPE_CHECKING:
-    from avionics.data.signals import PriceSignals, SignalBundle
+    from avionics.data.signals import AltitudeRegime, PriceSignals, SignalBundle
 
 
 TrendType = Literal["up", "down", "flat"]
@@ -47,7 +47,11 @@ class PFactor(BaseFactor):
         super().__init__(name=name, levels=[0, 1, 2], history_size=history_size)
 
     async def apply_signal_bundle(
-        self, symbol: Optional[str], bundle: "SignalBundle"
+        self,
+        symbol: Optional[str],
+        bundle: "SignalBundle",
+        *,
+        altitude: "AltitudeRegime",
     ) -> None:
         price = getattr(bundle, "price_signals", {}).get(symbol) if symbol else None
         if price is not None:
@@ -77,7 +81,13 @@ class PFactor(BaseFactor):
                 break
         return count
 
-    def get_recovery_progress_from_bundle(self, symbol: str, bundle: Any) -> Optional[tuple[int, int]]:
+    def get_recovery_progress_from_bundle(
+        self,
+        symbol: str,
+        bundle: Any,
+        *,
+        altitude: "AltitudeRegime",
+    ) -> Optional[tuple[int, int]]:
         """bundle の price_signals[symbol].daily_history から復帰 x/N を算出。"""
         price = getattr(bundle, "price_signals", {}).get(symbol)
         daily_history = getattr(price, "daily_history", ()) if price else ()

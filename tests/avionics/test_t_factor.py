@@ -105,6 +105,7 @@ def test_tfactor_apply_empty_bundle_runs_safely(t_thresholds) -> None:
                 liquidity_credit_hyg=LiquiditySignals(),
                 liquidity_credit_lqd=LiquiditySignals(),
             ),
+            altitude="mid",
         )
         assert tf.level in (0, 2)
 

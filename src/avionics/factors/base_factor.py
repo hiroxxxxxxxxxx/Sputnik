@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any, Optional, Deque
 from transitions import Machine
 
 if TYPE_CHECKING:
-    from avionics.data.signals import SignalBundle
+    from avionics.data.signals import AltitudeRegime, SignalBundle
 
 
 LevelType = int
@@ -67,11 +67,16 @@ class BaseFactor:
         )
 
     async def apply_signal_bundle(
-        self, symbol: Optional[str], bundle: "SignalBundle"
+        self,
+        symbol: Optional[str],
+        bundle: "SignalBundle",
+        *,
+        altitude: "AltitudeRegime",
     ) -> None:
         """
         Layer 2 の SignalBundle から自身の入力を取り出し、レベルを更新する。
 
+        :param altitude: 本ティックの運用高度（DB 由来を refresh で渡す。Layer 2 データではない）。
         銘柄別因子は symbol で bundle 内の該当シグナルを参照する。
         制限因子（U/S）や global_market は symbol=None。各因子でオーバーライドする。
         定義書「4-2 情報の階層構造」参照。
@@ -97,7 +102,13 @@ class BaseFactor:
             return (self._confirm_counter, self._confirm_days_required)
         return None
 
-    def get_recovery_progress_from_bundle(self, symbol: str, bundle: Any) -> Optional[tuple[int, int]]:
+    def get_recovery_progress_from_bundle(
+        self,
+        symbol: str,
+        bundle: Any,
+        *,
+        altitude: "AltitudeRegime",
+    ) -> Optional[tuple[int, int]]:
         """
         bundle から復帰 x/N をその場で算出する。ステートレス因子がオーバーライド。デフォルトは None。
         """
