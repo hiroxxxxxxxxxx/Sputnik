@@ -47,6 +47,16 @@ def _v_confirm_days(fc: "FlightController", symbol: str) -> tuple[int | None, in
     raise ValueError(f"VFactor not found for symbol={symbol!r} in FlightController mapping")
 
 
+def _v_factor_level(fc: "FlightController", symbol: str) -> int:
+    """銘柄に紐づく V 因子の現在レベル（0/1/2）を返す。"""
+    from avionics.factors.v_factor import VFactor
+
+    for f in fc.mapping.symbol_factors.get(symbol, []):
+        if isinstance(f, VFactor):
+            return int(f.level)
+    raise ValueError(f"VFactor not found for symbol={symbol!r} in FlightController mapping")
+
+
 def _fmt_progress(x: int, total: int) -> str:
     if total <= 0:
         raise ValueError(f"confirm_days must be positive, got {total}")
@@ -68,7 +78,6 @@ def _liquidity_credit_section(
         _kv("終値", close_txt),
         _kv("SMA20", sma_txt),
         _kv("SMA20乖離率", sma_gap_txt),
-        _kv("SMA20 位置", below_txt),
         _kv("日次変化率", dc_txt),
     ]
     return {
@@ -120,24 +129,31 @@ def _build_breakdown_report_context(fc: "FlightController", bundle: "SignalBundl
     volatility_sections: list[dict[str, Any]] = []
     for idx, sym in enumerate(vol_symbols):
         vs = bundle.volatility_signals[sym]
-        knock_txt = "はい" if vs.v1_to_v0_knock_in_ok else "いいえ"
         v1_days, v2_days = _v_confirm_days(fc, sym)
+        v_level = _v_factor_level(fc, sym)
         sid = _V_IDS[idx] if idx < len(_V_IDS) else str(idx + 10)
         rows = [
             _kv("ボラ指数 (VXN/GVZ 相当)", f"{vs.index_value:.2f}"),
             _kv("20日高値", _fmt_price(vs.high_20)),
-            _kv(
-                "V1→V0復帰判定",
-                _fmt_progress(vs.recovery_confirm_satisfied_days_v1_off, v1_days),
-            ),
-            _kv(" ・ノックイン成立", knock_txt),
-            _kv(" ・ノックイン判定時刻", vs.knock_in_bar_end or "—"),
-
-            _kv(
-                "V2→V1復帰判定",
-                _fmt_progress(vs.recovery_confirm_satisfied_days_v2_off, v2_days),
-            ),
         ]
+        if v_level == 1:
+            x1 = min(vs.recovery_confirm_satisfied_days_v1_off, v1_days)
+            rows.append(
+                _kv("V1→V0復帰判定", _fmt_progress(x1, v1_days)),
+            )
+            if vs.recovery_confirm_satisfied_days_v1_off >= v1_days:
+                knock_txt = "はい" if vs.v1_to_v0_knock_in_ok else "いいえ"
+                rows.extend(
+                    [
+                        _kv(" ・ノックイン成立", knock_txt),
+                        _kv(" ・ノックイン判定時刻", vs.knock_in_bar_end or "—"),
+                    ]
+                )
+        elif v_level == 2:
+            x2 = min(vs.recovery_confirm_satisfied_days_v2_off, v2_days)
+            rows.append(
+                _kv("V2→V1復帰判定", _fmt_progress(x2, v2_days)),
+            )
         volatility_sections.append({
             "section_id": sid,
             "title": f"V 入力 <{sym}>",
