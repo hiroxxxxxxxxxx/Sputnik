@@ -13,7 +13,7 @@ if str(_scripts) not in sys.path:
 
 from telegram_cockpit_bot import (  # noqa: E402
     COCKPIT_BOT_COMMANDS_MESSAGE,
-    _parse_settarget_float_args,
+    _parse_settarget_base_arg,
     _target_admin_user_ids_from_environ,
 )
 
@@ -41,21 +41,13 @@ def test_target_admin_user_ids_merges_admin_and_chat(monkeypatch: pytest.MonkeyP
     assert _target_admin_user_ids_from_environ() == frozenset({100, 200})
 
 
-def test_parse_settarget_float_args_three_numbers() -> None:
-    m, a, b = _parse_settarget_float_args(["80", "20", "0"])
-    assert m == 80.0 and a == 20.0 and b == 0.0
+def test_parse_settarget_base_arg() -> None:
+    assert _parse_settarget_base_arg("80") == 80.0
 
 
-def test_parse_settarget_float_args_wrong_count_raises() -> None:
-    with pytest.raises(ValueError, match="3 数"):
-        _parse_settarget_float_args(["1", "2"])
-    with pytest.raises(ValueError, match="3 数"):
-        _parse_settarget_float_args([])
-
-
-def test_parse_settarget_float_args_bad_float_raises() -> None:
-    with pytest.raises(ValueError, match="位置 1"):
-        _parse_settarget_float_args(["x", "1", "2"])
+def test_parse_settarget_base_arg_bad_float_raises() -> None:
+    with pytest.raises(ValueError, match="base"):
+        _parse_settarget_base_arg("x")
 
 
 def test_commands_message_includes_position() -> None:

@@ -18,6 +18,7 @@ from .blueprint import (
     contract_size,
     contract_symbol,
 )
+from .target_policy import resolve_future_targets_by_part
 
 
 @dataclass(frozen=True)
@@ -143,20 +144,28 @@ class Engine:
         mode: ModeType,
         *,
         actual_by_part: Optional[Dict[str, Dict[str, float]]] = None,
-        target_futures_by_part: Optional[Dict[str, float]] = None,
+        target_base_futures: Optional[float] = None,
+        future_targets_by_part: Optional[Dict[str, float]] = None,
     ) -> None:
         """
         管制からモード指令を受け、抽象モードを「目標値」に翻訳して差分を算出。
         Blueprint ベースで不足分を集約し、ExecutionProvider に渡す。
-        target_futures_by_part / actual の future レッグは **MNQ/MGC 相当枚数**で揃えること。
+        target_base_futures / actual の future レッグは **MNQ/MGC 相当枚数**で揃えること。
         定義書「1-4」「1-5」「Phase 4」参照。
         """
         base = self.config["base_unit"]
+        computed_future_targets_by_part: Optional[Dict[str, float]] = future_targets_by_part
+        if computed_future_targets_by_part is None and target_base_futures is not None:
+            computed_future_targets_by_part = resolve_future_targets_by_part(
+                self.blueprints,
+                mode=mode,
+                base_target=float(target_base_futures),
+            )
         all_deltas: list[PartDelta] = []
         for part_name in PART_NAMES:
             target = self._target_for_part(part_name, mode, base)
-            if target_futures_by_part is not None and part_name in target_futures_by_part:
-                target["future"] = float(target_futures_by_part[part_name])
+            if computed_future_targets_by_part is not None:
+                target["future"] = float(computed_future_targets_by_part[part_name])
             part_actual = (
                 actual_by_part.get(part_name, None)
                 if actual_by_part is not None

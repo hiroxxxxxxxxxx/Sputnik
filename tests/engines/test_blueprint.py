@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import builtins
 import sys
+import textwrap
 import types
 from unittest.mock import patch
 
@@ -16,6 +17,7 @@ from engines.blueprint import (
     LayerBlueprint,
     ModeType,
     RATIO_KEYS,
+    load_blueprints_from_unified_toml_path,
     load_layer_blueprint_from_toml_path,
 )
 
@@ -128,7 +130,30 @@ def test_from_toml_dict_missing_emergency_raises() -> None:
 
 def test_load_layer_blueprint_from_toml_path() -> None:
     """TOML ファイルパスから LayerBlueprint をロードできる。"""
-    bp = load_layer_blueprint_from_toml_path("Main", "config/blueprints/main_layer.toml")
+    import tempfile
+
+    content = textwrap.dedent(
+        """
+        [ratios.Boost]
+        future = 1.0
+        option_k1 = -1.0
+        option_k2 = 0.0
+
+        [ratios.Cruise]
+        future = 1.0
+        option_k1 = -1.0
+        option_k2 = 0.0
+
+        [ratios.Emergency]
+        future = 1.0
+        option_k1 = -1.0
+        option_k2 = 1.0
+        """
+    ).strip()
+    with tempfile.NamedTemporaryFile(suffix=".toml", mode="w", encoding="utf-8") as f:
+        f.write(content)
+        f.flush()
+        bp = load_layer_blueprint_from_toml_path("Main", f.name)
     assert bp.name == "Main"
     assert bp.get_ratios("Emergency")["option_k2"] == 1.0
 
@@ -155,11 +180,215 @@ def test_load_layer_blueprint_from_toml_path_fallback_tomli() -> None:
     with patch.object(builtins, "__import__", side_effect=import_mock), patch.dict(
         sys.modules, {"tomli": tomli_mock}
     ):
-        bp = load_layer_blueprint_from_toml_path(
-            "Main", "config/blueprints/main_layer.toml"
-        )
+        import tempfile
+
+        content = textwrap.dedent(
+            """
+            [ratios.Boost]
+            future = 1.0
+            option_k1 = -1.0
+            option_k2 = 0.0
+
+            [ratios.Cruise]
+            future = 1.0
+            option_k1 = -1.0
+            option_k2 = 0.0
+
+            [ratios.Emergency]
+            future = 1.0
+            option_k1 = -1.0
+            option_k2 = 1.0
+            """
+        ).strip()
+        with tempfile.NamedTemporaryFile(
+            suffix=".toml", mode="w", encoding="utf-8"
+        ) as f:
+            f.write(content)
+            f.flush()
+            bp = load_layer_blueprint_from_toml_path("Main", f.name)
         assert bp.name == "Main"
         assert bp.get_ratios("Emergency")["future"] == 0.0
         # import_mock のフォールバック（real_import）をカバーするため、別モジュールを import
         import os as _os
         assert _os.path is not None
+
+
+def test_load_unified_blueprints_valid() -> None:
+    import tempfile
+
+    content = textwrap.dedent(
+        """
+        [modes.Boost.altitudes.mid.Main]
+        future = 1.0
+        option_k1 = -1.0
+        option_k2 = 0.0
+        [modes.Boost.altitudes.mid.Main.legs]
+        pb = false
+        bps = true
+        cc = false
+
+        [modes.Boost.altitudes.mid.Attitude]
+        future = 0.5
+        option_k1 = -1.0
+        option_k2 = 0.0
+        [modes.Boost.altitudes.mid.Attitude.legs]
+        pb = true
+        bps = false
+        cc = false
+
+        [modes.Boost.altitudes.mid.Booster]
+        future = 0.5
+        option_k1 = -1.5
+        option_k2 = 0.0
+        [modes.Boost.altitudes.mid.Booster.legs]
+        pb = false
+        bps = true
+        cc = false
+
+        [modes.Cruise.altitudes.mid.Main]
+        future = 1.0
+        option_k1 = -1.0
+        option_k2 = 0.0
+        [modes.Cruise.altitudes.mid.Main.legs]
+        pb = false
+        bps = true
+        cc = true
+
+        [modes.Cruise.altitudes.mid.Attitude]
+        future = 0.5
+        option_k1 = -1.0
+        option_k2 = 0.0
+        [modes.Cruise.altitudes.mid.Attitude.legs]
+        pb = true
+        bps = false
+        cc = false
+
+        [modes.Cruise.altitudes.mid.Booster]
+        future = 0.0
+        option_k1 = 0.0
+        option_k2 = 0.0
+        [modes.Cruise.altitudes.mid.Booster.legs]
+        pb = false
+        bps = false
+        cc = false
+
+        [modes.Emergency.altitudes.mid.Main]
+        future = 1.0
+        option_k1 = -1.0
+        option_k2 = 1.0
+        [modes.Emergency.altitudes.mid.Main.legs]
+        pb = true
+        bps = false
+        cc = false
+
+        [modes.Emergency.altitudes.mid.Attitude]
+        future = 0.0
+        option_k1 = 0.0
+        option_k2 = 0.0
+        [modes.Emergency.altitudes.mid.Attitude.legs]
+        pb = false
+        bps = false
+        cc = false
+
+        [modes.Emergency.altitudes.mid.Booster]
+        future = 0.0
+        option_k1 = 0.0
+        option_k2 = 0.0
+        [modes.Emergency.altitudes.mid.Booster.legs]
+        pb = false
+        bps = false
+        cc = false
+        """
+    ).strip()
+    with tempfile.NamedTemporaryFile(suffix=".toml", mode="w", encoding="utf-8") as f:
+        f.write(content)
+        f.flush()
+        bps = load_blueprints_from_unified_toml_path(f.name)
+    assert bps["Main"].get_ratios("Boost")["future"] == 1.0
+    assert bps["Booster"].get_ratios("Cruise")["future"] == 0.0
+
+
+def test_load_unified_blueprints_invalid_attitude_legs_raises() -> None:
+    import tempfile
+
+    content = textwrap.dedent(
+        """
+        [modes.Boost.altitudes.mid.Main]
+        future = 1.0
+        option_k1 = -1.0
+        option_k2 = 0.0
+        [modes.Boost.altitudes.mid.Main.legs]
+        pb = false
+        bps = true
+        cc = false
+        [modes.Boost.altitudes.mid.Attitude]
+        future = 0.5
+        option_k1 = -1.0
+        option_k2 = 0.0
+        [modes.Boost.altitudes.mid.Attitude.legs]
+        pb = true
+        bps = false
+        cc = true
+        [modes.Boost.altitudes.mid.Booster]
+        future = 0.5
+        option_k1 = -1.5
+        option_k2 = 0.0
+        [modes.Boost.altitudes.mid.Booster.legs]
+        pb = false
+        bps = true
+        cc = false
+        [modes.Cruise.altitudes.mid.Main]
+        future = 1.0
+        option_k1 = -1.0
+        option_k2 = 0.0
+        [modes.Cruise.altitudes.mid.Main.legs]
+        pb = false
+        bps = true
+        cc = true
+        [modes.Cruise.altitudes.mid.Attitude]
+        future = 0.5
+        option_k1 = -1.0
+        option_k2 = 0.0
+        [modes.Cruise.altitudes.mid.Attitude.legs]
+        pb = true
+        bps = false
+        cc = false
+        [modes.Cruise.altitudes.mid.Booster]
+        future = 0.0
+        option_k1 = 0.0
+        option_k2 = 0.0
+        [modes.Cruise.altitudes.mid.Booster.legs]
+        pb = false
+        bps = false
+        cc = false
+        [modes.Emergency.altitudes.mid.Main]
+        future = 1.0
+        option_k1 = -1.0
+        option_k2 = 1.0
+        [modes.Emergency.altitudes.mid.Main.legs]
+        pb = true
+        bps = false
+        cc = false
+        [modes.Emergency.altitudes.mid.Attitude]
+        future = 0.0
+        option_k1 = 0.0
+        option_k2 = 0.0
+        [modes.Emergency.altitudes.mid.Attitude.legs]
+        pb = false
+        bps = false
+        cc = false
+        [modes.Emergency.altitudes.mid.Booster]
+        future = 0.0
+        option_k1 = 0.0
+        option_k2 = 0.0
+        [modes.Emergency.altitudes.mid.Booster.legs]
+        pb = false
+        bps = false
+        cc = false
+        """
+    ).strip()
+    with tempfile.NamedTemporaryFile(suffix=".toml", mode="w", encoding="utf-8") as f:
+        f.write(content)
+        f.flush()
+        with pytest.raises(ValueError, match="invalid legs"):
+            load_blueprints_from_unified_toml_path(f.name)

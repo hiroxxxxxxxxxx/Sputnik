@@ -36,9 +36,7 @@ def _seed_full_targets(conn: sqlite3.Connection) -> None:
     from store.state import upsert_target_futures
 
     for sym in ("NQ", "GC"):
-        upsert_target_futures(conn, sym, "Main", 1.0)
-        upsert_target_futures(conn, sym, "Attitude", 0.0)
-        upsert_target_futures(conn, sym, "Booster", 0.0)
+        upsert_target_futures(conn, sym, 1.0)
 
 
 def test_set_target_futures_function(conn: sqlite3.Connection) -> None:
@@ -46,19 +44,17 @@ def test_set_target_futures_function(conn: sqlite3.Connection) -> None:
     from store.target_futures import set_target_futures
 
     _seed_full_targets(conn)
-    set_target_futures(conn, "NQ", main=8.0, attitude=2.0, booster=0.0)
+    set_target_futures(conn, "NQ", base=8.0)
     current = read_target_futures(conn)
-    assert current["NQ"]["Main"] == 8.0
-    assert current["NQ"]["Attitude"] == 2.0
-    assert current["NQ"]["Booster"] == 0.0
-    assert current["GC"]["Main"] == 1.0
+    assert current["NQ"] == 8.0
+    assert current["GC"] == 1.0
 
 
 def test_set_target_futures_validate_missing_raises() -> None:
     from store.target_futures import validate_target_futures_input
 
     with pytest.raises(ValueError):
-        validate_target_futures_input(main=8.0, attitude=2.0, booster=None)
+        validate_target_futures_input(base=None)
 
 
 def test_normalize_engine_symbol_raises() -> None:
@@ -82,7 +78,7 @@ def test_set_target_futures_cli_dry_run(conn: sqlite3.Connection) -> None:
     _seed_full_targets(conn)
     before = read_target_futures(conn)
     code = main(
-        ["NQ", "--main", "9", "--attitude", "3", "--booster", "1", "--dry-run"]
+        ["NQ", "--base", "9", "--dry-run"]
     )
     after = read_target_futures(conn)
     assert code == 0
@@ -94,9 +90,7 @@ def test_set_target_futures_cli_updates(conn: sqlite3.Connection) -> None:
     from store.state import read_target_futures
 
     _seed_full_targets(conn)
-    code = main(["MNQ", "--main", "9", "--attitude", "3", "--booster", "1"])
+    code = main(["MNQ", "--base", "9"])
     current = read_target_futures(conn)
     assert code == 0
-    assert current["NQ"]["Main"] == 9.0
-    assert current["NQ"]["Attitude"] == 3.0
-    assert current["NQ"]["Booster"] == 1.0
+    assert current["NQ"] == 9.0

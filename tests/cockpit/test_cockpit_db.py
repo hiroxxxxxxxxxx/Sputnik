@@ -124,20 +124,20 @@ def test_approval_mode_setter_persists(conn) -> None:
 
 def test_cockpit_pulse_applies_with_ib_positions_and_target_futures(conn) -> None:
     from store.state import upsert_target_futures
+    from engines.factory import _default_blueprints
 
     for sym in ("NQ", "GC"):
-        upsert_target_futures(conn, sym, "Main", 8.0)
-        upsert_target_futures(conn, sym, "Attitude", 2.0)
-        upsert_target_futures(conn, sym, "Booster", 0.0)
+        upsert_target_futures(conn, sym, 8.0)
 
     class DummyEngine:
         symbol_type = "NQ"
 
         def __init__(self) -> None:
             self.calls = []
+            self.blueprints = _default_blueprints()
 
-        async def apply_mode(self, mode, *, actual_by_part=None, target_futures_by_part=None):
-            self.calls.append((mode, actual_by_part, target_futures_by_part))
+        async def apply_mode(self, mode, *, actual_by_part=None, target_base_futures=None, future_targets_by_part=None):
+            self.calls.append((mode, actual_by_part, target_base_futures))
 
     class MockFlightController:
         async def refresh(self, data_source, as_of, symbols, *, altitude):
@@ -158,7 +158,7 @@ def test_cockpit_pulse_applies_with_ib_positions_and_target_futures(conn) -> Non
 
     _run(cp.pulse(MockDataSource(), as_of=date(2025, 1, 1), symbols=["NQ"]))
     assert len(engine.calls) == 1
-    mode, actual_by_part, target_futures_by_part = engine.calls[0]
+    mode, actual_by_part, target_base_futures = engine.calls[0]
     assert mode == "Cruise"
-    assert target_futures_by_part["Main"] == 8.0
+    assert target_base_futures == 8.0
     assert actual_by_part["Main"]["future"] > actual_by_part["Attitude"]["future"]

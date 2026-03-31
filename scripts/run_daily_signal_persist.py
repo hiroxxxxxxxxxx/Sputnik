@@ -87,7 +87,7 @@ async def main() -> int:
     conn = get_connection()
     try:
         altitude = read_altitude_regime(conn)
-        target_futures_by_symbol = read_target_futures(conn)
+        target_base_by_symbol = read_target_futures(conn)
         fc, _engines = build_cockpit_stack(args.symbols, altitude=altitude)
         async with with_ib_fetcher(
             args.host,
@@ -127,7 +127,7 @@ async def main() -> int:
                 fc,
                 list(args.symbols),
                 positions_detail=positions_detail,
-                target_futures_by_symbol=target_futures_by_symbol,
+                target_base_by_symbol=target_base_by_symbol,
                 as_of=used,
             )
             if not args.skip_telegram:

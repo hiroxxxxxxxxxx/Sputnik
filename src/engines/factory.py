@@ -6,39 +6,18 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Dict, Literal, Optional, Tuple
 
-from .blueprint import LayerBlueprint
+from .blueprint import LayerBlueprint, load_blueprints_from_unified_toml_path
 from .engine import Engine
 
 
 def _default_blueprints() -> Dict[str, LayerBlueprint]:
-    """Main / Attitude / Booster のデフォルト設計図。定義書「1-4」「6-2」に準拠。"""
-    main = LayerBlueprint.from_dict(
-        "Main",
-        {
-            "Boost": {"future": 1.0, "option_k1": -1.0, "option_k2": 0.0},
-            "Cruise": {"future": 1.0, "option_k1": -1.0, "option_k2": 0.0},
-            "Emergency": {"future": 1.0, "option_k1": -1.0, "option_k2": 1.0},
-        },
-    )
-    attitude = LayerBlueprint.from_dict(
-        "Attitude",
-        {
-            "Boost": {"future": 1.0, "option_k1": -1.0, "option_k2": 0.0},
-            "Cruise": {"future": 1.0, "option_k1": -1.0, "option_k2": 0.0},
-            "Emergency": {"future": 0.0, "option_k1": 0.0, "option_k2": 0.0},
-        },
-    )
-    booster = LayerBlueprint.from_dict(
-        "Booster",
-        {
-            "Boost": {"future": 1.5, "option_k1": -1.5, "option_k2": 0.0},
-            "Cruise": {"future": 1.0, "option_k1": -1.0, "option_k2": 0.0},
-            "Emergency": {"future": 0.0, "option_k1": 0.0, "option_k2": 0.0},
-        },
-    )
-    return {"Main": main, "Attitude": attitude, "Booster": booster}
+    """統合 TOML から Main / Attitude / Booster のデフォルト設計図を読む。"""
+    root = Path(__file__).resolve().parent.parent.parent
+    path = root / "config" / "targets.toml"
+    return load_blueprints_from_unified_toml_path(str(path), altitude="mid")
 
 
 def build_engine(

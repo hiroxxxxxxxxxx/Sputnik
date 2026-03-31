@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import sqlite3
 from datetime import date
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Optional
 
 from avionics.data.flight_controller_signal import FlightControllerSignal
@@ -49,7 +50,7 @@ def _split_actual_by_target(
     weights = {p: abs(float(target_futures_by_part[p])) for p in PART_NAMES}
     total_weight = sum(weights.values())
     if total_weight <= 0:
-        raise ValueError("target_futures total weight must be > 0")
+        raise ValueError("mode-aware target total weight must be > 0")
     out: Dict[str, Dict[str, float]] = {}
     for part in PART_NAMES:
         share = weights[part] / total_weight
@@ -262,11 +263,11 @@ class Cockpit:
                 )
             fetch_position_legs = getattr(data_source, "fetch_position_legs")
             positions_by_symbol = await fetch_position_legs(symbols)
-            target_futures_by_symbol = read_target_futures(self._conn)
+            target_base_by_symbol = read_target_futures(self._conn)
         elif altitude is not None:
             await self.fc.refresh(data_source, as_of, symbols, altitude=altitude)
             positions_by_symbol = {}
-            target_futures_by_symbol = {}
+            target_base_by_symbol = {}
         else:
             raise ValueError(
                 "Cockpit.pulse requires conn=... or altitude=... (tests only)"
@@ -302,12 +303,23 @@ class Cockpit:
                             f"IB positions missing symbol: {engine.symbol_type}"
                         )
                     sym = engine.symbol_type
-                    tf_part = target_futures_by_symbol[sym]
-                    actual_by_part = _split_actual_by_target(symbol_actual, tf_part)
+                    base_target = float(target_base_by_symbol[sym])
+                    from engines.target_policy import resolve_future_targets_by_part_from_toml
+
+                    root = Path(__file__).resolve().parent.parent.parent
+                    targets_toml = str(root / "config" / "targets.toml")
+                    mode_targets = resolve_future_targets_by_part_from_toml(
+                        targets_toml,
+                        mode=target_mode,
+                        altitude=db_altitude,
+                        base_target=base_target,
+                    )
+                    actual_by_part = _split_actual_by_target(symbol_actual, mode_targets)
                     await engine.apply_mode(
                         target_mode,
                         actual_by_part=actual_by_part,
-                        target_futures_by_part=tf_part,
+                        target_base_futures=base_target,
+                        future_targets_by_part=mode_targets,
                     )
                 else:
                     await engine.apply_mode(target_mode)

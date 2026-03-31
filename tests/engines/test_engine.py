@@ -37,19 +37,18 @@ def test_engine_apply_mode_collects_deltas(fc_with_engines) -> None:
     assert len(main_deltas) >= 1
 
 
-def test_engine_apply_mode_accepts_actual_and_target_futures(fc_with_engines) -> None:
+def test_engine_apply_mode_accepts_actual_and_target_base(fc_with_engines) -> None:
     _, engine = fc_with_engines
     actual_by_part = {
         "Main": {"future": 3.0, "k1": 0.0, "k2": 0.0},
         "Attitude": {"future": 1.0, "k1": 0.0, "k2": 0.0},
         "Booster": {"future": 0.0, "k1": 0.0, "k2": 0.0},
     }
-    targets = {"Main": 4.0, "Attitude": 2.0, "Booster": 1.0}
     asyncio.run(
         engine.apply_mode(
             "Cruise",
             actual_by_part=actual_by_part,
-            target_futures_by_part=targets,
+            target_base_futures=4.0,
         )
     )
 

@@ -159,18 +159,15 @@ def test_format_daily_report_with_positions() -> None:
             fc,
             ["NQ", "GC"],
             positions_detail=positions_detail,
-            target_futures_by_symbol={
-                "NQ": {"Main": 5.0, "Attitude": 3.0, "Booster": 2.0},
-                "GC": {"Main": 5.0, "Attitude": 3.0, "Booster": 2.0},
-            },
+            target_base_by_symbol={"NQ": 10.0, "GC": 10.0},
             as_of=date(2026, 3, 30),
         )
     )
     assert "[4] POSITIONS DETAIL" in text
     assert "NQ | NQ B=2 S=1 | MNQ B=10 S=2" in text
     assert "GC | GC B=2 S=0 | MGC B=1 S=3" in text
-    assert "MNQ | target=10 | actual=18 | delta=-8" in text
-    assert "MGC | target=10 | actual=18 | delta=-8" in text
+    assert "MNQ | target=15 | actual=18 | delta=-3" in text
+    assert "MGC | target=20 | actual=18 | delta=2" in text
 
 
 def test_format_daily_report_without_positions() -> None:
@@ -179,7 +176,7 @@ def test_format_daily_report_without_positions() -> None:
     assert "[4] POSITIONS DETAIL" not in text
 
 
-def test_format_daily_report_target_futures_missing_part_raises() -> None:
+def test_format_daily_report_target_base_missing_symbol_raises() -> None:
     fc = _DummyFC()
     try:
         asyncio.run(
@@ -187,18 +184,17 @@ def test_format_daily_report_target_futures_missing_part_raises() -> None:
                 fc,
                 ["NQ", "GC"],
                 positions_detail={"NQ": {"futures": {}, "options": {}}, "GC": {"futures": {}, "options": {}}},
-                target_futures_by_symbol={
-                    "NQ": {"Main": 1.0, "Attitude": 1.0, "Booster": 0.0},
-                },
+                target_base_by_symbol={"NQ": 1.0},
                 as_of=date(2026, 3, 30),
             )
         )
         assert False, "expected ValueError"
     except ValueError as e:
-        assert "target_futures missing engine symbol" in str(e)
+        assert "target_base_futures missing engine symbol" in str(e)
 
 
 def test_format_position_report_with_positions() -> None:
+    fc = _DummyFC()
     positions_detail = {
         "NQ": {
             "futures": {
@@ -263,17 +259,15 @@ def test_format_position_report_with_positions() -> None:
     }
     text = asyncio.run(
         format_position_report(
+            fc,
             ["NQ", "GC"],
             positions_detail=positions_detail,
-            target_futures_by_symbol={
-                "NQ": {"Main": 5.0, "Attitude": 3.0, "Booster": 2.0},
-                "GC": {"Main": 5.0, "Attitude": 3.0, "Booster": 2.0},
-            },
+            target_base_by_symbol={"NQ": 10.0, "GC": 10.0},
             as_of=date(2026, 3, 30),
         )
     )
     assert "【POSITIONS】 2026-03-30" in text
     assert "NQ | NQ B=2 S=1 | MNQ B=10 S=2" in text
     assert "Options (Buy/Sell per contract)" in text
-    assert "MNQ | target=10 | actual=18 | delta=-8" in text
-    assert "MGC | target=10 | actual=18 | delta=-8" in text
+    assert "MNQ | target=15 | actual=18 | delta=-3" in text
+    assert "MGC | target=20 | actual=18 | delta=2" in text
