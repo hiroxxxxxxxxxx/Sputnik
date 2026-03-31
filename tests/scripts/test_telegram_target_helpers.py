@@ -12,6 +12,7 @@ if str(_scripts) not in sys.path:
     sys.path.insert(0, str(_scripts))
 
 from telegram_cockpit_bot import (  # noqa: E402
+    COCKPIT_BOT_COMMANDS_MESSAGE,
     _parse_settarget_float_args,
     _target_admin_user_ids_from_environ,
 )
@@ -55,3 +56,7 @@ def test_parse_settarget_float_args_wrong_count_raises() -> None:
 def test_parse_settarget_float_args_bad_float_raises() -> None:
     with pytest.raises(ValueError, match="位置 1"):
         _parse_settarget_float_args(["x", "1", "2"])
+
+
+def test_commands_message_includes_position() -> None:
+    assert "/position" in COCKPIT_BOT_COMMANDS_MESSAGE

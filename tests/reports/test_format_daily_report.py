@@ -13,7 +13,7 @@ from avionics.data.signals import (
     SignalBundle,
     VolatilitySignal,
 )
-from reports.format_daily_report import format_daily_report
+from reports.format_daily_report import format_daily_report, format_position_report
 
 
 class _DummyFC:
@@ -196,3 +196,84 @@ def test_format_daily_report_target_futures_missing_part_raises() -> None:
         assert False, "expected ValueError"
     except ValueError as e:
         assert "target_futures missing engine symbol" in str(e)
+
+
+def test_format_position_report_with_positions() -> None:
+    positions_detail = {
+        "NQ": {
+            "futures": {
+                "nq_buy": 2.0,
+                "nq_sell": 1.0,
+                "mnq_buy": 10.0,
+                "mnq_sell": 2.0,
+                "gc_buy": 0.0,
+                "gc_sell": 0.0,
+                "mgc_buy": 0.0,
+                "mgc_sell": 0.0,
+            },
+            "options": {
+                "nq_call_buy": 1.0,
+                "nq_call_sell": 3.0,
+                "nq_put_buy": 0.0,
+                "nq_put_sell": 2.0,
+                "mnq_call_buy": 0.0,
+                "mnq_call_sell": 0.0,
+                "mnq_put_buy": 0.0,
+                "mnq_put_sell": 0.0,
+                "gc_call_buy": 0.0,
+                "gc_call_sell": 0.0,
+                "gc_put_buy": 0.0,
+                "gc_put_sell": 0.0,
+                "mgc_call_buy": 0.0,
+                "mgc_call_sell": 0.0,
+                "mgc_put_buy": 0.0,
+                "mgc_put_sell": 0.0,
+            },
+        },
+        "GC": {
+            "futures": {
+                "nq_buy": 0.0,
+                "nq_sell": 0.0,
+                "mnq_buy": 0.0,
+                "mnq_sell": 0.0,
+                "gc_buy": 2.0,
+                "gc_sell": 0.0,
+                "mgc_buy": 1.0,
+                "mgc_sell": 3.0,
+            },
+            "options": {
+                "nq_call_buy": 0.0,
+                "nq_call_sell": 0.0,
+                "nq_put_buy": 0.0,
+                "nq_put_sell": 0.0,
+                "mnq_call_buy": 0.0,
+                "mnq_call_sell": 0.0,
+                "mnq_put_buy": 0.0,
+                "mnq_put_sell": 0.0,
+                "gc_call_buy": 0.0,
+                "gc_call_sell": 1.0,
+                "gc_put_buy": 2.0,
+                "gc_put_sell": 0.0,
+                "mgc_call_buy": 0.0,
+                "mgc_call_sell": 0.0,
+                "mgc_put_buy": 0.0,
+                "mgc_put_sell": 0.0,
+            },
+        },
+    }
+    text = asyncio.run(
+        format_position_report(
+            ["NQ", "GC"],
+            positions_detail=positions_detail,
+            target_futures_by_symbol={
+                "NQ": {"Main": 5.0, "Attitude": 3.0, "Booster": 2.0},
+                "GC": {"Main": 5.0, "Attitude": 3.0, "Booster": 2.0},
+            },
+            as_of=date(2026, 3, 30),
+        )
+    )
+    assert "【POSITIONS】 2026-03-30" in text
+    assert "NQ | NQ B=2 S=1 | MNQ B=10 S=2" in text
+    assert "Options (Buy/Sell per contract)" in text
+    assert "MNQ | target=10 | actual=18 | delta=-8" in text
+    assert "MGC | target=10 | actual=18 | delta=-8" in text

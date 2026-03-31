@@ -2,7 +2,7 @@
 """
 Telegram から /cockpit または /status で現在の FlightController 計器内容を返すボット。
 
-コマンド: /start, /ping, /cockpit, /status, /breakdown, /daily, /schedule, /target, /settarget
+コマンド: /start, /ping, /cockpit, /status, /breakdown, /daily, /position, /schedule, /target, /settarget
   /schedule: 取引時間スキャン（夏冬・短縮・休場の事前通知）。毎朝のルーチンや週次で実行推奨。
   /target: target_futures を MNQ/MGC 相当で表示（DB キーは NQ/GC）。
   /settarget: 片側だけ更新（mnq|mgc|nq|gc と 3 数）。要 TELEGRAM_TARGET_ADMIN_USER_IDS。
@@ -53,6 +53,7 @@ COCKPIT_BOT_COMMANDS_MESSAGE = (
     "/ping … 接続・設定確認\n"
     "/cockpit または /status … 現在の計器（IB から取得）\n"
     "/daily … Daily Flight Log（市場・資本・各層）\n"
+    "/position … ポジション明細 + target 差分\n"
     "/breakdown … 各因子の計算内訳（Layer 2 シグナル）\n"
     "/schedule … 取引時間スキャン（夏冬・短縮・休場の事前通知）\n"
     "/target … target_futures（MNQ/MGC 相当・Part 別）\n"
@@ -313,6 +314,29 @@ async def _fetch_daily_report(
         )
 
 
+async def _fetch_position_report(
+    host: str,
+    port: int,
+    symbols: list[str],
+    *,
+    client_id: int = 3,
+    timeout: float = 75.0,
+) -> str:
+    from reports.format_daily_report import format_position_report
+
+    async with _refreshed_fc(host, port, symbols, client_id=client_id, timeout=timeout) as (
+        _fc,
+        fetcher,
+        target_futures_by_symbol,
+    ):
+        positions_detail = await fetcher.fetch_position_detail(symbols)
+        return await format_position_report(
+            symbols,
+            positions_detail=positions_detail,
+            target_futures_by_symbol=target_futures_by_symbol,
+        )
+
+
 async def cockpit_command(update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """ /cockpit および /status で現在の計器内容を取得して返す。"""
     msg = update.effective_message
@@ -404,6 +428,38 @@ async def daily_command(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
     except asyncio.TimeoutError:
         try:
             await msg.reply_text("取得失敗: タイムアウト。Gateway 起動直後は約60秒かかります。しばらく待ってから再実行してください。")
+        except Exception:
+            pass
+    except Exception as e:
+        try:
+            await msg.reply_text(f"取得失敗: {type(e).__name__}: {e!s}"[:4000])
+        except Exception:
+            pass
+
+
+async def position_command(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """ /position でポジション明細 + target 差分を取得して返す。"""
+    msg = getattr(update, "effective_message", None)
+    if msg is None:
+        return
+    host, port, symbols, client_id, ib_timeout = _env_host_port_symbols()
+    try:
+        await msg.reply_text("Positions 取得中…")
+    except Exception:
+        pass
+    try:
+        report = await asyncio.wait_for(
+            _fetch_position_report(
+                host, port, symbols, client_id=client_id, timeout=ib_timeout
+            ),
+            timeout=COCKPIT_FETCH_TIMEOUT,
+        )
+        await msg.reply_text(report[:4000])
+    except asyncio.TimeoutError:
+        try:
+            await msg.reply_text(
+                "取得失敗: タイムアウト。Gateway 起動直後は約60秒かかります。しばらく待ってから再実行してください。"
+            )
         except Exception:
             pass
     except Exception as e:
@@ -535,6 +591,7 @@ def main() -> int:
     app.add_handler(CommandHandler("status", cockpit_command))
     app.add_handler(CommandHandler("breakdown", breakdown_command))
     app.add_handler(CommandHandler("daily", daily_command))
+    app.add_handler(CommandHandler("position", position_command))
     app.add_handler(CommandHandler("schedule", schedule_command))
     app.add_handler(CommandHandler("target", target_command))
     app.add_handler(CommandHandler("settarget", settarget_command))

@@ -30,6 +30,7 @@ if TYPE_CHECKING:
 LEVEL_STR = {0: "0", 1: "1", 2: "2"}
 
 _DEFAULT_TEMPLATE = "daily_flight_log.txt"
+_POSITION_TEMPLATE = "positions_log.txt"
 
 
 def _build_position_rows(
@@ -301,6 +302,55 @@ async def format_daily_report(
     """
     context = await _build_daily_flight_log_context(
         fc,
+        symbols,
+        positions_detail=positions_detail,
+        target_futures_by_symbol=target_futures_by_symbol,
+        as_of=as_of,
+    )
+    return render(template_name, context)
+
+
+async def _build_positions_log_context(
+    symbols: list[str],
+    *,
+    positions_detail: Optional[dict[str, dict[str, dict[str, float]]]] = None,
+    target_futures_by_symbol: Optional[dict[str, dict[str, float]]] = None,
+    as_of: Optional[date] = None,
+) -> dict[str, Any]:
+    """positions_log 用のコンテキストを返す。"""
+    d = as_of or date.today()
+    futures_rows, options_rows, futures_actual_net = _build_position_rows(
+        symbols, positions_detail
+    )
+    futures_target_rows = _build_futures_target_rows(
+        symbols, futures_actual_net, target_futures_by_symbol
+    )
+    return {
+        "date_iso": d.isoformat(),
+        "futures_rows": futures_rows,
+        "options_rows": options_rows,
+        "futures_target_rows": futures_target_rows,
+    }
+
+
+async def format_position_report(
+    symbols: list[str],
+    *,
+    positions_detail: Optional[dict[str, dict[str, dict[str, float]]]] = None,
+    target_futures_by_symbol: Optional[dict[str, dict[str, float]]] = None,
+    as_of: Optional[date] = None,
+    template_name: str = _POSITION_TEMPLATE,
+) -> str:
+    """
+    positions セクションのみのレポートを生成する。
+
+    :param symbols: 銘柄リスト（例: ["NQ", "GC"]）。
+    :param positions_detail: 銘柄別ポジション詳細（fetch_position_detail の戻り）。
+    :param target_futures_by_symbol: DB target_futures（MNQ/MGC 相当、内部キーは NQ/GC）。
+    :param as_of: 基準日。未指定なら date.today()。
+    :param template_name: 使用するテンプレートファイル名。
+    """
+    context = await _build_positions_log_context(
         symbols,
         positions_detail=positions_detail,
         target_futures_by_symbol=target_futures_by_symbol,
