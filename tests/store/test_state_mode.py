@@ -74,6 +74,49 @@ def test_read_mode_initial(conn: sqlite3.Connection) -> None:
     assert m["execution_lock"] == 0
 
 
+def test_s_factor_baseline_crud(conn: sqlite3.Connection) -> None:
+    from store.state import read_s_factor_baseline, upsert_s_factor_baseline
+
+    upsert_s_factor_baseline(conn, "NQ", 1234.0)
+    upsert_s_factor_baseline(conn, "GC", 567.0)
+    rows = read_s_factor_baseline(conn)
+    assert rows["NQ"] == 1234.0
+    assert rows["GC"] == 567.0
+
+    upsert_s_factor_baseline(conn, "NQ", 1500.0)
+    rows = read_s_factor_baseline(conn)
+    assert rows["NQ"] == 1500.0
+
+
+def test_db_wrapped_read_apis(conn: sqlite3.Connection) -> None:
+    from store.state import (
+        read_altitude_regime_from_db,
+        read_s_factor_baseline_from_db,
+        read_target_futures_from_db,
+        upsert_s_factor_baseline,
+        upsert_target_futures,
+    )
+
+    upsert_target_futures(conn, "NQ", 11.0)
+    upsert_target_futures(conn, "GC", 22.0)
+    upsert_s_factor_baseline(conn, "NQ", 1111.0)
+    upsert_s_factor_baseline(conn, "GC", 2222.0)
+
+    assert read_altitude_regime_from_db() == "mid"
+    assert read_target_futures_from_db() == {"NQ": 11.0, "GC": 22.0}
+    assert read_s_factor_baseline_from_db() == {"NQ": 1111.0, "GC": 2222.0}
+
+
+def test_set_target_futures_in_db(conn: sqlite3.Connection) -> None:
+    from store.state import upsert_target_futures
+    from store.target_futures import set_target_futures_in_db
+
+    upsert_target_futures(conn, "GC", 20.0)
+    out = set_target_futures_in_db("mnq", base=15.0)
+    assert out["NQ"] == 15.0
+    assert out["GC"] == 20.0
+
+
 def test_update_ap_mode(conn: sqlite3.Connection) -> None:
     from store.mode import read_mode, update_ap_mode
 

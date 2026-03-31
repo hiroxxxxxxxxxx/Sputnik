@@ -17,7 +17,7 @@ from avionics.data.raw_types import PriceBar, RawCapitalSnapshot
 from avionics.data.raw_market_snapshot import RawMarketSnapshot
 from avionics.bundle_builder import BundleBuildOptions
 from avionics.flight_controller import FlightController
-from avionics.ib.fetcher import _bar_to_price_bar
+from avionics.ib.fetcher import IBRawFetcher, _bar_to_price_bar
 
 
 def _run(coro):
@@ -81,6 +81,7 @@ class MockDataSource:
         liquidity_tip_symbol: Optional[str] = None,
         account: str = "",
         base_density: float = 1.0,
+        s_baseline_by_symbol: Optional[Dict[str, float]] = None,
         v_recovery_params: Optional[Dict[str, dict]] = None,
     ) -> Tuple[RawMarketSnapshot, Optional[RawCapitalSnapshot]]:
         return (self._snapshot, self._capital_snapshot)
@@ -198,3 +199,55 @@ def test_fc_refresh_with_liquidity_options() -> None:
     assert bundle is not None
     assert bundle.liquidity_credit_hyg is not None
     assert bundle.liquidity_tip is not None
+
+
+def test_fetch_s_whatif_collects_error_for_none_qualified_contract() -> None:
+    """qualifyContractsAsync が [None] のとき、当該銘柄にエラー理由を記録する。"""
+    pytest.importorskip("ib_async")
+
+    class _FakeIb:
+        async def qualifyContractsAsync(self, _contract):
+            return [None]
+
+        async def whatIfOrderAsync(self, _contract, _order):
+            raise AssertionError("whatIfOrderAsync must not be called when contract is None")
+
+    fetcher = IBRawFetcher(_FakeIb())
+    values, errors = asyncio.run(fetcher._fetch_s_whatif_mm_per_lot(["NQ"]))
+    assert values == {}
+    assert "NQ" in errors
+    assert "contract is None" in errors["NQ"]
+
+
+def test_fetch_account_summary_continues_when_whatif_fails() -> None:
+    """whatIf 失敗時も capital snapshot 自体は返す（S whatIf は None）。"""
+
+    class _FakeAv:
+        def __init__(self, tag: str, value: str) -> None:
+            self.tag = tag
+            self.value = value
+
+    class _Fetcher(IBRawFetcher):
+        async def _fetch_s_whatif_mm_per_lot(self, symbols):  # type: ignore[override]
+            raise ValueError(f"boom: {symbols}")
+
+    class _FakeIb:
+        async def accountSummaryAsync(self, _account):
+            return [
+                _FakeAv("NetLiquidation", "1000000"),
+                _FakeAv("MaintMarginReq", "80000"),
+                _FakeAv("GrossPositionValue", "500000"),
+            ]
+
+    fetcher = _Fetcher(_FakeIb())
+    cap = asyncio.run(
+        fetcher._fetch_account_summary(
+            account="",
+            base_density=1.0,
+            as_of=date(2026, 3, 31),
+            s_baseline_by_symbol={"NQ": 1200.0, "GC": 600.0},
+        )
+    )
+    assert cap is not None
+    assert cap.s_whatif_mm_per_lot is None
+    assert cap.s_baseline_mm_per_lot == {"NQ": 1200.0, "GC": 600.0}

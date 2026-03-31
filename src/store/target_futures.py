@@ -9,7 +9,8 @@ from __future__ import annotations
 import sqlite3
 from typing import Dict
 
-from .state import upsert_target_futures
+from .db import get_connection
+from .state import read_target_futures, upsert_target_futures
 
 ENGINE_SYMBOLS: tuple[str, ...] = ("NQ", "GC")
 
@@ -43,3 +44,17 @@ def set_target_futures(
     values = validate_target_futures_input(base=base)
     upsert_target_futures(conn, es, values["base"])
     return values
+
+
+def set_target_futures_in_db(
+    engine_symbol: str,
+    *,
+    base: float | None,
+) -> Dict[str, float]:
+    """DB 接続を内部で管理して target_futures(base) を更新し、最新値を返す。"""
+    conn = get_connection()
+    try:
+        set_target_futures(conn, engine_symbol, base=base)
+        return read_target_futures(conn)
+    finally:
+        conn.close()

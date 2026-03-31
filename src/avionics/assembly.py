@@ -33,7 +33,12 @@ from .factors.factors_config import (
 )
 
 
-def build_flight_controller(symbols: list[str], *, altitude: AltitudeRegime) -> FlightController:
+def build_flight_controller(
+    symbols: list[str],
+    *,
+    altitude: AltitudeRegime,
+    s_baseline_by_symbol: dict[str, float] | None = None,
+) -> FlightController:
     """
     config/factors.toml に基づき因子を登録した FlightController を組み立てる。
 
@@ -50,6 +55,7 @@ def build_flight_controller(symbols: list[str], *, altitude: AltitudeRegime) -> 
         liquidity_credit_hyg_symbol="HYG",
         liquidity_credit_lqd_symbol="LQD",
         liquidity_tip_symbol="TIP",
+        s_baseline_by_symbol=s_baseline_by_symbol,
     )
 
     global_market_factors: list = []

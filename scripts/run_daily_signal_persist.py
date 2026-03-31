@@ -67,7 +67,11 @@ async def main() -> int:
     from cockpit.stack import build_cockpit_stack
     from store.db import get_connection
     from store.signal_daily import upsert_signal_daily
-    from store.state import read_altitude_regime, read_target_futures
+    from store.state import (
+        read_altitude_regime,
+        read_s_factor_baseline,
+        read_target_futures,
+    )
     from store.knockin_watch import create_watch
     from notifications.telegram import send_telegram_message
     from reports.format_daily_report import format_daily_report
@@ -88,7 +92,12 @@ async def main() -> int:
     try:
         altitude = read_altitude_regime(conn)
         target_base_by_symbol = read_target_futures(conn)
-        fc, _engines = build_cockpit_stack(args.symbols, altitude=altitude)
+        s_baseline_by_symbol = read_s_factor_baseline(conn)
+        fc, _engines = build_cockpit_stack(
+            args.symbols,
+            altitude=altitude,
+            s_baseline_by_symbol=s_baseline_by_symbol,
+        )
         async with with_ib_fetcher(
             args.host,
             args.port,

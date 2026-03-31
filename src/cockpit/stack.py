@@ -25,6 +25,7 @@ def build_cockpit_stack(
     symbols: list[str],
     *,
     altitude: AltitudeRegime,
+    s_baseline_by_symbol: Optional[Dict[str, float]] = None,
     blueprints: Optional[Dict[str, Any]] = None,
     config: Optional[Dict[str, Any]] = None,
 ) -> Tuple[FlightController, List[Engine]]:
@@ -38,7 +39,11 @@ def build_cockpit_stack(
     """
     bp = blueprints if blueprints is not None else _default_blueprints()
     cfg = config if config is not None else {"base_unit": 1.0, "boost_ratio": 1.0}
-    fc = build_flight_controller(symbols, altitude=altitude)
+    fc = build_flight_controller(
+        symbols,
+        altitude=altitude,
+        s_baseline_by_symbol=s_baseline_by_symbol,
+    )
     engines: List[Engine] = []
     for sym in symbols:
         if sym == "NQ":

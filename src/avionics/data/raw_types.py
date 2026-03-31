@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Tuple
+from typing import Dict, Optional, Tuple
 
 VolatilitySeriesPoint = Tuple[date, float]
 
@@ -51,3 +51,6 @@ class RawCapitalSnapshot:
     base_density: float
     current_value: float = 0.0
     futures_multiplier: float = 1.0
+    s_whatif_mm_per_lot: Optional[Dict[str, float]] = None
+    s_baseline_mm_per_lot: Optional[Dict[str, float]] = None
+    s_whatif_errors: Optional[Dict[str, str]] = None

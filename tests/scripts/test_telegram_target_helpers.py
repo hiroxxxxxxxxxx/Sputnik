@@ -13,6 +13,7 @@ if str(_scripts) not in sys.path:
 
 from telegram_cockpit_bot import (  # noqa: E402
     COCKPIT_BOT_COMMANDS_MESSAGE,
+    _format_health_report,
     _parse_settarget_base_arg,
     _target_admin_user_ids_from_environ,
 )
@@ -52,4 +53,21 @@ def test_parse_settarget_base_arg_bad_float_raises() -> None:
 
 def test_commands_message_includes_position() -> None:
     assert "/position" in COCKPIT_BOT_COMMANDS_MESSAGE
-    assert "PB/BPS/CC/UNCLASSIFIED" in COCKPIT_BOT_COMMANDS_MESSAGE
+    assert "/settarget" in COCKPIT_BOT_COMMANDS_MESSAGE
+    assert "/health" in COCKPIT_BOT_COMMANDS_MESSAGE
+
+
+def test_format_health_report_ok() -> None:
+    text = _format_health_report(
+        {
+            "ib_connected": True,
+            "historical_nq_ok": True,
+            "historical_nq_bars": 3,
+            "whatif_mgc_ok": True,
+            "overall": "OK",
+        }
+    )
+    assert "IB socket: OK" in text
+    assert "Historical NQ: OK (bars=3" in text
+    assert "whatIf MGC: OK" in text
+    assert "Overall: OK" in text

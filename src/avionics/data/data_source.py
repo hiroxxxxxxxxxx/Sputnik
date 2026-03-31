@@ -31,6 +31,7 @@ class DataSource(Protocol):
         liquidity_tip_symbol: Optional[str] = None,
         account: str = "",
         base_density: float = 1.0,
+        s_baseline_by_symbol: Optional[Dict[str, float]] = None,
         v_recovery_params: Optional[Dict[str, dict]] = None,
     ) -> Tuple[
         RawMarketSnapshot,

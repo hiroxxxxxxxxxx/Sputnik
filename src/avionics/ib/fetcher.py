@@ -82,6 +82,28 @@ def _contract_for_etf(symbol: str) -> Any:
     return Stock(symbol=symbol, exchange="SMART", currency="USD")
 
 
+def _contract_for_micro_future(symbol: str) -> Any:
+    """S因子 whatIf 用のマイクロ先物契約。"""
+    from ib_async import Future
+
+    if symbol == "NQ":
+        return Future(symbol="MNQ", exchange="CME", currency="USD")
+    if symbol == "GC":
+        return Future(symbol="MGC", exchange="COMEX", currency="USD")
+    raise ValueError(f"Unsupported engine symbol for whatIf: {symbol}")
+
+
+def _parse_float_value(raw: Any, *, field_name: str) -> float:
+    if raw is None:
+        raise ValueError(f"{field_name} is None")
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    s = str(raw).replace(",", "").strip()
+    if not s:
+        raise ValueError(f"{field_name} is empty")
+    return float(s)
+
+
 class IBRawFetcher:
     """
     ib_async の IB インスタンスを使い、Raw を非同期で取得する（Layer 1 のみ）。
@@ -183,6 +205,7 @@ class IBRawFetcher:
         account: str = "",
         base_density: float = 1.0,
         as_of: Optional[date] = None,
+        s_baseline_by_symbol: Optional[Dict[str, float]] = None,
     ) -> Optional[RawCapitalSnapshot]:
         """証拠金サマリから RawCapitalSnapshot を組み立てる。"""
         summary = await self._ib.accountSummaryAsync(account)
@@ -198,6 +221,17 @@ class IBRawFetcher:
             return None
         current_value = by_tag.get("GrossPositionValue") or nlv
         d = as_of or date.today()
+        s_whatif_mm_per_lot: Optional[Dict[str, float]] = None
+        s_whatif_errors: Optional[Dict[str, str]] = None
+        if s_baseline_by_symbol is not None:
+            try:
+                s_whatif_mm_per_lot, s_whatif_errors = await self._fetch_s_whatif_mm_per_lot(
+                    sorted(s_baseline_by_symbol.keys())
+                )
+            except Exception:
+                # whatIf 取得に失敗しても全体取得は継続する（S比率表示のみ省略）。
+                s_whatif_mm_per_lot = None
+                s_whatif_errors = None
         return RawCapitalSnapshot(
             as_of=d,
             mm=mm,
@@ -205,7 +239,76 @@ class IBRawFetcher:
             base_density=base_density,
             current_value=current_value,
             futures_multiplier=1.0,
+            s_whatif_mm_per_lot=s_whatif_mm_per_lot,
+            s_baseline_mm_per_lot=s_baseline_by_symbol,
+            s_whatif_errors=s_whatif_errors,
         )
+
+    async def _fetch_s_whatif_mm_per_lot(
+        self, symbols: List[str]
+    ) -> Tuple[Dict[str, float], Dict[str, str]]:
+        """S因子用 whatIf（1枚あたりMM）を銘柄別に取得する。"""
+        from ib_async import MarketOrder
+
+        out: Dict[str, float] = {}
+        errors: Dict[str, str] = {}
+        for sym in symbols:
+            try:
+                base_contract = _contract_for_micro_future(sym)
+                contract = base_contract
+                if hasattr(self._ib, "reqContractDetailsAsync"):
+                    details = await self._ib.reqContractDetailsAsync(base_contract)
+                    if details:
+                        candidates = [
+                            getattr(d, "contract", None)
+                            for d in details
+                            if getattr(d, "contract", None) is not None
+                        ]
+                        futs = [c for c in candidates if getattr(c, "secType", None) == "FUT"]
+                        if futs:
+                            contract = sorted(
+                                futs,
+                                key=lambda c: str(getattr(c, "lastTradeDateOrContractMonth", "")),
+                            )[0]
+                elif hasattr(self._ib, "qualifyContractsAsync"):
+                    qualified = await self._ib.qualifyContractsAsync(base_contract)
+                    first_qualified = qualified[0] if qualified else None
+                    if first_qualified is not None:
+                        contract = first_qualified
+                if contract is None:
+                    raise ValueError(f"whatIf contract resolve failed for {sym}: contract is None")
+                if getattr(contract, "secType", None) in (None, ""):
+                    raise ValueError(
+                        f"whatIf contract resolve failed for {sym}: secType missing on contract"
+                    )
+                order = MarketOrder("BUY", 1)
+                order.whatIf = True
+                if hasattr(self._ib, "whatIfOrderAsync"):
+                    trade_or_state = await asyncio.wait_for(
+                        self._ib.whatIfOrderAsync(contract, order), timeout=12
+                    )
+                elif hasattr(self._ib, "whatIfOrder"):
+                    trade_or_state = self._ib.whatIfOrder(contract, order)
+                else:
+                    raise ValueError("IB client does not support whatIf order API")
+                state = getattr(trade_or_state, "orderState", trade_or_state)
+                mm_value = None
+                for field in ("maintMarginChange", "initMarginChange"):
+                    if hasattr(state, field):
+                        mm_value = getattr(state, field)
+                        if mm_value not in (None, "", "0", "0.0"):
+                            break
+                if mm_value in (None, "", "0", "0.0"):
+                    raise ValueError(f"whatIf margin value missing for {sym}")
+                parsed = _parse_float_value(mm_value, field_name=f"whatIf margin for {sym}")
+                if parsed <= 0:
+                    raise ValueError(f"whatIf margin must be > 0 for {sym}, got {parsed}")
+                out[sym] = parsed
+            except Exception as e:
+                # 銘柄単位の部分成功: 失敗銘柄はスキップして他銘柄を継続取得する。
+                errors[sym] = f"{type(e).__name__}: {e}"
+                continue
+        return out, errors
 
     async def fetch_raw(
         self,
@@ -218,6 +321,7 @@ class IBRawFetcher:
         liquidity_tip_symbol: Optional[str] = None,
         account: str = "",
         base_density: float = 1.0,
+        s_baseline_by_symbol: Optional[Dict[str, float]] = None,
         v_recovery_params: Optional[Dict[str, dict]] = None,
     ) -> Tuple[
         RawMarketSnapshot,
@@ -251,7 +355,12 @@ class IBRawFetcher:
                 )
             )
         coros.append(
-            self._fetch_account_summary(account=account, base_density=base_density, as_of=as_of)
+            self._fetch_account_summary(
+                account=account,
+                base_density=base_density,
+                as_of=as_of,
+                s_baseline_by_symbol=s_baseline_by_symbol,
+            )
         )
         coros.append(
             self._fetch_bars(_contract_for_etf(liquidity_credit_hyg_symbol), as_of)

@@ -307,7 +307,29 @@ def compute_capital_signals_from_cap(cap: Optional[RawCapitalSnapshot]) -> Capit
     denom = cap.current_value * cap.futures_multiplier
     current_density = cap.mm / denom
     span_ratio = current_density / cap.base_density
-    return CapitalSignals(mm_over_nlv=mm_over_nlv, span_ratio=span_ratio)
+    s_whatif = cap.s_whatif_mm_per_lot
+    s_baseline = cap.s_baseline_mm_per_lot
+    if s_baseline is not None:
+        baseline_symbols = sorted(s_baseline.keys())
+        if not baseline_symbols:
+            raise ValueError("RawCapitalSnapshot.s_baseline_mm_per_lot must not be empty")
+        if s_whatif is not None:
+            missing = [sym for sym in baseline_symbols if sym not in s_whatif]
+            if not missing:
+                baseline_total = sum(float(s_baseline[sym]) for sym in baseline_symbols)
+                if baseline_total <= 0:
+                    raise ValueError(f"S baseline total must be > 0, got {baseline_total}")
+                whatif_total = sum(float(s_whatif[sym]) for sym in baseline_symbols)
+                if whatif_total <= 0:
+                    raise ValueError(f"S whatIf total must be > 0, got {whatif_total}")
+                span_ratio = whatif_total / baseline_total
+    return CapitalSignals(
+        mm_over_nlv=mm_over_nlv,
+        span_ratio=span_ratio,
+        s_whatif_mm_per_lot=s_whatif,
+        s_baseline_mm_per_lot=s_baseline,
+        s_whatif_errors=cap.s_whatif_errors,
+    )
 
 
 def compute_liquidity_signals_credit_from_bars(

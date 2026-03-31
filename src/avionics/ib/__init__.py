@@ -9,12 +9,18 @@ reports / scripts は avionics.ib のみ import し、ib_async は直接 import 
 
 from .fetcher import IBRawFetcher
 from .schedule_scan import fetch_trading_hours_async, run_daily_schedule_scan
-from .session import check_ib_connection, with_ib_connection, with_ib_fetcher
+from .session import (
+    check_ib_connection,
+    run_ib_healthcheck,
+    with_ib_connection,
+    with_ib_fetcher,
+)
 
 __all__ = [
     "check_ib_connection",
     "fetch_trading_hours_async",
     "IBRawFetcher",
+    "run_ib_healthcheck",
     "run_daily_schedule_scan",
     "with_ib_connection",
     "with_ib_fetcher",

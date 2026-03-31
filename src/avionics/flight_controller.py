@@ -125,6 +125,7 @@ class FlightController:
             liquidity_tip_symbol=opts.liquidity_tip_symbol,
             account=opts.account,
             base_density=opts.base_density,
+            s_baseline_by_symbol=opts.s_baseline_by_symbol,
             v_recovery_params=v_recovery_params,
         )
         if len(raw_result) == 2:

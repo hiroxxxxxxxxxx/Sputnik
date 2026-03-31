@@ -38,6 +38,16 @@ def _fmt_pct(value: float | None) -> str:
     return "—" if value is None else f"{float(value) * 100:.2f}%"
 
 
+def _fmt_float_or_na(value: float | None) -> str:
+    return "N/A" if value is None else f"{float(value):.2f}"
+
+
+def _safe_ratio_text(numerator: float | None, denominator: float | None) -> str:
+    if numerator is None or denominator is None or denominator <= 0:
+        return "N/A"
+    return f"{float(numerator / denominator):.2f}"
+
+
 def _v_confirm_days(
     fc: "FlightController",
     symbol: str,
@@ -208,15 +218,67 @@ def _build_breakdown_report_context(
             ],
         }
 
-    capital_section: dict[str, Any] | None = None
+    u_section: dict[str, Any] | None = None
+    s_section: dict[str, Any] | None = None
     if bundle.capital_signals:
         cs = bundle.capital_signals
-        capital_section = {
-            "rows": [
-                _kv("MM/NLV", f"{cs.mm_over_nlv:.2f} ({cs.mm_over_nlv * 100:.2f}%)"),
-                _kv("SPAN 比 (span_ratio)", f"{cs.span_ratio:.2f}"),
-            ],
-        }
+        u_rows = [
+            _kv("MM/NLV", f"{cs.mm_over_nlv:.2f} ({cs.mm_over_nlv * 100:.2f}%)"),
+        ]
+        s_rows = [
+            _kv("SPAN 比 (span_ratio)", f"{cs.span_ratio:.2f}"),
+        ]
+        baseline_map = cs.s_baseline_mm_per_lot
+        whatif_map = cs.s_whatif_mm_per_lot
+        whatif_errors = cs.s_whatif_errors or {}
+        syms = sorted(baseline_map.keys()) if baseline_map else []
+        if not syms:
+            syms = sorted(whatif_map.keys()) if whatif_map else []
+
+        has_full_whatif = bool(
+            syms
+            and whatif_map is not None
+            and all(sym in whatif_map for sym in syms)
+        )
+        whatif_total = (
+            sum(float(whatif_map[s]) for s in syms)  # type: ignore[index]
+            if has_full_whatif
+            else None
+        )
+        baseline_total = (
+            sum(float(baseline_map[s]) for s in syms if baseline_map and s in baseline_map)
+            if baseline_map is not None and syms
+            else None
+        )
+        s_rows.extend(
+            [
+                _kv("S whatIf total", _fmt_float_or_na(whatif_total)),
+                _kv("S baseline total", _fmt_float_or_na(baseline_total)),
+                _kv("S total ratio (whatIf/base)", _safe_ratio_text(whatif_total, baseline_total)),
+            ]
+        )
+
+        for sym in ("NQ", "GC"):
+            w = (
+                float(whatif_map[sym])
+                if whatif_map is not None and sym in whatif_map
+                else None
+            )
+            b = (
+                float(baseline_map[sym])
+                if baseline_map is not None and sym in baseline_map
+                else None
+            )
+            s_rows.append(
+                _kv(
+                    f"S {sym} (whatIf/base/ratio)",
+                    f"{_fmt_float_or_na(w)} / {_fmt_float_or_na(b)} / {_safe_ratio_text(w, b)}",
+                )
+            )
+            if w is None and sym in whatif_errors:
+                s_rows.append(_kv(f"S {sym} reason", whatif_errors[sym]))
+        u_section = {"rows": u_rows}
+        s_section = {"rows": s_rows}
 
     position_ctx = {
         "symbols": [],
@@ -238,7 +300,8 @@ def _build_breakdown_report_context(
         "volatility_sections": volatility_sections,
         "credit_sections": credit_sections,
         "r_section": r_section,
-        "capital_section": capital_section,
+        "u_section": u_section,
+        "s_section": s_section,
         "pos_symbols": position_ctx["symbols"],
         "pos_futures_target_rows": position_ctx["futures_target_rows"],
         "pos_options_rows": position_ctx["options_rows"],

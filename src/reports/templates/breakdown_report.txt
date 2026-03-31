@@ -35,10 +35,18 @@ Layer 2 シグナル（各因子の入力値）内訳
 {% endfor %}
 {% endif %}
 
-{% if capital_section %}
+{% if u_section %}
 ────────────────────
-[5] U/S（資本）
-{% for row in capital_section.rows %}
+[5-A] U（資本使用率）
+{% for row in u_section.rows %}
+{{ row.label }} | {{ row.value }}
+{% endfor %}
+{% endif %}
+
+{% if s_section %}
+────────────────────
+[5-B] S（SPAN）
+{% for row in s_section.rows %}
 {{ row.label }} | {{ row.value }}
 {% endfor %}
 {% endif %}

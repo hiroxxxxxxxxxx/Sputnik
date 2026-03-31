@@ -32,6 +32,7 @@ class BundleBuildOptions:
     altitude: AltitudeRegime
     liquidity_tip_symbol: Optional[str] = None
     base_density: float = 1.0
+    s_baseline_by_symbol: Optional[Dict[str, float]] = None
     account: str = ""
     volatility_symbols: Optional[Dict[str, str]] = None
     v_recovery_params: Optional[Dict[str, dict]] = None

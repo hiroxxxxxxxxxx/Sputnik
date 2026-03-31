@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Literal, Optional, Tuple
+from typing import Dict, Literal, Optional, Tuple
 
 TrendType = Literal["up", "down", "flat"]
 AltitudeRegime = Literal["high", "mid", "low"]
@@ -78,6 +78,9 @@ class CapitalSignals:
     """U 因子・S 因子用。証拠金使用率と SPAN 乖離率。"""
     mm_over_nlv: float
     span_ratio: float
+    s_whatif_mm_per_lot: Optional[Dict[str, float]] = None
+    s_baseline_mm_per_lot: Optional[Dict[str, float]] = None
+    s_whatif_errors: Optional[Dict[str, str]] = None
 
 
 @dataclass(frozen=True)
