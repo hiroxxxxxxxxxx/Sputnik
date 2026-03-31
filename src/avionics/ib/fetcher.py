@@ -17,6 +17,7 @@ from ..data.raw_types import (
     RawCapitalSnapshot,
     VolatilitySeriesPoint,
 )
+from ..data.futures_micro_equiv import signed_future_root_qty_to_micro_equivalent
 from ..data.raw_market_snapshot import RawMarketSnapshot
 
 
@@ -104,9 +105,9 @@ class IBRawFetcher:
         """
         口座ポジションを銘柄別に集計し、{symbol: {future,k1,k2}} を返す。
 
-        - future: 先物（FUT/CONTFUT）
-        - k1: オプションC（OPT/FOP, right=C）
-        - k2: オプションP（OPT/FOP, right=P）
+        - future: 先物（FUT/CONTFUT）を **マイクロ相当枚数**（NQ 群→MNQ 相当、GC 群→MGC 相当）に換算したネット
+        - k1: オプションC（OPT/FOP, right=C）。エンジン銘柄（NQ/GC）へ MNQ/MGC ルートは正規化して集計
+        - k2: オプションP（OPT/FOP, right=P）。同上
         """
         if hasattr(self._ib, "reqPositionsAsync"):
             positions = await self._ib.reqPositionsAsync()
@@ -117,22 +118,25 @@ class IBRawFetcher:
         else:
             raise ValueError("IB fetcher does not support positions API")
 
-        out: Dict[str, Dict[str, float]] = {s: _symbol_position_zero() for s in symbols}
-        symbol_set = set(symbols)
+        symbol_set = {s.strip().upper() for s in symbols}
+        out: Dict[str, Dict[str, float]] = {s: _symbol_position_zero() for s in symbol_set}
 
         for pos in positions:
             contract = getattr(pos, "contract", None)
             if contract is None:
                 continue
-            symbol = str(getattr(contract, "symbol", "")).strip()
-            if symbol not in symbol_set:
+            raw_symbol = str(getattr(contract, "symbol", "")).strip().upper()
+            group_symbol = _normalize_position_symbol(raw_symbol)
+            if group_symbol not in symbol_set:
                 continue
             qty = float(getattr(pos, "position", 0.0))
             sec_type = str(getattr(contract, "secType", "")).upper()
             right = str(getattr(contract, "right", "")).upper()
-            legs = out[symbol]
+            legs = out[group_symbol]
             if sec_type in ("FUT", "CONTFUT"):
-                legs["future"] += qty
+                legs["future"] += signed_future_root_qty_to_micro_equivalent(
+                    raw_symbol, qty
+                )
             elif sec_type in ("OPT", "FOP"):
                 if right == "P":
                     legs["k2"] += qty

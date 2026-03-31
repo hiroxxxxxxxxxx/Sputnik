@@ -54,15 +54,18 @@ def test_update_altitude_same_value_noop(conn: sqlite3.Connection) -> None:
 def test_target_futures_crud(conn: sqlite3.Connection) -> None:
     from store.state import read_target_futures, upsert_target_futures
 
-    upsert_target_futures(conn, "Main", 5.0)
-    upsert_target_futures(conn, "Attitude", 2.0)
+    for sym in ("NQ", "GC"):
+        upsert_target_futures(conn, sym, "Main", 5.0)
+        upsert_target_futures(conn, sym, "Attitude", 2.0)
+        upsert_target_futures(conn, sym, "Booster", 0.0)
     targets = read_target_futures(conn)
-    assert targets["Main"] == 5.0
-    assert targets["Attitude"] == 2.0
+    assert targets["NQ"]["Main"] == 5.0
+    assert targets["GC"]["Attitude"] == 2.0
 
-    upsert_target_futures(conn, "Main", 7.0)
+    upsert_target_futures(conn, "NQ", "Main", 7.0)
     targets = read_target_futures(conn)
-    assert targets["Main"] == 7.0
+    assert targets["NQ"]["Main"] == 7.0
+    assert targets["GC"]["Main"] == 5.0
 
 
 def test_read_mode_initial(conn: sqlite3.Connection) -> None:

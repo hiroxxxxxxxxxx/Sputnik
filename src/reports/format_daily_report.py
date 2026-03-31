@@ -11,7 +11,13 @@ from __future__ import annotations
 from datetime import date
 from typing import TYPE_CHECKING, Any, Optional
 
+from avionics.data.futures_micro_equiv import (
+    engine_symbol_to_micro_notional_label,
+    micro_equivalent_net_gc_family,
+    micro_equivalent_net_nq_family,
+)
 from cockpit.mode import MODE_STR
+from engines.blueprint import PART_NAMES
 from reports._render import render
 
 if TYPE_CHECKING:
@@ -29,12 +35,13 @@ _DEFAULT_TEMPLATE = "daily_flight_log.txt"
 def _build_position_rows(
     symbols: list[str],
     positions_detail: Optional[dict[str, dict[str, dict[str, float]]]],
-) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
-    """先物行とオプション行を返す。"""
+) -> tuple[list[dict[str, str]], list[dict[str, str]], dict[str, float]]:
+    """先物行・オプション行と銘柄別先物ネットを返す。"""
     if not positions_detail:
-        return [], []
+        return [], [], {}
     futures_rows: list[dict[str, str]] = []
     options_rows: list[dict[str, str]] = []
+    futures_actual_net: dict[str, float] = {}
     for sym in symbols:
         detail = positions_detail.get(sym)
         if detail is None:
@@ -54,6 +61,10 @@ def _build_position_rows(
                 "mgc_sell": f"{float(fut.get('mgc_sell', 0.0)):.0f}",
             }
         )
+        if sym == "NQ":
+            futures_actual_net[sym] = micro_equivalent_net_nq_family(fut)
+        elif sym == "GC":
+            futures_actual_net[sym] = micro_equivalent_net_gc_family(fut)
         options_rows.append(
             {
                 "symbol": sym,
@@ -75,7 +86,40 @@ def _build_position_rows(
                 "mgc_put_sell": f"{float(opt.get('mgc_put_sell', 0.0)):.0f}",
             }
         )
-    return futures_rows, options_rows
+    return futures_rows, options_rows, futures_actual_net
+
+
+def _build_futures_target_rows(
+    symbols: list[str],
+    futures_actual_net: dict[str, float],
+    target_futures_by_symbol: Optional[dict[str, dict[str, float]]],
+) -> list[dict[str, str]]:
+    """先物の target / actual_net / delta 行を返す（銘柄ごとの Part 合計 target）。"""
+    if target_futures_by_symbol is None:
+        return []
+    rows: list[dict[str, str]] = []
+    for sym in symbols:
+        if sym not in ("NQ", "GC"):
+            continue
+        parts = target_futures_by_symbol.get(sym)
+        if parts is None:
+            raise ValueError(f"target_futures missing engine symbol: {sym}")
+        missing = [p for p in PART_NAMES if p not in parts]
+        if missing:
+            raise ValueError(f"target_futures missing part rows for {sym}: {missing}")
+        target_total = sum(float(parts[p]) for p in PART_NAMES)
+        actual_net = float(futures_actual_net.get(sym, 0.0))
+        delta = target_total - actual_net
+        rows.append(
+            {
+                "symbol": sym,
+                "micro_label": engine_symbol_to_micro_notional_label(sym),
+                "target": f"{target_total:.0f}",
+                "actual": f"{actual_net:.0f}",
+                "delta": f"{delta:.0f}",
+            }
+        )
+    return rows
 
 
 def _build_icl_sections(
@@ -184,6 +228,7 @@ async def _build_daily_flight_log_context(
     fc: "FlightController",
     symbols: list[str],
     positions_detail: Optional[dict[str, dict[str, dict[str, float]]]] = None,
+    target_futures_by_symbol: Optional[dict[str, dict[str, float]]] = None,
     as_of: Optional[date] = None,
 ) -> dict[str, Any]:
     """FlightController から Daily Flight Log 用のテンプレートコンテキストを組み立てる。"""
@@ -208,7 +253,12 @@ async def _build_daily_flight_log_context(
     scl_level, scl_rows, lcl_level, lcl_rows = _build_scl_lcl_rows(
         signal, bundle, mapping, symbols, altitude=altitude
     )
-    futures_rows, options_rows = _build_position_rows(symbols, positions_detail)
+    futures_rows, options_rows, futures_actual_net = _build_position_rows(
+        symbols, positions_detail
+    )
+    futures_target_rows = _build_futures_target_rows(
+        symbols, futures_actual_net, target_futures_by_symbol
+    )
 
     return {
         "date_iso": d.isoformat(),
@@ -220,6 +270,7 @@ async def _build_daily_flight_log_context(
         "lcl_level": lcl_level,
         "lcl_rows": lcl_rows,
         "futures_rows": futures_rows,
+        "futures_target_rows": futures_target_rows,
         "options_rows": options_rows,
         "nlv_line": nlv_line,
         "cash_buffer_line": cash_buffer_line,
@@ -231,6 +282,7 @@ async def format_daily_report(
     fc: "FlightController",
     symbols: list[str],
     positions_detail: Optional[dict[str, dict[str, dict[str, float]]]] = None,
+    target_futures_by_symbol: Optional[dict[str, dict[str, float]]] = None,
     as_of: Optional[date] = None,
     template_name: str = _DEFAULT_TEMPLATE,
 ) -> str:
@@ -242,11 +294,16 @@ async def format_daily_report(
     :param symbols: 銘柄リスト（例: ["NQ", "GC"]）。
     :param positions_detail: 銘柄別ポジション詳細。
         futures は nq_buy/nq_sell, mnq_*, gc_*, mgc_*（オプションは call_buy 等）。
+    :param target_futures_by_symbol: DB target_futures（**MNQ/MGC 相当枚数**。内部キーは NQ/GC）。
     :param as_of: 基準日。未指定なら date.today()。
     :param template_name: 使用するテンプレートファイル名。
     :return: Telegram 送信用のテキスト。
     """
     context = await _build_daily_flight_log_context(
-        fc, symbols, positions_detail=positions_detail, as_of=as_of
+        fc,
+        symbols,
+        positions_detail=positions_detail,
+        target_futures_by_symbol=target_futures_by_symbol,
+        as_of=as_of,
     )
     return render(template_name, context)

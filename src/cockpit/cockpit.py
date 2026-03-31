@@ -39,6 +39,7 @@ def _split_actual_by_target(
 ) -> Dict[str, Dict[str, float]]:
     """
     銘柄の実ポジション（future/k1/k2）を target_futures 比率で Part に配賦する。
+    future レッグは MNQ/MGC 相当枚数（IBRawFetcher.fetch_position_legs と揃える）。
     """
     from engines.blueprint import PART_NAMES
 
@@ -261,11 +262,11 @@ class Cockpit:
                 )
             fetch_position_legs = getattr(data_source, "fetch_position_legs")
             positions_by_symbol = await fetch_position_legs(symbols)
-            target_futures = read_target_futures(self._conn)
+            target_futures_by_symbol = read_target_futures(self._conn)
         elif altitude is not None:
             await self.fc.refresh(data_source, as_of, symbols, altitude=altitude)
             positions_by_symbol = {}
-            target_futures = {}
+            target_futures_by_symbol = {}
         else:
             raise ValueError(
                 "Cockpit.pulse requires conn=... or altitude=... (tests only)"
@@ -300,11 +301,13 @@ class Cockpit:
                         raise ValueError(
                             f"IB positions missing symbol: {engine.symbol_type}"
                         )
-                    actual_by_part = _split_actual_by_target(symbol_actual, target_futures)
+                    sym = engine.symbol_type
+                    tf_part = target_futures_by_symbol[sym]
+                    actual_by_part = _split_actual_by_target(symbol_actual, tf_part)
                     await engine.apply_mode(
                         target_mode,
                         actual_by_part=actual_by_part,
-                        target_futures_by_part=target_futures,
+                        target_futures_by_part=tf_part,
                     )
                 else:
                     await engine.apply_mode(target_mode)

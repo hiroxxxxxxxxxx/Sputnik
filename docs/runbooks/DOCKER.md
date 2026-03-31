@@ -113,7 +113,8 @@ docker compose -f docker/docker-compose.yml up -d
 
 3. Telegram でそのボットに **`/cockpit`** または **`/status`** を送ると、IB から取得した直近の計器（銘柄別モード・理由・raw_metrics）が返ります。  
    **`/ping`** で「接続OK」と現在の IB 接続先（IBKR_HOST:IBKR_PORT）を表示します（ボットが反応するか・設定が読めているかの確認用）。  
-   銘柄は環境変数 `TELEGRAM_COCKPIT_SYMBOLS`（省略時 `NQ,GC`）で変更できます。
+   銘柄は環境変数 `TELEGRAM_COCKPIT_SYMBOLS`（省略時 `NQ,GC`）で変更できます。  
+   **`/target`** で target_futures を **MNQ/MGC 相当**で表示。**`/settarget <mnq|mgc|nq|gc> …`** で片側更新。更新許可: **`TELEGRAM_TARGET_ADMIN_USER_IDS`**（`user_id` をカンマ区切り）を推奨。**プライベートのみ**なら、通知用 **`TELEGRAM_CHAT_ID`** を自分の `user_id` と同じ数値にしていれば足りる場合がある（ボット再起動後）。**`/ping`** に「settarget 許可ID: N 件」と出る。拒否時はメッセージに自分の `user_id` が出る。
 
 **接続の整理**
 

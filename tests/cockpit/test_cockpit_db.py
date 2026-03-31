@@ -125,9 +125,10 @@ def test_approval_mode_setter_persists(conn) -> None:
 def test_cockpit_pulse_applies_with_ib_positions_and_target_futures(conn) -> None:
     from store.state import upsert_target_futures
 
-    upsert_target_futures(conn, "Main", 8.0)
-    upsert_target_futures(conn, "Attitude", 2.0)
-    upsert_target_futures(conn, "Booster", 0.0)
+    for sym in ("NQ", "GC"):
+        upsert_target_futures(conn, sym, "Main", 8.0)
+        upsert_target_futures(conn, sym, "Attitude", 2.0)
+        upsert_target_futures(conn, sym, "Booster", 0.0)
 
     class DummyEngine:
         symbol_type = "NQ"

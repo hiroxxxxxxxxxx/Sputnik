@@ -2,12 +2,15 @@
 """
 Telegram から /cockpit または /status で現在の FlightController 計器内容を返すボット。
 
-コマンド: /start, /ping, /cockpit, /status, /breakdown, /daily, /schedule
+コマンド: /start, /ping, /cockpit, /status, /breakdown, /daily, /schedule, /target, /settarget
   /schedule: 取引時間スキャン（夏冬・短縮・休場の事前通知）。毎朝のルーチンや週次で実行推奨。
+  /target: target_futures を MNQ/MGC 相当で表示（DB キーは NQ/GC）。
+  /settarget: 片側だけ更新（mnq|mgc|nq|gc と 3 数）。要 TELEGRAM_TARGET_ADMIN_USER_IDS。
 
 用法:
   PYTHONPATH=src python scripts/telegram_cockpit_bot.py
   環境変数: TELEGRAM_TOKEN（必須）, IBKR_HOST, IBKR_PORT（IB 取得時）, TELEGRAM_COCKPIT_SYMBOLS（省略時 NQ,GC）
+  target 更新許可: TELEGRAM_TARGET_ADMIN_USER_IDS（推奨）またはプライベート運用で TELEGRAM_CHAT_ID と同一 user_id
 """
 
 from __future__ import annotations
@@ -51,7 +54,9 @@ COCKPIT_BOT_COMMANDS_MESSAGE = (
     "/cockpit または /status … 現在の計器（IB から取得）\n"
     "/daily … Daily Flight Log（市場・資本・各層）\n"
     "/breakdown … 各因子の計算内訳（Layer 2 シグナル）\n"
-    "/schedule … 取引時間スキャン（夏冬・短縮・休場の事前通知）"
+    "/schedule … 取引時間スキャン（夏冬・短縮・休場の事前通知）\n"
+    "/target … target_futures（MNQ/MGC 相当・Part 別）\n"
+    "/settarget <mnq|mgc|nq|gc> <main> <attitude> <booster> … 該当側のみ更新（要管理者 user_id）"
 )
 
 
@@ -69,13 +74,165 @@ async def ping_command(update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if msg is None:
         return
     host, port, symbols, _cid, _timeout = _env_host_port_symbols()
+    admins = _target_admin_user_ids_from_environ()
+    admin_line = f"settarget 許可ID: {len(admins)} 件（TELEGRAM_TARGET_ADMIN_USER_IDS / TELEGRAM_CHAT_ID）"
     await msg.reply_text(
-        f"接続OK\nIB: {host}:{port}\n（/cockpit はここに接続して取得します）"
+        f"接続OK\nIB: {host}:{port}\n（/cockpit はここに接続して取得します）\n{admin_line}"
     )
 
 
 # 接続に最大75秒＋取得に余裕。Gateway 起動直後は約60秒かかることがある
 COCKPIT_FETCH_TIMEOUT = 90
+
+
+def _parse_optional_telegram_numeric_id(value: str) -> int | None:
+    """環境変数用: 数値のみの user/chat id（先頭のマイナス可）を int にする。不正なら None。"""
+    s = value.strip()
+    if not s:
+        return None
+    if s.startswith("-") and s[1:].isdigit():
+        return int(s)
+    if s.isdigit():
+        return int(s)
+    return None
+
+
+def _target_admin_user_ids_from_environ() -> frozenset[int]:
+    """
+    /settarget 許可ユーザーの Telegram 数値 ID 集合。
+
+    - TELEGRAM_TARGET_ADMIN_USER_IDS: カンマ区切り（必須推奨）
+    - TELEGRAM_CHAT_ID: 未設定のときのフォールバック。プライベートチャットでは
+      通知先 chat_id と自分の user_id が同じことが多いので、その 1 名分として合流する。
+      グループ id（負の大きい数）は user_id と一致しないため、実質プライベート向け。
+    """
+    raw = os.environ.get("TELEGRAM_TARGET_ADMIN_USER_IDS", "").strip()
+    out: set[int] = set()
+    for part in raw.split(","):
+        tid = _parse_optional_telegram_numeric_id(part)
+        if tid is not None:
+            out.add(tid)
+    chat_tid = _parse_optional_telegram_numeric_id(
+        os.environ.get("TELEGRAM_CHAT_ID", "")
+    )
+    if chat_tid is not None:
+        out.add(chat_tid)
+    return frozenset(out)
+
+
+def _parse_settarget_float_args(args: list[str]) -> tuple[float, float, float]:
+    """ /settarget の positional 引数 3 つを float にする。"""
+    if len(args) != 3:
+        raise ValueError(
+            "main / attitude / booster の 3 数を指定してください（MNQ/MGC 相当枚数）。"
+        )
+    out: list[float] = []
+    for i, a in enumerate(args):
+        try:
+            out.append(float(a))
+        except ValueError as e:
+            raise ValueError(
+                f"位置 {i + 1} が数値として解釈できません: {a!r}"
+            ) from e
+    return out[0], out[1], out[2]
+
+
+async def target_command(update: object, context: "ContextTypes.DEFAULT_TYPE") -> None:
+    """ /target で DB の target_futures を表示。"""
+    msg = getattr(update, "effective_message", None)
+    if msg is None:
+        return
+    from avionics.data.futures_micro_equiv import engine_symbol_to_micro_notional_label
+    from store.db import get_connection
+    from store.state import read_target_futures
+
+    conn = get_connection()
+    try:
+        try:
+            cur = read_target_futures(conn)
+        except ValueError as e:
+            await msg.reply_text(
+                f"{e}\n"
+                "set_target_futures CLI または /settarget で MNQ/MGC 側それぞれ全 Part を設定してください。"
+            )
+            return
+    finally:
+        conn.close()
+    lines = ["target_futures（MNQ/MGC 相当枚数）"]
+    for sym in ("NQ", "GC"):
+        p = cur[sym]
+        ml = engine_symbol_to_micro_notional_label(sym)
+        lines.append(
+            f"{ml}: Main={float(p['Main']):.0f} "
+            f"Attitude={float(p['Attitude']):.0f} "
+            f"Booster={float(p['Booster']):.0f}"
+        )
+    await msg.reply_text("\n".join(lines))
+
+
+async def settarget_command(update: object, context: "ContextTypes.DEFAULT_TYPE") -> None:
+    """ /settarget <mnq|mgc|nq|gc> <main> <attitude> <booster> で該当側の target を更新。"""
+    msg = getattr(update, "effective_message", None)
+    user = getattr(update, "effective_user", None)
+    if msg is None:
+        return
+    admins = _target_admin_user_ids_from_environ()
+    if not admins or user is None or user.id not in admins:
+        extra = ""
+        if user is not None:
+            extra = f"\nあなたの user_id: {user.id}"
+        await msg.reply_text(
+            "target の更新は許可されていません。\n"
+            "次のいずれかを設定してボットを再起動してください:\n"
+            "・ TELEGRAM_TARGET_ADMIN_USER_IDS に上記 user_id（カンマ区切り可）\n"
+            "・ プライベートのみ運用なら TELEGRAM_CHAT_ID を同じ数値にしても可"
+            "（通知先と本人の user_id が同じとき）"
+            + extra
+        )
+        return
+    args = list(context.args) if context.args else []
+    if len(args) < 4:
+        await msg.reply_text(
+            "使い方: /settarget <mnq|mgc|nq|gc> <main> <attitude> <booster>\n"
+            "例: /settarget mnq 80 20 0"
+        )
+        return
+    from avionics.data.futures_micro_equiv import engine_symbol_to_micro_notional_label
+    from store.db import get_connection
+    from store.state import read_target_futures
+    from store.target_futures import normalize_engine_symbol, set_target_futures
+
+    try:
+        engine_sym = normalize_engine_symbol(args[0])
+    except ValueError as e:
+        await msg.reply_text(str(e))
+        return
+    try:
+        main_f, att_f, boo_f = _parse_settarget_float_args(args[1:4])
+    except ValueError as e:
+        await msg.reply_text(f"{e}\n例: /settarget mnq 80 20 0")
+        return
+
+    conn = get_connection()
+    try:
+        try:
+            set_target_futures(
+                conn, engine_sym, main=main_f, attitude=att_f, booster=boo_f
+            )
+        except ValueError as e:
+            await msg.reply_text(f"検証エラー: {e}")
+            return
+        cur = read_target_futures(conn)
+    finally:
+        conn.close()
+    p = cur[engine_sym]
+    ml = engine_symbol_to_micro_notional_label(engine_sym)
+    await msg.reply_text(
+        f"{ml} 相当の target を更新。\n"
+        f"Main={float(p['Main']):.0f} "
+        f"Attitude={float(p['Attitude']):.0f} "
+        f"Booster={float(p['Booster']):.0f}"
+    )
 
 
 @asynccontextmanager
@@ -92,16 +249,17 @@ async def _refreshed_fc(
     from avionics.calendar import as_of_for_bundle
     from cockpit.stack import build_cockpit_stack
     from store.db import get_connection
-    from store.state import read_altitude_regime
+    from store.state import read_altitude_regime, read_target_futures
 
     conn = get_connection()
     try:
         altitude = read_altitude_regime(conn)
+        target_futures_by_symbol = read_target_futures(conn)
         async with with_ib_fetcher(host, port, client_id=client_id, timeout=timeout) as fetcher:
             fc, _ = build_cockpit_stack(symbols, altitude=altitude)
             as_of = as_of_for_bundle()
             await fc.refresh(fetcher, as_of, symbols, altitude=altitude)
-            yield fc, fetcher
+            yield fc, fetcher, target_futures_by_symbol
     finally:
         conn.close()
 
@@ -116,7 +274,7 @@ async def _fetch_cockpit_report(
 ) -> str:
     from reports.format_cockpit_report import format_cockpit_report
 
-    async with _refreshed_fc(host, port, symbols, client_id=client_id, timeout=timeout) as (fc, _fetcher):
+    async with _refreshed_fc(host, port, symbols, client_id=client_id, timeout=timeout) as (fc, _fetcher, _targets):
         now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         return await format_cockpit_report(fc, symbols, now_utc)
 
@@ -131,7 +289,7 @@ async def _fetch_breakdown_report(
 ) -> str:
     from reports.format_breakdown_report import format_breakdown_report
 
-    async with _refreshed_fc(host, port, symbols, client_id=client_id, timeout=timeout) as (fc, _fetcher):
+    async with _refreshed_fc(host, port, symbols, client_id=client_id, timeout=timeout) as (fc, _fetcher, _targets):
         return format_breakdown_report(fc)
 
 
@@ -145,12 +303,13 @@ async def _fetch_daily_report(
 ) -> str:
     from reports.format_daily_report import format_daily_report
 
-    async with _refreshed_fc(host, port, symbols, client_id=client_id, timeout=timeout) as (fc, fetcher):
+    async with _refreshed_fc(host, port, symbols, client_id=client_id, timeout=timeout) as (fc, fetcher, target_futures_by_symbol):
         positions_detail = await fetcher.fetch_position_detail(symbols)
         return await format_daily_report(
             fc,
             symbols,
             positions_detail=positions_detail,
+            target_futures_by_symbol=target_futures_by_symbol,
         )
 
 
@@ -377,6 +536,8 @@ def main() -> int:
     app.add_handler(CommandHandler("breakdown", breakdown_command))
     app.add_handler(CommandHandler("daily", daily_command))
     app.add_handler(CommandHandler("schedule", schedule_command))
+    app.add_handler(CommandHandler("target", target_command))
+    app.add_handler(CommandHandler("settarget", settarget_command))
     app.run_polling(allowed_updates=["message"])
     return 0
 

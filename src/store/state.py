@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Dict, Optional
 
 from avionics.data.signals import AltitudeRegime
+from engines.blueprint import PART_NAMES
 
 
 def read_state(conn: sqlite3.Connection) -> dict:
@@ -49,27 +50,54 @@ def update_altitude(
     conn.commit()
 
 
-def read_target_futures(conn: sqlite3.Connection) -> Dict[str, float]:
-    """target_futures を {part_name: target_qty} 辞書で返す。"""
-    rows = conn.execute("SELECT part_name, target_qty FROM target_futures").fetchall()
-    return {r["part_name"]: r["target_qty"] for r in rows}
+def read_target_futures(conn: sqlite3.Connection) -> Dict[str, Dict[str, float]]:
+    """
+    target_futures を {engine_symbol: {part_name: target_qty}} で返す。
+    target_qty は MNQ/MGC 相当枚数（DB の symbol は NQ/GC）。全行が揃わなければ ValueError。
+    """
+    rows = conn.execute(
+        "SELECT symbol, part_name, target_qty FROM target_futures"
+    ).fetchall()
+    engine_symbols = ("NQ", "GC")
+    out: Dict[str, Dict[str, float]] = {s: {} for s in engine_symbols}
+    for r in rows:
+        sym = str(r["symbol"]).strip().upper()
+        if sym not in engine_symbols:
+            continue
+        out[sym][str(r["part_name"])] = float(r["target_qty"])
+    missing: list[str] = []
+    for sym in engine_symbols:
+        for p in PART_NAMES:
+            if p not in out[sym]:
+                missing.append(f"{sym}/{p}")
+    if missing:
+        raise ValueError(f"target_futures missing rows: {missing}")
+    return out
 
 
 def upsert_target_futures(
     conn: sqlite3.Connection,
+    engine_symbol: str,
     part_name: str,
     target_qty: float,
 ) -> None:
-    """target_futures に part 別の目標枚数を upsert する。"""
+    """
+    target_futures の 1 行を upsert する。target_qty は MNQ/MGC 相当枚数。
+    """
+    es = str(engine_symbol).strip().upper()
+    if es not in ("NQ", "GC"):
+        raise ValueError(f"engine_symbol must be NQ or GC, got {engine_symbol!r}")
+    if part_name not in PART_NAMES:
+        raise ValueError(f"part_name must be one of {PART_NAMES}, got {part_name!r}")
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
         """
-        INSERT INTO target_futures (part_name, target_qty, updated_at)
-        VALUES (?, ?, ?)
-        ON CONFLICT(part_name) DO UPDATE SET
+        INSERT INTO target_futures (symbol, part_name, target_qty, updated_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(symbol, part_name) DO UPDATE SET
             target_qty = excluded.target_qty,
             updated_at = excluded.updated_at
         """,
-        (part_name, target_qty, now),
+        (es, part_name, target_qty, now),
     )
     conn.commit()

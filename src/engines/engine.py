@@ -148,6 +148,7 @@ class Engine:
         """
         管制からモード指令を受け、抽象モードを「目標値」に翻訳して差分を算出。
         Blueprint ベースで不足分を集約し、ExecutionProvider に渡す。
+        target_futures_by_part / actual の future レッグは **MNQ/MGC 相当枚数**で揃えること。
         定義書「1-4」「1-5」「Phase 4」参照。
         """
         base = self.config["base_unit"]
