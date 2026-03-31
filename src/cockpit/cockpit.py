@@ -15,6 +15,7 @@ from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Optional
 
+from avionics.account_parsers import build_actual_by_target
 from avionics.data.flight_controller_signal import FlightControllerSignal
 from avionics.data.data_source import DataSource
 from avionics.data.signals import AltitudeRegime
@@ -32,34 +33,6 @@ APPROVAL_TIMEOUT_SEC = 600
 def _mode_severity(mode: ModeType) -> int:
     """Emergency=2, Cruise=1, Boost=0。最悪モード比較用。"""
     return 2 if mode == EMERGENCY else (1 if mode == CRUISE else 0)
-
-
-def _split_actual_by_target(
-    symbol_actual: Dict[str, float],
-    target_futures_by_part: Dict[str, float],
-) -> Dict[str, Dict[str, float]]:
-    """
-    銘柄の実ポジション（future/k1/k2）を target_futures 比率で Part に配賦する。
-    future レッグは MNQ/MGC 相当枚数（IBRawFetcher.fetch_position_legs と揃える）。
-    """
-    from engines.blueprint import PART_NAMES
-
-    missing = [p for p in PART_NAMES if p not in target_futures_by_part]
-    if missing:
-        raise ValueError(f"target_futures missing part rows: {missing}")
-    weights = {p: abs(float(target_futures_by_part[p])) for p in PART_NAMES}
-    total_weight = sum(weights.values())
-    if total_weight <= 0:
-        raise ValueError("mode-aware target total weight must be > 0")
-    out: Dict[str, Dict[str, float]] = {}
-    for part in PART_NAMES:
-        share = weights[part] / total_weight
-        out[part] = {
-            "future": float(symbol_actual["future"]) * share,
-            "k1": float(symbol_actual["k1"]) * share,
-            "k2": float(symbol_actual["k2"]) * share,
-        }
-    return out
 
 
 class Cockpit:
@@ -257,12 +230,7 @@ class Cockpit:
 
             db_altitude = read_altitude_regime(self._conn)
             await self.fc.refresh(data_source, as_of, symbols, altitude=db_altitude)
-            if not hasattr(data_source, "fetch_position_legs"):
-                raise ValueError(
-                    "Cockpit.pulse requires data_source.fetch_position_legs(...) when conn is provided"
-                )
-            fetch_position_legs = getattr(data_source, "fetch_position_legs")
-            positions_by_symbol = await fetch_position_legs(symbols)
+            positions_by_symbol = self.fc.get_last_positions_legs()
             target_base_by_symbol = read_target_futures(self._conn)
         elif altitude is not None:
             await self.fc.refresh(data_source, as_of, symbols, altitude=altitude)
@@ -314,7 +282,7 @@ class Cockpit:
                         altitude=db_altitude,
                         base_target=base_target,
                     )
-                    actual_by_part = _split_actual_by_target(symbol_actual, mode_targets)
+                    actual_by_part = build_actual_by_target(symbol_actual, mode_targets)
                     await engine.apply_mode(
                         target_mode,
                         actual_by_part=actual_by_part,

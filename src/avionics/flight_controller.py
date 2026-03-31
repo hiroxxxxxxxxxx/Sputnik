@@ -14,6 +14,7 @@ from dataclasses import replace
 from datetime import date
 from typing import Any, Dict, List, Optional
 
+from .data.account_positions import PositionDetailBySymbol, PositionLegsBySymbol
 from .data.factor_mapping import EngineFactorMapping
 from .data.flight_controller_signal import FlightControllerSignal
 from .data.raw_types import RawCapitalSnapshot
@@ -62,6 +63,8 @@ class FlightController:
         self._bundle_build_options = bundle_build_options
         self._last_bundle: Optional[SignalBundle] = None
         self._last_capital_snapshot: Optional[RawCapitalSnapshot] = None
+        self._last_positions_legs: PositionLegsBySymbol = {}
+        self._last_positions_detail: PositionDetailBySymbol = {}
         self._last_altitude_regime: Optional[AltitudeRegime] = None
         self._is_ready: bool = False
 
@@ -113,7 +116,7 @@ class FlightController:
         )
         self._bundle_build_options = opts
 
-        raw_snapshot, capital_snapshot = await data_source.fetch_raw(
+        raw_result = await data_source.fetch_raw(
             as_of,
             symbols,
             volatility_symbols=opts.volatility_symbols,
@@ -124,6 +127,12 @@ class FlightController:
             base_density=opts.base_density,
             v_recovery_params=v_recovery_params,
         )
+        if len(raw_result) == 2:
+            raw_snapshot, capital_snapshot = raw_result
+            positions_legs: PositionLegsBySymbol = {}
+            positions_detail: PositionDetailBySymbol = {}
+        else:
+            raw_snapshot, capital_snapshot, positions_legs, positions_detail = raw_result
         from .bundle_builder import build_signal_bundle
 
         bundle = build_signal_bundle(
@@ -138,6 +147,8 @@ class FlightController:
         )
         self._last_bundle = bundle
         self._last_capital_snapshot = capital_snapshot
+        self._last_positions_legs = dict(positions_legs)
+        self._last_positions_detail = dict(positions_detail)
         await self.apply_all(bundle, altitude=altitude)
 
     def get_last_bundle(self) -> Optional[SignalBundle]:
@@ -147,6 +158,14 @@ class FlightController:
     def get_last_capital_snapshot(self) -> Optional[RawCapitalSnapshot]:
         """最後に refresh した RawCapitalSnapshot。未 refresh の場合は None。"""
         return self._last_capital_snapshot
+
+    def get_last_positions_legs(self) -> PositionLegsBySymbol:
+        """最後に refresh した position legs（銘柄別 future/k1/k2）。"""
+        return dict(self._last_positions_legs)
+
+    def get_last_positions_detail(self) -> PositionDetailBySymbol:
+        """最後に refresh した position detail（銘柄別 futures/options 明細）。"""
+        return dict(self._last_positions_detail)
 
     @property
     def last_altitude_regime(self) -> Optional[AltitudeRegime]:

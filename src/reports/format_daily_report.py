@@ -9,18 +9,11 @@ Telegram Daily Flight Log 用テキストフォーマット。
 from __future__ import annotations
 
 from datetime import date
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
-from avionics.data.futures_micro_equiv import (
-    engine_symbol_to_micro_notional_label,
-    micro_equivalent_net_gc_family,
-    micro_equivalent_net_nq_family,
-)
 from cockpit.mode import BOOST, CRUISE, EMERGENCY, MODE_STR, ModeType
-from engines.blueprint import PART_NAMES, load_blueprints_from_unified_toml_path
-from engines.target_policy import total_future_target
 from reports._render import render
+from reports.position_view_model import build_position_view_model
 
 if TYPE_CHECKING:
     from avionics import FlightController
@@ -41,107 +34,6 @@ def _level_to_mode(level: int) -> ModeType:
     if level == 1:
         return CRUISE
     return BOOST
-
-
-def _default_blueprints(*, altitude: str) -> dict[str, Any]:
-    root = Path(__file__).resolve().parent.parent.parent
-    path = root / "config" / "targets.toml"
-    return load_blueprints_from_unified_toml_path(str(path), altitude=altitude)  # type: ignore[arg-type]
-
-
-def _build_position_rows(
-    symbols: list[str],
-    positions_detail: Optional[dict[str, dict[str, dict[str, float]]]],
-) -> tuple[list[dict[str, str]], list[dict[str, str]], dict[str, float]]:
-    """先物行・オプション行と銘柄別先物ネットを返す。"""
-    if not positions_detail:
-        return [], [], {}
-    futures_rows: list[dict[str, str]] = []
-    options_rows: list[dict[str, str]] = []
-    futures_actual_net: dict[str, float] = {}
-    for sym in symbols:
-        detail = positions_detail.get(sym)
-        if detail is None:
-            continue
-        fut = detail.get("futures", {})
-        opt = detail.get("options", {})
-        futures_rows.append(
-            {
-                "symbol": sym,
-                "nq_buy": f"{float(fut.get('nq_buy', 0.0)):.0f}",
-                "nq_sell": f"{float(fut.get('nq_sell', 0.0)):.0f}",
-                "mnq_buy": f"{float(fut.get('mnq_buy', 0.0)):.0f}",
-                "mnq_sell": f"{float(fut.get('mnq_sell', 0.0)):.0f}",
-                "gc_buy": f"{float(fut.get('gc_buy', 0.0)):.0f}",
-                "gc_sell": f"{float(fut.get('gc_sell', 0.0)):.0f}",
-                "mgc_buy": f"{float(fut.get('mgc_buy', 0.0)):.0f}",
-                "mgc_sell": f"{float(fut.get('mgc_sell', 0.0)):.0f}",
-            }
-        )
-        if sym == "NQ":
-            futures_actual_net[sym] = micro_equivalent_net_nq_family(fut)
-        elif sym == "GC":
-            futures_actual_net[sym] = micro_equivalent_net_gc_family(fut)
-        options_rows.append(
-            {
-                "symbol": sym,
-                "nq_call_buy": f"{float(opt.get('nq_call_buy', 0.0)):.0f}",
-                "nq_call_sell": f"{float(opt.get('nq_call_sell', 0.0)):.0f}",
-                "nq_put_buy": f"{float(opt.get('nq_put_buy', 0.0)):.0f}",
-                "nq_put_sell": f"{float(opt.get('nq_put_sell', 0.0)):.0f}",
-                "mnq_call_buy": f"{float(opt.get('mnq_call_buy', 0.0)):.0f}",
-                "mnq_call_sell": f"{float(opt.get('mnq_call_sell', 0.0)):.0f}",
-                "mnq_put_buy": f"{float(opt.get('mnq_put_buy', 0.0)):.0f}",
-                "mnq_put_sell": f"{float(opt.get('mnq_put_sell', 0.0)):.0f}",
-                "gc_call_buy": f"{float(opt.get('gc_call_buy', 0.0)):.0f}",
-                "gc_call_sell": f"{float(opt.get('gc_call_sell', 0.0)):.0f}",
-                "gc_put_buy": f"{float(opt.get('gc_put_buy', 0.0)):.0f}",
-                "gc_put_sell": f"{float(opt.get('gc_put_sell', 0.0)):.0f}",
-                "mgc_call_buy": f"{float(opt.get('mgc_call_buy', 0.0)):.0f}",
-                "mgc_call_sell": f"{float(opt.get('mgc_call_sell', 0.0)):.0f}",
-                "mgc_put_buy": f"{float(opt.get('mgc_put_buy', 0.0)):.0f}",
-                "mgc_put_sell": f"{float(opt.get('mgc_put_sell', 0.0)):.0f}",
-            }
-        )
-    return futures_rows, options_rows, futures_actual_net
-
-
-def _build_futures_target_rows(
-    symbols: list[str],
-    futures_actual_net: dict[str, float],
-    target_base_by_symbol: Optional[dict[str, float]],
-    modes_by_symbol: dict[str, ModeType],
-    *,
-    altitude: str,
-) -> list[dict[str, str]]:
-    """先物の target / actual_net / delta 行を返す（mode連動 target）。"""
-    if target_base_by_symbol is None:
-        return []
-    blueprints = _default_blueprints(altitude=altitude)
-    rows: list[dict[str, str]] = []
-    for sym in symbols:
-        if sym not in ("NQ", "GC"):
-            continue
-        if sym not in target_base_by_symbol:
-            raise ValueError(f"target_base_futures missing engine symbol: {sym}")
-        mode = modes_by_symbol[sym]
-        target_total = total_future_target(
-            blueprints,
-            mode=mode,
-            base_target=float(target_base_by_symbol[sym]),
-        )
-        actual_net = float(futures_actual_net.get(sym, 0.0))
-        delta = target_total - actual_net
-        rows.append(
-            {
-                "symbol": sym,
-                "micro_label": engine_symbol_to_micro_notional_label(sym),
-                "target": f"{target_total:.0f}",
-                "actual": f"{actual_net:.0f}",
-                "delta": f"{delta:.0f}",
-            }
-        )
-    return rows
 
 
 def _build_icl_sections(
@@ -278,15 +170,12 @@ async def _build_daily_flight_log_context(
     scl_level, scl_rows, lcl_level, lcl_rows = _build_scl_lcl_rows(
         signal, bundle, mapping, symbols, altitude=altitude
     )
-    futures_rows, options_rows, futures_actual_net = _build_position_rows(
-        symbols, positions_detail
-    )
-    futures_target_rows = _build_futures_target_rows(
+    position_ctx = build_position_view_model(
         symbols,
-        futures_actual_net,
-        target_base_by_symbol,
-        modes_by_symbol,
-        altitude=altitude,
+        positions_detail=positions_detail,
+        target_base_by_symbol=target_base_by_symbol,
+        modes_by_symbol=modes_by_symbol,
+        altitude=str(altitude),
     )
 
     return {
@@ -298,9 +187,9 @@ async def _build_daily_flight_log_context(
         "scl_rows": scl_rows,
         "lcl_level": lcl_level,
         "lcl_rows": lcl_rows,
-        "futures_rows": futures_rows,
-        "futures_target_rows": futures_target_rows,
-        "options_rows": options_rows,
+        "futures_rows": position_ctx["futures_rows"],
+        "futures_target_rows": position_ctx["futures_target_rows"],
+        "options_rows": position_ctx["options_rows"],
         "nlv_line": nlv_line,
         "cash_buffer_line": cash_buffer_line,
         "maintenance_lines": ["カレンダー連携は未実装のためスキップ"],
@@ -353,21 +242,19 @@ async def _build_positions_log_context(
     for sym in symbols:
         if sym in ("NQ", "GC"):
             modes_by_symbol[sym] = _level_to_mode(signal.throttle_level(sym))
-    futures_rows, options_rows, futures_actual_net = _build_position_rows(
-        symbols, positions_detail
-    )
-    futures_target_rows = _build_futures_target_rows(
+    position_ctx = build_position_view_model(
         symbols,
-        futures_actual_net,
-        target_base_by_symbol,
-        modes_by_symbol,
+        positions_detail=positions_detail,
+        target_base_by_symbol=target_base_by_symbol,
+        modes_by_symbol=modes_by_symbol,
         altitude=str(fc.last_altitude_regime or "mid"),
     )
     return {
         "date_iso": d.isoformat(),
-        "futures_rows": futures_rows,
-        "options_rows": options_rows,
-        "futures_target_rows": futures_target_rows,
+        "symbols": position_ctx["symbols"],
+        "futures_rows": position_ctx["futures_rows"],
+        "options_rows": position_ctx["options_rows"],
+        "futures_target_rows": position_ctx["futures_target_rows"],
     }
 
 

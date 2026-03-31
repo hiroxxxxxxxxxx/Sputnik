@@ -52,3 +52,4 @@ def test_parse_settarget_base_arg_bad_float_raises() -> None:
 
 def test_commands_message_includes_position() -> None:
     assert "/position" in COCKPIT_BOT_COMMANDS_MESSAGE
+    assert "PB/BPS/CC/UNCLASSIFIED" in COCKPIT_BOT_COMMANDS_MESSAGE

@@ -47,6 +47,13 @@ Futures (Buy/Sell per contract)
 {% endfor %}
 {% endif %}
 
+{% if options_rows %}
+Options strategy diff (target / actual / delta)
+{% for row in options_rows %}
+{{ row.symbol }} | {{ row.strategy }} | target={{ row.target }} | actual={{ row.actual }} | delta={{ row.delta }}
+{% endfor %}
+{% endif %}
+
 {% if futures_target_rows %}
 Futures target diff (MNQ/MGC 相当枚数; target / actual_net / delta)
 {% for row in futures_target_rows %}

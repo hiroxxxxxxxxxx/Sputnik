@@ -11,28 +11,18 @@ import asyncio
 from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
+from ..account_parsers import (
+    parse_position_detail_from_ib_positions,
+    parse_position_legs_from_ib_positions,
+)
+from ..data.account_positions import PositionDetailBySymbol, PositionLegsBySymbol
 from ..data.raw_types import (
     PriceBar,
     PriceBar1h,
     RawCapitalSnapshot,
     VolatilitySeriesPoint,
 )
-from ..data.futures_micro_equiv import signed_future_root_qty_to_micro_equivalent
 from ..data.raw_market_snapshot import RawMarketSnapshot
-
-
-def _symbol_position_zero() -> Dict[str, float]:
-    return {"future": 0.0, "k1": 0.0, "k2": 0.0}
-
-
-def _normalize_position_symbol(symbol: str) -> str:
-    """NQ/MNQ を NQ、GC/MGC を GC に正規化する。"""
-    s = symbol.strip().upper()
-    if s in ("NQ", "MNQ"):
-        return "NQ"
-    if s in ("GC", "MGC"):
-        return "GC"
-    return s
 
 
 def _bar_to_price_bar(bar: Any) -> PriceBar:
@@ -101,6 +91,15 @@ class IBRawFetcher:
     def __init__(self, ib: Any) -> None:
         self._ib = ib
 
+    async def _fetch_positions_raw(self) -> List[Any]:
+        if hasattr(self._ib, "reqPositionsAsync"):
+            return await self._ib.reqPositionsAsync()
+        if hasattr(self._ib, "positionsAsync"):
+            return await self._ib.positionsAsync()
+        if hasattr(self._ib, "positions"):
+            return self._ib.positions()
+        raise ValueError("IB fetcher does not support positions API")
+
     async def fetch_position_legs(self, symbols: List[str]) -> Dict[str, Dict[str, float]]:
         """
         口座ポジションを銘柄別に集計し、{symbol: {future,k1,k2}} を返す。
@@ -109,40 +108,7 @@ class IBRawFetcher:
         - k1: オプションC（OPT/FOP, right=C）。エンジン銘柄（NQ/GC）へ MNQ/MGC ルートは正規化して集計
         - k2: オプションP（OPT/FOP, right=P）。同上
         """
-        if hasattr(self._ib, "reqPositionsAsync"):
-            positions = await self._ib.reqPositionsAsync()
-        elif hasattr(self._ib, "positionsAsync"):
-            positions = await self._ib.positionsAsync()
-        elif hasattr(self._ib, "positions"):
-            positions = self._ib.positions()
-        else:
-            raise ValueError("IB fetcher does not support positions API")
-
-        symbol_set = {s.strip().upper() for s in symbols}
-        out: Dict[str, Dict[str, float]] = {s: _symbol_position_zero() for s in symbol_set}
-
-        for pos in positions:
-            contract = getattr(pos, "contract", None)
-            if contract is None:
-                continue
-            raw_symbol = str(getattr(contract, "symbol", "")).strip().upper()
-            group_symbol = _normalize_position_symbol(raw_symbol)
-            if group_symbol not in symbol_set:
-                continue
-            qty = float(getattr(pos, "position", 0.0))
-            sec_type = str(getattr(contract, "secType", "")).upper()
-            right = str(getattr(contract, "right", "")).upper()
-            legs = out[group_symbol]
-            if sec_type in ("FUT", "CONTFUT"):
-                legs["future"] += signed_future_root_qty_to_micro_equivalent(
-                    raw_symbol, qty
-                )
-            elif sec_type in ("OPT", "FOP"):
-                if right == "P":
-                    legs["k2"] += qty
-                else:
-                    legs["k1"] += qty
-        return out
+        return parse_position_legs_from_ib_positions(symbols, await self._fetch_positions_raw())
 
     async def fetch_position_detail(self, symbols: List[str]) -> Dict[str, Dict[str, Dict[str, float]]]:
         """
@@ -152,91 +118,7 @@ class IBRawFetcher:
         キー: nq_buy, nq_sell, mnq_buy, mnq_sell, gc_buy, gc_sell, mgc_buy, mgc_sell。
         options も契約ごとに C/P の buy/sell を分離。
         """
-        if hasattr(self._ib, "reqPositionsAsync"):
-            positions = await self._ib.reqPositionsAsync()
-        elif hasattr(self._ib, "positionsAsync"):
-            positions = await self._ib.positionsAsync()
-        elif hasattr(self._ib, "positions"):
-            positions = self._ib.positions()
-        else:
-            raise ValueError("IB fetcher does not support positions API")
-
-        symbol_set = {s.strip().upper() for s in symbols}
-        out: Dict[str, Dict[str, Dict[str, float]]] = {}
-        _future_bs_keys = {
-            "NQ": ("nq_buy", "nq_sell"),
-            "MNQ": ("mnq_buy", "mnq_sell"),
-            "GC": ("gc_buy", "gc_sell"),
-            "MGC": ("mgc_buy", "mgc_sell"),
-        }
-        for sym in symbol_set:
-            out[sym] = {
-                "futures": {
-                    "nq_buy": 0.0,
-                    "nq_sell": 0.0,
-                    "mnq_buy": 0.0,
-                    "mnq_sell": 0.0,
-                    "gc_buy": 0.0,
-                    "gc_sell": 0.0,
-                    "mgc_buy": 0.0,
-                    "mgc_sell": 0.0,
-                },
-                "options": {
-                    "nq_call_buy": 0.0,
-                    "nq_call_sell": 0.0,
-                    "nq_put_buy": 0.0,
-                    "nq_put_sell": 0.0,
-                    "mnq_call_buy": 0.0,
-                    "mnq_call_sell": 0.0,
-                    "mnq_put_buy": 0.0,
-                    "mnq_put_sell": 0.0,
-                    "gc_call_buy": 0.0,
-                    "gc_call_sell": 0.0,
-                    "gc_put_buy": 0.0,
-                    "gc_put_sell": 0.0,
-                    "mgc_call_buy": 0.0,
-                    "mgc_call_sell": 0.0,
-                    "mgc_put_buy": 0.0,
-                    "mgc_put_sell": 0.0,
-                },
-            }
-
-        for pos in positions:
-            contract = getattr(pos, "contract", None)
-            if contract is None:
-                continue
-            raw_symbol = str(getattr(contract, "symbol", "")).strip().upper()
-            group_symbol = _normalize_position_symbol(raw_symbol)
-            if group_symbol not in symbol_set:
-                continue
-            qty = float(getattr(pos, "position", 0.0))
-            sec_type = str(getattr(contract, "secType", "")).upper()
-            right = str(getattr(contract, "right", "")).upper()
-            detail = out[group_symbol]
-
-            if sec_type in ("FUT", "CONTFUT"):
-                bs = _future_bs_keys.get(raw_symbol)
-                if bs is not None:
-                    buy_k, sell_k = bs
-                    if qty >= 0:
-                        detail["futures"][buy_k] += qty
-                    else:
-                        detail["futures"][sell_k] += abs(qty)
-            elif sec_type in ("OPT", "FOP"):
-                prefix = raw_symbol.lower()
-                if prefix not in ("nq", "mnq", "gc", "mgc"):
-                    continue
-                if right == "P":
-                    if qty >= 0:
-                        detail["options"][f"{prefix}_put_buy"] += qty
-                    else:
-                        detail["options"][f"{prefix}_put_sell"] += abs(qty)
-                else:
-                    if qty >= 0:
-                        detail["options"][f"{prefix}_call_buy"] += qty
-                    else:
-                        detail["options"][f"{prefix}_call_sell"] += abs(qty)
-        return out
+        return parse_position_detail_from_ib_positions(symbols, await self._fetch_positions_raw())
 
     async def _fetch_historical(
         self,
@@ -337,7 +219,12 @@ class IBRawFetcher:
         account: str = "",
         base_density: float = 1.0,
         v_recovery_params: Optional[Dict[str, dict]] = None,
-    ) -> Tuple[RawMarketSnapshot, Optional[RawCapitalSnapshot]]:
+    ) -> Tuple[
+        RawMarketSnapshot,
+        Optional[RawCapitalSnapshot],
+        PositionLegsBySymbol,
+        PositionDetailBySymbol,
+    ]:
         """
         IB から Raw を取得し、RawMarketSnapshot（NQ/GC固定DTO）として返す。
         Layer 2 計算は行わない。SignalBundle が欲しい場合は呼び出し側で build_signal_bundle を呼ぶ。
@@ -417,4 +304,7 @@ class IBRawFetcher:
             credit_bars=credit_map,
             tip_bars=tip,
         )
-        return snapshot, capital
+        positions = await self._fetch_positions_raw()
+        positions_legs = parse_position_legs_from_ib_positions(price_symbols, positions)
+        positions_detail = parse_position_detail_from_ib_positions(price_symbols, positions)
+        return snapshot, capital, positions_legs, positions_detail

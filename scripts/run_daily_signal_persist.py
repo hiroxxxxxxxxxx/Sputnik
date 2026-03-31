@@ -122,7 +122,7 @@ async def main() -> int:
                 if v_lv == 1 and step1_ok and not (vs.v1_to_v0_knock_in_ok is True):
                     create_watch(conn, as_of=watch_day, symbol=sym)
 
-            positions_detail = await fetcher.fetch_position_detail(list(args.symbols))
+            positions_detail = fc.get_last_positions_detail()
             report_text = await format_daily_report(
                 fc,
                 list(args.symbols),

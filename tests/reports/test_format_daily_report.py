@@ -166,6 +166,10 @@ def test_format_daily_report_with_positions() -> None:
     assert "[4] POSITIONS DETAIL" in text
     assert "NQ | NQ B=2 S=1 | MNQ B=10 S=2" in text
     assert "GC | GC B=2 S=0 | MGC B=1 S=3" in text
+    assert "NQ | PB | target=15 | actual=0 | delta=15" in text
+    assert "NQ | BPS | target=15 | actual=0 | delta=15" in text
+    assert "NQ | CC | target=15 | actual=2 | delta=13" in text
+    assert "GC | UNCLASSIFIED | target=0 | actual=2 | delta=-2" in text
     assert "MNQ | target=15 | actual=18 | delta=-3" in text
     assert "MGC | target=20 | actual=18 | delta=2" in text
 
@@ -267,7 +271,59 @@ def test_format_position_report_with_positions() -> None:
         )
     )
     assert "【POSITIONS】 2026-03-30" in text
-    assert "NQ | NQ B=2 S=1 | MNQ B=10 S=2" in text
-    assert "Options (Buy/Sell per contract)" in text
+    assert "━━━━━━━━ NQ ━━━━━━━━" in text
+    assert "━━━━━━━━ GC ━━━━━━━━" in text
+    assert "Futures (Buy/Sell per contract)" not in text
+    assert "Options strategy diff (target / actual / delta)" in text
+    assert "PB | target=15 | actual=0 | delta=15" in text
+    assert "BPS | target=15 | actual=0 | delta=15" in text
+    assert "CC | target=15 | actual=2 | delta=13" in text
+    assert "UNCLASSIFIED | actual=2 | P B=2 S=0 | C B=0 S=0" in text
     assert "MNQ | target=15 | actual=18 | delta=-3" in text
     assert "MGC | target=20 | actual=18 | delta=2" in text
+
+
+def test_format_position_report_shows_unclassified_when_unbalanced_options() -> None:
+    fc = _DummyFC()
+    positions_detail = {
+        "NQ": {
+            "futures": {
+                "nq_buy": 0.0,
+                "nq_sell": 0.0,
+                "mnq_buy": 0.0,
+                "mnq_sell": 0.0,
+                "gc_buy": 0.0,
+                "gc_sell": 0.0,
+                "mgc_buy": 0.0,
+                "mgc_sell": 0.0,
+            },
+            "options": {
+                "nq_call_buy": 3.0,
+                "nq_call_sell": 0.0,
+                "nq_put_buy": 0.0,
+                "nq_put_sell": 0.0,
+                "mnq_call_buy": 0.0,
+                "mnq_call_sell": 0.0,
+                "mnq_put_buy": 0.0,
+                "mnq_put_sell": 0.0,
+                "gc_call_buy": 0.0,
+                "gc_call_sell": 0.0,
+                "gc_put_buy": 0.0,
+                "gc_put_sell": 0.0,
+                "mgc_call_buy": 0.0,
+                "mgc_call_sell": 0.0,
+                "mgc_put_buy": 0.0,
+                "mgc_put_sell": 0.0,
+            },
+        }
+    }
+    text = asyncio.run(
+        format_position_report(
+            fc,
+            ["NQ"],
+            positions_detail=positions_detail,
+            target_base_by_symbol={"NQ": 10.0, "GC": 10.0},
+            as_of=date(2026, 3, 30),
+        )
+    )
+    assert "UNCLASSIFIED | actual=3 | P B=0 S=0 | C B=3 S=0" in text

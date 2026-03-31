@@ -53,7 +53,7 @@ COCKPIT_BOT_COMMANDS_MESSAGE = (
     "/ping … 接続・設定確認\n"
     "/cockpit または /status … 現在の計器（IB から取得）\n"
     "/daily … Daily Flight Log（市場・資本・各層）\n"
-    "/position … ポジション明細 + target 差分\n"
+    "/position … ポジション明細 + target 差分（Options は strategy diff: PB/BPS/CC/UNCLASSIFIED）\n"
     "/breakdown … 各因子の計算内訳（Layer 2 シグナル）\n"
     "/schedule … 取引時間スキャン（夏冬・短縮・休場の事前通知）\n"
     "/target … target_base_futures（MNQ/MGC 相当 + 現在高度の有効legs）\n"
@@ -266,7 +266,7 @@ async def _refreshed_fc(
             fc, _ = build_cockpit_stack(symbols, altitude=altitude)
             as_of = as_of_for_bundle()
             await fc.refresh(fetcher, as_of, symbols, altitude=altitude)
-            yield fc, fetcher, target_base_by_symbol
+            yield fc, target_base_by_symbol
     finally:
         conn.close()
 
@@ -281,7 +281,7 @@ async def _fetch_cockpit_report(
 ) -> str:
     from reports.format_cockpit_report import format_cockpit_report
 
-    async with _refreshed_fc(host, port, symbols, client_id=client_id, timeout=timeout) as (fc, _fetcher, _targets):
+    async with _refreshed_fc(host, port, symbols, client_id=client_id, timeout=timeout) as (fc, _targets):
         now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         return await format_cockpit_report(fc, symbols, now_utc)
 
@@ -296,7 +296,7 @@ async def _fetch_breakdown_report(
 ) -> str:
     from reports.format_breakdown_report import format_breakdown_report
 
-    async with _refreshed_fc(host, port, symbols, client_id=client_id, timeout=timeout) as (fc, _fetcher, _targets):
+    async with _refreshed_fc(host, port, symbols, client_id=client_id, timeout=timeout) as (fc, _targets):
         return format_breakdown_report(fc)
 
 
@@ -310,8 +310,8 @@ async def _fetch_daily_report(
 ) -> str:
     from reports.format_daily_report import format_daily_report
 
-    async with _refreshed_fc(host, port, symbols, client_id=client_id, timeout=timeout) as (fc, fetcher, target_base_by_symbol):
-        positions_detail = await fetcher.fetch_position_detail(symbols)
+    async with _refreshed_fc(host, port, symbols, client_id=client_id, timeout=timeout) as (fc, target_base_by_symbol):
+        positions_detail = fc.get_last_positions_detail()
         return await format_daily_report(
             fc,
             symbols,
@@ -332,10 +332,9 @@ async def _fetch_position_report(
 
     async with _refreshed_fc(host, port, symbols, client_id=client_id, timeout=timeout) as (
         _fc,
-        fetcher,
         target_base_by_symbol,
     ):
-        positions_detail = await fetcher.fetch_position_detail(symbols)
+        positions_detail = _fc.get_last_positions_detail()
         return await format_position_report(
             _fc,
             symbols,
@@ -451,7 +450,7 @@ async def position_command(update: object, context: ContextTypes.DEFAULT_TYPE) -
         return
     host, port, symbols, client_id, ib_timeout = _env_host_port_symbols()
     try:
-        await msg.reply_text("Positions 取得中…")
+        await msg.reply_text("Positions 取得中…（Options strategy diff 集計）")
     except Exception:
         pass
     try:
@@ -536,12 +535,18 @@ async def _notify_gateway_ready(application: object) -> None:
         print("TELEGRAM_CHAT_ID が未設定のため、起動完了メッセージは送信しません。", file=sys.stderr)
         return
     host, port, _symbols, client_id, _timeout = _env_host_port_symbols()
-    await asyncio.sleep(30)
+    # 起動完了通知の初動を速めるため固定30秒待機は入れない
+    await asyncio.sleep(1)
 
     from avionics.ib import check_ib_connection
 
-    for attempt in range(3):
-        ok = await check_ib_connection(host, port, client_id=client_id, timeout=30.0)
+    max_attempts = 8
+    check_timeout = 8.0
+    retry_sleep = 2.0
+    for attempt in range(max_attempts):
+        ok = await check_ib_connection(
+            host, port, client_id=client_id, timeout=check_timeout
+        )
         if ok:
             bot = getattr(application, "bot", None)
             if bot:
@@ -551,10 +556,10 @@ async def _notify_gateway_ready(application: object) -> None:
                 )
             return
         print(
-            f"Gateway 接続試行 {attempt + 1}/3 失敗: {host}:{port} clientId={client_id}",
+            f"Gateway 接続試行 {attempt + 1}/{max_attempts} 失敗: {host}:{port} clientId={client_id}",
             file=sys.stderr,
         )
-        await asyncio.sleep(5)
+        await asyncio.sleep(retry_sleep)
 
     bot = getattr(application, "bot", None)
     if bot:

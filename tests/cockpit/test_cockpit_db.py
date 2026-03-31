@@ -140,16 +140,20 @@ def test_cockpit_pulse_applies_with_ib_positions_and_target_futures(conn) -> Non
             self.calls.append((mode, actual_by_part, target_base_futures))
 
     class MockFlightController:
+        def __init__(self) -> None:
+            self._legs = {"NQ": {"future": 5.0, "k1": 1.0, "k2": -1.0}}
+
         async def refresh(self, data_source, as_of, symbols, *, altitude):
             return None
 
         async def get_flight_controller_signal(self):
             return FlightControllerSignal(scl=0, lcl=0, nq_icl=1)
 
+        def get_last_positions_legs(self):
+            return self._legs
+
     class MockDataSource:
-        async def fetch_position_legs(self, symbols):
-            assert symbols == ["NQ"]
-            return {"NQ": {"future": 5.0, "k1": 1.0, "k2": -1.0}}
+        pass
 
     cp = _make_cockpit(conn, approval_mode="Auto")
     engine = DummyEngine()

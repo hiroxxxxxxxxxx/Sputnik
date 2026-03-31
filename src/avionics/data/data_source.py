@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Dict, List, Optional, Protocol, Tuple
 
+from .account_positions import PositionDetailBySymbol, PositionLegsBySymbol
 from .raw_types import RawCapitalSnapshot
 from .raw_market_snapshot import RawMarketSnapshot
 
@@ -31,6 +32,11 @@ class DataSource(Protocol):
         account: str = "",
         base_density: float = 1.0,
         v_recovery_params: Optional[Dict[str, dict]] = None,
-    ) -> Tuple[RawMarketSnapshot, Optional[RawCapitalSnapshot]]:
+    ) -> Tuple[
+        RawMarketSnapshot,
+        Optional[RawCapitalSnapshot],
+        PositionLegsBySymbol,
+        PositionDetailBySymbol,
+    ]:
         ...
-        """Layer 1 の Raw を取得し、RawMarketSnapshot と Optional[RawCapitalSnapshot] を返す。"""
+        """Layer 1 の Raw/口座データを取得して返す。"""
