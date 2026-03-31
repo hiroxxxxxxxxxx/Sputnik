@@ -1,229 +1,104 @@
-# Unified blueprint layout: modes.<Mode>.altitudes.<Altitude>.<Part>
-# - future: base_qty に掛ける先物比率（MNQ/MGC 相当）
-# - option_k1 / option_k2: 目標オプション脚比率
-# - legs.pb / legs.bps / legs.cc: 当該 mode+altitude+part での装着可否
+# targets v2
+# base: mode×part の基本設定
+# part_caps: part 固定の装着可能制約
+# overrides: altitude 別の差分
 
-[modes.Boost.altitudes.high.Main]
+[base.Boost.Main]
 future = 1.0
 option_k1 = -1.0
 option_k2 = 0.0
-[modes.Boost.altitudes.high.Main.legs]
+[base.Boost.Main.legs]
 pb = false
 bps = true
 cc = false
-[modes.Boost.altitudes.high.Attitude]
+
+[base.Boost.Attitude]
 future = 0.5
 option_k1 = -1.0
 option_k2 = 0.0
-[modes.Boost.altitudes.high.Attitude.legs]
+[base.Boost.Attitude.legs]
 pb = true
 bps = false
 cc = false
-[modes.Boost.altitudes.high.Booster]
+
+[base.Boost.Booster]
 future = 0.5
 option_k1 = -1.5
 option_k2 = 0.0
-[modes.Boost.altitudes.high.Booster.legs]
+[base.Boost.Booster.legs]
 pb = false
 bps = true
 cc = false
 
-[modes.Boost.altitudes.mid.Main]
+[base.Cruise.Main]
 future = 1.0
 option_k1 = -1.0
 option_k2 = 0.0
-[modes.Boost.altitudes.mid.Main.legs]
-pb = false
-bps = true
-cc = false
-[modes.Boost.altitudes.mid.Attitude]
-future = 0.5
-option_k1 = -1.0
-option_k2 = 0.0
-[modes.Boost.altitudes.mid.Attitude.legs]
-pb = true
-bps = false
-cc = false
-[modes.Boost.altitudes.mid.Booster]
-future = 0.5
-option_k1 = -1.5
-option_k2 = 0.0
-[modes.Boost.altitudes.mid.Booster.legs]
-pb = false
-bps = true
-cc = false
-
-[modes.Boost.altitudes.low.Main]
-future = 1.0
-option_k1 = -1.0
-option_k2 = 0.0
-[modes.Boost.altitudes.low.Main.legs]
-pb = false
-bps = true
-cc = false
-[modes.Boost.altitudes.low.Attitude]
-future = 0.5
-option_k1 = -1.0
-option_k2 = 0.0
-[modes.Boost.altitudes.low.Attitude.legs]
-pb = true
-bps = false
-cc = false
-[modes.Boost.altitudes.low.Booster]
-future = 0.5
-option_k1 = -1.5
-option_k2 = 0.0
-[modes.Boost.altitudes.low.Booster.legs]
-pb = false
-bps = true
-cc = false
-
-[modes.Cruise.altitudes.high.Main]
-future = 1.0
-option_k1 = -1.0
-option_k2 = 0.0
-[modes.Cruise.altitudes.high.Main.legs]
-pb = false
-bps = true
-cc = false
-[modes.Cruise.altitudes.high.Attitude]
-future = 0.5
-option_k1 = -1.0
-option_k2 = 0.0
-[modes.Cruise.altitudes.high.Attitude.legs]
-pb = true
-bps = false
-cc = false
-[modes.Cruise.altitudes.high.Booster]
-future = 0.0
-option_k1 = 0.0
-option_k2 = 0.0
-[modes.Cruise.altitudes.high.Booster.legs]
-pb = false
-bps = false
-cc = false
-
-[modes.Cruise.altitudes.mid.Main]
-future = 1.0
-option_k1 = -1.0
-option_k2 = 0.0
-[modes.Cruise.altitudes.mid.Main.legs]
+[base.Cruise.Main.legs]
 pb = false
 bps = true
 cc = true
-[modes.Cruise.altitudes.mid.Attitude]
+
+[base.Cruise.Attitude]
 future = 0.5
 option_k1 = -1.0
 option_k2 = 0.0
-[modes.Cruise.altitudes.mid.Attitude.legs]
+[base.Cruise.Attitude.legs]
 pb = true
 bps = false
 cc = false
-[modes.Cruise.altitudes.mid.Booster]
+
+[base.Cruise.Booster]
 future = 0.0
 option_k1 = 0.0
 option_k2 = 0.0
-[modes.Cruise.altitudes.mid.Booster.legs]
+[base.Cruise.Booster.legs]
 pb = false
 bps = false
 cc = false
 
-[modes.Cruise.altitudes.low.Main]
+[base.Emergency.Main]
 future = 1.0
 option_k1 = -1.0
+option_k2 = 1.0
+[base.Emergency.Main.legs]
+pb = true
+bps = false
+cc = false
+
+[base.Emergency.Attitude]
+future = 0.0
+option_k1 = 0.0
 option_k2 = 0.0
-[modes.Cruise.altitudes.low.Main.legs]
+[base.Emergency.Attitude.legs]
 pb = false
+bps = false
+cc = false
+
+[base.Emergency.Booster]
+future = 0.0
+option_k1 = 0.0
+option_k2 = 0.0
+[base.Emergency.Booster.legs]
+pb = false
+bps = false
+cc = false
+
+[part_caps.Main]
+pb = true
 bps = true
 cc = true
-[modes.Cruise.altitudes.low.Attitude]
-future = 0.5
-option_k1 = -1.0
-option_k2 = 0.0
-[modes.Cruise.altitudes.low.Attitude.legs]
+
+[part_caps.Attitude]
 pb = true
-bps = false
-cc = false
-[modes.Cruise.altitudes.low.Booster]
-future = 0.0
-option_k1 = 0.0
-option_k2 = 0.0
-[modes.Cruise.altitudes.low.Booster.legs]
-pb = false
 bps = false
 cc = false
 
-[modes.Emergency.altitudes.high.Main]
-future = 1.0
-option_k1 = -1.0
-option_k2 = 1.0
-[modes.Emergency.altitudes.high.Main.legs]
-pb = true
-bps = false
-cc = false
-[modes.Emergency.altitudes.high.Attitude]
-future = 0.0
-option_k1 = 0.0
-option_k2 = 0.0
-[modes.Emergency.altitudes.high.Attitude.legs]
+[part_caps.Booster]
 pb = false
-bps = false
-cc = false
-[modes.Emergency.altitudes.high.Booster]
-future = 0.0
-option_k1 = 0.0
-option_k2 = 0.0
-[modes.Emergency.altitudes.high.Booster.legs]
-pb = false
-bps = false
+bps = true
 cc = false
 
-[modes.Emergency.altitudes.mid.Main]
-future = 1.0
-option_k1 = -1.0
-option_k2 = 1.0
-[modes.Emergency.altitudes.mid.Main.legs]
-pb = true
-bps = false
-cc = false
-[modes.Emergency.altitudes.mid.Attitude]
-future = 0.0
-option_k1 = 0.0
-option_k2 = 0.0
-[modes.Emergency.altitudes.mid.Attitude.legs]
-pb = false
-bps = false
-cc = false
-[modes.Emergency.altitudes.mid.Booster]
-future = 0.0
-option_k1 = 0.0
-option_k2 = 0.0
-[modes.Emergency.altitudes.mid.Booster.legs]
-pb = false
-bps = false
-cc = false
-
-[modes.Emergency.altitudes.low.Main]
-future = 1.0
-option_k1 = -1.0
-option_k2 = 1.0
-[modes.Emergency.altitudes.low.Main.legs]
-pb = true
-bps = false
-cc = false
-[modes.Emergency.altitudes.low.Attitude]
-future = 0.0
-option_k1 = 0.0
-option_k2 = 0.0
-[modes.Emergency.altitudes.low.Attitude.legs]
-pb = false
-bps = false
-cc = false
-[modes.Emergency.altitudes.low.Booster]
-future = 0.0
-option_k1 = 0.0
-option_k2 = 0.0
-[modes.Emergency.altitudes.low.Booster.legs]
-pb = false
-bps = false
+# high altitude では Cruise Main の CC を停止
+[overrides.Cruise.high.Main.legs]
 cc = false

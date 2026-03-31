@@ -144,9 +144,29 @@ def load_blueprints_from_unified_toml_path(
     path: str, *, altitude: AltitudeKey = "mid"
 ) -> Dict[str, LayerBlueprint]:
     """
-    統合 blueprint TOML（modes.<Mode>.altitudes.<Altitude>.<Part>）から、
+    統合 blueprint TOML（base + part_caps + overrides）から、
     指定高度の全 Part LayerBlueprint を返す。
     """
+    mode_part_raw = load_effective_mode_part_config_from_toml_path(path, altitude=altitude)
+    out: Dict[str, LayerBlueprint] = {}
+    for part_name in PART_NAMES:
+        matrix: Dict[ModeType, Dict[str, Any]] = {}
+        for mode in _MODES:
+            part_payload = {
+                k: v
+                for k, v in mode_part_raw[mode][part_name].items()
+                if k != "legs"
+            }
+            matrix[mode] = part_payload
+        out[part_name] = LayerBlueprint.from_dict(part_name, matrix)
+    _validate_unified_blueprint_rules(mode_part_raw)
+    return out
+
+
+def load_effective_mode_part_config_from_toml_path(
+    path: str, *, altitude: AltitudeKey = "mid"
+) -> Dict[ModeType, Dict[str, Dict[str, Any]]]:
+    """base + part_caps + overrides を合成し、mode→part の有効設定を返す。"""
     p = Path(path)
     with p.open("rb") as f:
         try:
@@ -155,38 +175,80 @@ def load_blueprints_from_unified_toml_path(
         except ImportError:
             import tomli as tomllib  # type: ignore[no-redef]
             data = tomllib.load(f)
-    modes = data.get("modes")
-    if not isinstance(modes, dict):
-        raise ValueError("Unified blueprint TOML must contain [modes.*]")
+    base = data.get("base")
+    if not isinstance(base, dict):
+        raise ValueError("Unified blueprint TOML must contain [base.*]")
+    part_caps = data.get("part_caps")
+    if not isinstance(part_caps, dict):
+        raise ValueError("Unified blueprint TOML must contain [part_caps.*]")
+    overrides = data.get("overrides")
+    if overrides is None:
+        overrides = {}
+    if not isinstance(overrides, dict):
+        raise ValueError("Unified blueprint TOML [overrides] must be a dict")
     if altitude not in ALTITUDES:
         raise ValueError(f"altitude must be one of {ALTITUDES}, got {altitude!r}")
-    out: Dict[str, LayerBlueprint] = {}
     mode_part_raw: Dict[ModeType, Dict[str, Dict[str, Any]]] = {}
-    for part_name in PART_NAMES:
-        matrix: Dict[ModeType, Dict[str, Any]] = {}
-        for mode in _MODES:
-            mode_block = modes.get(mode)
-            if not isinstance(mode_block, dict):
-                raise ValueError(f"Unified blueprint missing mode section: {mode}")
-            altitudes_block = mode_block.get("altitudes")
-            if not isinstance(altitudes_block, dict):
-                raise ValueError(f"Unified blueprint missing altitudes section: mode={mode}")
-            altitude_block = altitudes_block.get(altitude)
-            if not isinstance(altitude_block, dict):
-                raise ValueError(
-                    f"Unified blueprint missing altitude section: mode={mode}, altitude={altitude}"
-                )
-            part_block = altitude_block.get(part_name)
+    for mode in _MODES:
+        mode_block = base.get(mode)
+        if not isinstance(mode_block, dict):
+            raise ValueError(f"Unified blueprint missing base mode section: {mode}")
+        mode_part_raw[mode] = {}
+        for part_name in PART_NAMES:
+            part_block = mode_block.get(part_name)
             if not isinstance(part_block, dict):
                 raise ValueError(
-                    f"Unified blueprint missing part section: mode={mode}, altitude={altitude}, part={part_name}"
+                    f"Unified blueprint missing base part section: mode={mode}, part={part_name}"
                 )
-            part_payload = {k: v for k, v in dict(part_block).items() if k != "legs"}
-            matrix[mode] = part_payload
-            mode_part_raw.setdefault(mode, {})[part_name] = dict(part_block)
-        out[part_name] = LayerBlueprint.from_dict(part_name, matrix)
-    _validate_unified_blueprint_rules(mode_part_raw)
+            effective_block = _deep_copy_dict(part_block)
+            caps = part_caps.get(part_name)
+            if not isinstance(caps, dict):
+                raise ValueError(f"Unified blueprint missing part_caps for part={part_name}")
+            legs = effective_block.get("legs")
+            if not isinstance(legs, dict):
+                raise ValueError(
+                    f"Unified blueprint missing base legs: mode={mode}, part={part_name}"
+                )
+            for leg_key in ("pb", "bps", "cc"):
+                if leg_key not in caps or not isinstance(caps[leg_key], bool):
+                    raise ValueError(
+                        f"Unified blueprint invalid part_caps.{leg_key} for part={part_name}"
+                    )
+                legs[leg_key] = bool(legs.get(leg_key, False)) and bool(caps[leg_key])
+            mode_overrides = overrides.get(mode, {})
+            if not isinstance(mode_overrides, dict):
+                raise ValueError(f"Unified blueprint invalid overrides for mode={mode}")
+            altitude_overrides = mode_overrides.get(altitude, {})
+            if not isinstance(altitude_overrides, dict):
+                raise ValueError(
+                    f"Unified blueprint invalid overrides for mode={mode}, altitude={altitude}"
+                )
+            part_override = altitude_overrides.get(part_name, {})
+            if not isinstance(part_override, dict):
+                raise ValueError(
+                    f"Unified blueprint invalid override part section: mode={mode}, altitude={altitude}, part={part_name}"
+                )
+            _deep_merge_dict(effective_block, part_override)
+            mode_part_raw[mode][part_name] = effective_block
+    return mode_part_raw
+
+
+def _deep_copy_dict(data: Dict[str, Any]) -> Dict[str, Any]:
+    out: Dict[str, Any] = {}
+    for k, v in data.items():
+        if isinstance(v, dict):
+            out[k] = _deep_copy_dict(v)
+        else:
+            out[k] = v
     return out
+
+
+def _deep_merge_dict(base: Dict[str, Any], override: Dict[str, Any]) -> None:
+    for k, v in override.items():
+        if isinstance(v, dict) and isinstance(base.get(k), dict):
+            _deep_merge_dict(base[k], v)
+        else:
+            base[k] = v
 
 
 def _validate_unified_blueprint_rules(

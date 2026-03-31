@@ -51,6 +51,26 @@ docker compose -f docker/docker-compose.yml logs -f ib-gateway
 
 **`--force-recreate` は常に必要？** いいえ。compose の **環境変数・ボリューム・イメージ** を変更したときだけ、変更を反映させるために `docker compose -f docker/docker-compose.yml up -d --force-recreate` を使う。通常の再起動は `docker compose -f docker/docker-compose.yml up -d` または `restart` でよい。
 
+### 1.1 変更内容ごとの最小再起動手順
+
+毎回 `down` → `up -d` は不要。通常は対象サービスだけ再起動する。
+
+```bash
+# ソースコード / TOML 変更後（通常運用）
+docker compose -f docker/docker-compose.yml restart cockpit-bot
+```
+
+- `src/`・`scripts/`・`config/` は bind mount されているため、**ファイル変更はコンテナ内に即反映**される。
+- ただし Python プロセス再読込のため、`cockpit-bot` プロセスの再起動は必要。
+
+変更別の目安:
+
+- **コード/TOMLのみ変更**: `restart cockpit-bot`
+- **`docker/.env` 変更**（IBKR_HOST, TELEGRAM_* など）: `up -d --force-recreate cockpit-bot`
+- **`docker-compose.yml` 変更**: 影響サービスだけ `up -d --force-recreate <service>`
+- **Dockerfile/依存変更**: `build` 後に `up -d --force-recreate cockpit-bot`
+- **ネットワーク含めて全初期化したい場合のみ**: `down` → `up -d`
+
 - **ib-gateway**: IB API サーバ。常時起動。ポート 6080（noVNC）、ホスト側 7497（API）。価格・口座・注文などの API を提供。イメージ内の `/root/Jts` を上書きするボリュームは使わない。
 - **cockpit-bot**: Telegram ボット。24h 起動。`/cockpit` で ib-gateway に接続し計器を取得して返す。`restart: unless-stopped`。
 - **runner**: テスト・一時スクリプト用。**`up -d` では起動しない**（`profiles: [run]` のため）。都度 `docker compose run --rm runner ...` で pytest や `run_cockpit_with_ib.py` などを実行する。デフォルトコマンドは「起動通知 → pytest」で終了するため常駐させない。

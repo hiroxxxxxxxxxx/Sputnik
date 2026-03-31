@@ -218,85 +218,98 @@ def test_load_unified_blueprints_valid() -> None:
 
     content = textwrap.dedent(
         """
-        [modes.Boost.altitudes.mid.Main]
+        [base.Boost.Main]
         future = 1.0
         option_k1 = -1.0
         option_k2 = 0.0
-        [modes.Boost.altitudes.mid.Main.legs]
+        [base.Boost.Main.legs]
         pb = false
         bps = true
         cc = false
 
-        [modes.Boost.altitudes.mid.Attitude]
+        [base.Boost.Attitude]
         future = 0.5
         option_k1 = -1.0
         option_k2 = 0.0
-        [modes.Boost.altitudes.mid.Attitude.legs]
+        [base.Boost.Attitude.legs]
         pb = true
         bps = false
         cc = false
 
-        [modes.Boost.altitudes.mid.Booster]
+        [base.Boost.Booster]
         future = 0.5
         option_k1 = -1.5
         option_k2 = 0.0
-        [modes.Boost.altitudes.mid.Booster.legs]
+        [base.Boost.Booster.legs]
         pb = false
         bps = true
         cc = false
 
-        [modes.Cruise.altitudes.mid.Main]
+        [base.Cruise.Main]
         future = 1.0
         option_k1 = -1.0
         option_k2 = 0.0
-        [modes.Cruise.altitudes.mid.Main.legs]
+        [base.Cruise.Main.legs]
         pb = false
         bps = true
         cc = true
 
-        [modes.Cruise.altitudes.mid.Attitude]
+        [base.Cruise.Attitude]
         future = 0.5
         option_k1 = -1.0
         option_k2 = 0.0
-        [modes.Cruise.altitudes.mid.Attitude.legs]
+        [base.Cruise.Attitude.legs]
         pb = true
         bps = false
         cc = false
 
-        [modes.Cruise.altitudes.mid.Booster]
+        [base.Cruise.Booster]
         future = 0.0
         option_k1 = 0.0
         option_k2 = 0.0
-        [modes.Cruise.altitudes.mid.Booster.legs]
+        [base.Cruise.Booster.legs]
         pb = false
         bps = false
         cc = false
 
-        [modes.Emergency.altitudes.mid.Main]
+        [base.Emergency.Main]
         future = 1.0
         option_k1 = -1.0
         option_k2 = 1.0
-        [modes.Emergency.altitudes.mid.Main.legs]
+        [base.Emergency.Main.legs]
         pb = true
         bps = false
         cc = false
 
-        [modes.Emergency.altitudes.mid.Attitude]
+        [base.Emergency.Attitude]
         future = 0.0
         option_k1 = 0.0
         option_k2 = 0.0
-        [modes.Emergency.altitudes.mid.Attitude.legs]
+        [base.Emergency.Attitude.legs]
         pb = false
         bps = false
         cc = false
 
-        [modes.Emergency.altitudes.mid.Booster]
+        [base.Emergency.Booster]
         future = 0.0
         option_k1 = 0.0
         option_k2 = 0.0
-        [modes.Emergency.altitudes.mid.Booster.legs]
+        [base.Emergency.Booster.legs]
         pb = false
         bps = false
+        cc = false
+
+        [part_caps.Main]
+        pb = true
+        bps = true
+        cc = true
+        [part_caps.Attitude]
+        pb = true
+        bps = false
+        cc = false
+        [part_caps.Booster]
+        pb = false
+        bps = true
         cc = false
         """
     ).strip()
@@ -308,87 +321,100 @@ def test_load_unified_blueprints_valid() -> None:
     assert bps["Booster"].get_ratios("Cruise")["future"] == 0.0
 
 
-def test_load_unified_blueprints_invalid_attitude_legs_raises() -> None:
+def test_load_unified_blueprints_invalid_attitude_caps_raises() -> None:
     import tempfile
 
     content = textwrap.dedent(
         """
-        [modes.Boost.altitudes.mid.Main]
+        [base.Boost.Main]
         future = 1.0
         option_k1 = -1.0
         option_k2 = 0.0
-        [modes.Boost.altitudes.mid.Main.legs]
+        [base.Boost.Main.legs]
         pb = false
         bps = true
         cc = false
-        [modes.Boost.altitudes.mid.Attitude]
+        [base.Boost.Attitude]
         future = 0.5
         option_k1 = -1.0
         option_k2 = 0.0
-        [modes.Boost.altitudes.mid.Attitude.legs]
+        [base.Boost.Attitude.legs]
         pb = true
         bps = false
         cc = true
-        [modes.Boost.altitudes.mid.Booster]
+        [base.Boost.Booster]
         future = 0.5
         option_k1 = -1.5
         option_k2 = 0.0
-        [modes.Boost.altitudes.mid.Booster.legs]
+        [base.Boost.Booster.legs]
         pb = false
         bps = true
         cc = false
-        [modes.Cruise.altitudes.mid.Main]
+        [base.Cruise.Main]
         future = 1.0
         option_k1 = -1.0
         option_k2 = 0.0
-        [modes.Cruise.altitudes.mid.Main.legs]
+        [base.Cruise.Main.legs]
         pb = false
         bps = true
         cc = true
-        [modes.Cruise.altitudes.mid.Attitude]
+        [base.Cruise.Attitude]
         future = 0.5
         option_k1 = -1.0
         option_k2 = 0.0
-        [modes.Cruise.altitudes.mid.Attitude.legs]
+        [base.Cruise.Attitude.legs]
         pb = true
         bps = false
         cc = false
-        [modes.Cruise.altitudes.mid.Booster]
+        [base.Cruise.Booster]
         future = 0.0
         option_k1 = 0.0
         option_k2 = 0.0
-        [modes.Cruise.altitudes.mid.Booster.legs]
+        [base.Cruise.Booster.legs]
         pb = false
         bps = false
         cc = false
-        [modes.Emergency.altitudes.mid.Main]
+        [base.Emergency.Main]
         future = 1.0
         option_k1 = -1.0
         option_k2 = 1.0
-        [modes.Emergency.altitudes.mid.Main.legs]
+        [base.Emergency.Main.legs]
         pb = true
         bps = false
         cc = false
-        [modes.Emergency.altitudes.mid.Attitude]
+        [base.Emergency.Attitude]
         future = 0.0
         option_k1 = 0.0
         option_k2 = 0.0
-        [modes.Emergency.altitudes.mid.Attitude.legs]
+        [base.Emergency.Attitude.legs]
         pb = false
         bps = false
         cc = false
-        [modes.Emergency.altitudes.mid.Booster]
+        [base.Emergency.Booster]
         future = 0.0
         option_k1 = 0.0
         option_k2 = 0.0
-        [modes.Emergency.altitudes.mid.Booster.legs]
+        [base.Emergency.Booster.legs]
         pb = false
         bps = false
+        cc = false
+
+        [part_caps.Main]
+        pb = true
+        bps = true
+        cc = true
+        [part_caps.Attitude]
+        pb = true
+        bps = false
+        cc = true
+        [part_caps.Booster]
+        pb = false
+        bps = true
         cc = false
         """
     ).strip()
     with tempfile.NamedTemporaryFile(suffix=".toml", mode="w", encoding="utf-8") as f:
         f.write(content)
         f.flush()
-        with pytest.raises(ValueError, match="invalid legs"):
+        with pytest.raises(ValueError, match="invalid legs for Attitude"):
             load_blueprints_from_unified_toml_path(f.name)
