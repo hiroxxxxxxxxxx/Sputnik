@@ -295,9 +295,24 @@ async def _fetch_breakdown_report(
     timeout: float = 75.0,
 ) -> str:
     from reports.format_breakdown_report import format_breakdown_report
+    from cockpit.mode import BOOST, CRUISE, EMERGENCY
 
-    async with _refreshed_fc(host, port, symbols, client_id=client_id, timeout=timeout) as (fc, _targets):
-        return format_breakdown_report(fc)
+    def _level_to_mode(level: int):
+        if level >= 2:
+            return EMERGENCY
+        if level == 1:
+            return CRUISE
+        return BOOST
+
+    async with _refreshed_fc(host, port, symbols, client_id=client_id, timeout=timeout) as (fc, target_base_by_symbol):
+        signal = await fc.get_flight_controller_signal()
+        modes_by_symbol = {sym: _level_to_mode(signal.throttle_level(sym)) for sym in ("NQ", "GC")}
+        return format_breakdown_report(
+            fc,
+            positions_detail=fc.get_last_positions_detail(),
+            target_base_by_symbol=target_base_by_symbol,
+            modes_by_symbol=modes_by_symbol,
+        )
 
 
 async def _fetch_daily_report(

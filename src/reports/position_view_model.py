@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Optional
 
-from avionics.account_parsers import parse_option_strategies_level1_from_rows
+from avionics.account_parsers import build_option_strategy_state_from_rows
 from avionics.data.futures_micro_equiv import (
     engine_symbol_to_micro_notional_label,
     micro_equivalent_net_gc_family,
@@ -76,14 +76,14 @@ def _build_options_strategy_rows(
         targets_path, altitude=altitude  # type: ignore[arg-type]
     )
     blueprints = _default_blueprints(altitude=altitude)
-    parsed_by_symbol = parse_option_strategies_level1_from_rows(symbols, options_rows)
+    strategy_state_by_symbol = build_option_strategy_state_from_rows(symbols, options_rows)
     out: list[dict[str, str]] = []
     for sym in symbols:
         if sym not in ("NQ", "GC"):
             continue
-        if sym not in parsed_by_symbol:
+        if sym not in strategy_state_by_symbol:
             continue
-        actual = parsed_by_symbol[sym]
+        strategy_states = strategy_state_by_symbol[sym]
         futures_target = 0.0
         if target_base_by_symbol is not None and sym in target_base_by_symbol:
             futures_target = total_future_target(
@@ -106,7 +106,8 @@ def _build_options_strategy_rows(
         }
         for strat in _STRATEGY_NAMES:
             t = float(targets[strat])
-            a = float(actual[strat])
+            state = strategy_states[strat]
+            a = float(state.qty)
             out.append(
                 {
                     "symbol": sym,
@@ -114,18 +115,19 @@ def _build_options_strategy_rows(
                     "target": f"{t:.0f}",
                     "actual": f"{a:.0f}",
                     "delta": f"{(t-a):.0f}",
+                    "attached": str(state.attached),
                     "unclassified_detail": (
                         ""
                         if strat != "UNCLASSIFIED"
                         else (
                             "P B="
-                            f"{float(actual['UNCLASSIFIED_DETAIL']['put_buy']):.0f} "
+                            f"{float(state.unclassified_detail.put_buy if state.unclassified_detail else 0.0):.0f} "
                             "S="
-                            f"{float(actual['UNCLASSIFIED_DETAIL']['put_sell']):.0f} | "
+                            f"{float(state.unclassified_detail.put_sell if state.unclassified_detail else 0.0):.0f} | "
                             "C B="
-                            f"{float(actual['UNCLASSIFIED_DETAIL']['call_buy']):.0f} "
+                            f"{float(state.unclassified_detail.call_buy if state.unclassified_detail else 0.0):.0f} "
                             "S="
-                            f"{float(actual['UNCLASSIFIED_DETAIL']['call_sell']):.0f}"
+                            f"{float(state.unclassified_detail.call_sell if state.unclassified_detail else 0.0):.0f}"
                         )
                     ),
                 }

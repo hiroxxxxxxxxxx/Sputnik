@@ -11,7 +11,14 @@ from __future__ import annotations
 from datetime import date
 from typing import TYPE_CHECKING, Any, Optional
 
+from avionics.account_parsers import (
+    build_engine_part_on_off_state,
+    build_option_strategy_state_from_option_detail,
+    resolve_attached_strategy_name,
+)
+from avionics.data.account_state import DailyEnginePartState, DailySymbolState
 from cockpit.mode import BOOST, CRUISE, EMERGENCY, MODE_STR, ModeType
+from engines.target_policy import resolve_future_targets_by_part_from_toml
 from reports._render import render
 from reports.position_view_model import build_position_view_model
 
@@ -138,6 +145,62 @@ def _build_scl_lcl_rows(
     return scl_level, scl_rows, lcl_level, lcl_rows
 
 
+def _build_daily_position_state_rows(
+    *,
+    symbols: list[str],
+    modes_by_symbol: dict[str, ModeType],
+    target_base_by_symbol: Optional[dict[str, float]],
+    positions_detail: Optional[dict[str, dict[str, dict[str, float]]]],
+    altitude: str,
+) -> list[DailySymbolState]:
+    sections: list[DailySymbolState] = []
+    if target_base_by_symbol is None:
+        return sections
+
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent.parent
+    targets_toml = str(root / "config" / "targets.toml")
+
+    for sym in symbols:
+        if sym not in ("NQ", "GC") or sym not in modes_by_symbol:
+            continue
+        if sym not in target_base_by_symbol:
+            raise ValueError(f"target_base_futures missing engine symbol: {sym}")
+        mode_targets = resolve_future_targets_by_part_from_toml(
+            targets_toml,
+            mode=modes_by_symbol[sym],
+            altitude=altitude,
+            base_target=float(target_base_by_symbol[sym]),
+        )
+        fut = (positions_detail or {}).get(sym, {}).get("futures", {})
+        opt = (positions_detail or {}).get(sym, {}).get("options", {})
+        strategy_states = build_option_strategy_state_from_option_detail(opt, family=sym)
+        strategy_name = resolve_attached_strategy_name(strategy_states)
+        if sym == "NQ":
+            actual_future_total = float(fut.get("nq_buy", 0.0)) - float(fut.get("nq_sell", 0.0))
+            actual_future_total = actual_future_total * 10.0
+            actual_future_total += float(fut.get("mnq_buy", 0.0)) - float(fut.get("mnq_sell", 0.0))
+        else:
+            actual_future_total = float(fut.get("gc_buy", 0.0)) - float(fut.get("gc_sell", 0.0))
+            actual_future_total = actual_future_total * 10.0
+            actual_future_total += float(fut.get("mgc_buy", 0.0)) - float(fut.get("mgc_sell", 0.0))
+        symbol_actual = {"future": actual_future_total, "k1": 0.0, "k2": 0.0}
+        on_off = build_engine_part_on_off_state(symbol_actual, mode_targets)
+        rows: list[DailyEnginePartState] = []
+        for part in ("Main", "Attitude", "Booster"):
+            active = bool(on_off[part])
+            rows.append(
+                DailyEnginePartState(
+                    part=part,
+                    engine_on=active,
+                    strategy_name=strategy_name,
+                )
+            )
+        sections.append(DailySymbolState(symbol=sym, rows=(rows[0], rows[1], rows[2])))
+    return sections
+
+
 async def _build_daily_flight_log_context(
     fc: "FlightController",
     symbols: list[str],
@@ -170,11 +233,11 @@ async def _build_daily_flight_log_context(
     scl_level, scl_rows, lcl_level, lcl_rows = _build_scl_lcl_rows(
         signal, bundle, mapping, symbols, altitude=altitude
     )
-    position_ctx = build_position_view_model(
-        symbols,
-        positions_detail=positions_detail,
-        target_base_by_symbol=target_base_by_symbol,
+    position_state_sections = _build_daily_position_state_rows(
+        symbols=symbols,
         modes_by_symbol=modes_by_symbol,
+        target_base_by_symbol=target_base_by_symbol,
+        positions_detail=positions_detail,
         altitude=str(altitude),
     )
 
@@ -187,9 +250,20 @@ async def _build_daily_flight_log_context(
         "scl_rows": scl_rows,
         "lcl_level": lcl_level,
         "lcl_rows": lcl_rows,
-        "futures_rows": position_ctx["futures_rows"],
-        "futures_target_rows": position_ctx["futures_target_rows"],
-        "options_rows": position_ctx["options_rows"],
+        "position_state_sections": [
+            {
+                "symbol": sec.symbol,
+                "rows": [
+                    {
+                        "part": row.part,
+                        "engine_state": "ON" if row.engine_on else "OFF",
+                        "strategy_name": row.strategy_name,
+                    }
+                    for row in sec.rows
+                ],
+            }
+            for sec in position_state_sections
+        ],
         "nlv_line": nlv_line,
         "cash_buffer_line": cash_buffer_line,
         "maintenance_lines": ["カレンダー連携は未実装のためスキップ"],

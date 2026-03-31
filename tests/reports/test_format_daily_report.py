@@ -163,21 +163,42 @@ def test_format_daily_report_with_positions() -> None:
             as_of=date(2026, 3, 30),
         )
     )
-    assert "[4] POSITIONS DETAIL" in text
-    assert "NQ | NQ B=2 S=1 | MNQ B=10 S=2" in text
-    assert "GC | GC B=2 S=0 | MGC B=1 S=3" in text
-    assert "NQ | PB | target=15 | actual=0 | delta=15" in text
-    assert "NQ | BPS | target=15 | actual=0 | delta=15" in text
-    assert "NQ | CC | target=15 | actual=2 | delta=13" in text
-    assert "GC | UNCLASSIFIED | target=0 | actual=2 | delta=-2" in text
-    assert "MNQ | target=15 | actual=18 | delta=-3" in text
-    assert "MGC | target=20 | actual=18 | delta=2" in text
+    assert "[4] POSITION SNAPSHOT" in text
+    assert "━━━━━━━━ NQ ━━━━━━━━" in text
+    assert "━━━━━━━━ GC ━━━━━━━━" in text
+    assert "Main | Engine=ON | Strategy=CC" in text
+    assert "Attitude | Engine=ON | Strategy=CC" in text
+    assert "Booster | Engine=ON | Strategy=CC" in text
+    assert text.count("Engine=") == 6
+    assert text.count("Strategy=") == 6
+    assert "target=15" not in text
+    assert "delta=" not in text
 
 
 def test_format_daily_report_without_positions() -> None:
     fc = _DummyFC()
     text = asyncio.run(format_daily_report(fc, ["NQ", "GC"], as_of=date(2026, 3, 30)))
-    assert "[4] POSITIONS DETAIL" not in text
+    assert "[4] POSITION SNAPSHOT" not in text
+
+
+def test_format_daily_report_zero_positions_show_engine_off() -> None:
+    fc = _DummyFC()
+    positions_detail = {
+        "NQ": {"futures": {"nq_buy": 0.0, "nq_sell": 0.0, "mnq_buy": 0.0, "mnq_sell": 0.0}, "options": {}},
+        "GC": {"futures": {"gc_buy": 0.0, "gc_sell": 0.0, "mgc_buy": 0.0, "mgc_sell": 0.0}, "options": {}},
+    }
+    text = asyncio.run(
+        format_daily_report(
+            fc,
+            ["NQ", "GC"],
+            positions_detail=positions_detail,
+            target_base_by_symbol={"NQ": 10.0, "GC": 10.0},
+            as_of=date(2026, 3, 30),
+        )
+    )
+    assert "Main | Engine=OFF | Strategy=NONE" in text
+    assert "Attitude | Engine=OFF | Strategy=NONE" in text
+    assert "Booster | Engine=OFF | Strategy=NONE" in text
 
 
 def test_format_daily_report_target_base_missing_symbol_raises() -> None:

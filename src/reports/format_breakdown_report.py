@@ -9,9 +9,11 @@ bundle は FC から get_last_bundle() で取得する。
 from __future__ import annotations
 
 from datetime import date
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
+from cockpit.mode import ModeType
 from reports._render import render
+from reports.position_view_model import build_position_view_model
 
 if TYPE_CHECKING:
     from avionics import FlightController
@@ -97,6 +99,9 @@ def _build_breakdown_report_context(
     bundle: "SignalBundle",
     *,
     altitude: "AltitudeRegime",
+    positions_detail: Optional[dict[str, dict[str, dict[str, float]]]] = None,
+    target_base_by_symbol: Optional[dict[str, float]] = None,
+    modes_by_symbol: Optional[dict[str, ModeType]] = None,
 ) -> dict[str, Any]:
     """
     Layer 2 シグナル内訳用のテンプレートコンテキストを組み立てる。
@@ -213,6 +218,20 @@ def _build_breakdown_report_context(
             ],
         }
 
+    position_ctx = {
+        "symbols": [],
+        "futures_target_rows": [],
+        "options_rows": [],
+    }
+    if positions_detail and target_base_by_symbol is not None and modes_by_symbol is not None:
+        position_ctx = build_position_view_model(
+            ["NQ", "GC"],
+            positions_detail=positions_detail,
+            target_base_by_symbol=target_base_by_symbol,
+            modes_by_symbol=modes_by_symbol,
+            altitude=str(altitude),
+        )
+
     return {
         "date_iso": date_iso,
         "price_sections": price_sections,
@@ -220,11 +239,17 @@ def _build_breakdown_report_context(
         "credit_sections": credit_sections,
         "r_section": r_section,
         "capital_section": capital_section,
+        "pos_symbols": position_ctx["symbols"],
+        "pos_futures_target_rows": position_ctx["futures_target_rows"],
+        "pos_options_rows": position_ctx["options_rows"],
     }
 
 
 def format_breakdown_report(
     fc: "FlightController",
+    positions_detail: Optional[dict[str, dict[str, dict[str, float]]]] = None,
+    target_base_by_symbol: Optional[dict[str, float]] = None,
+    modes_by_symbol: Optional[dict[str, ModeType]] = None,
     template_name: str = BREAKDOWN_TEMPLATE,
 ) -> str:
     """
@@ -241,5 +266,12 @@ def format_breakdown_report(
     altitude = fc.last_altitude_regime
     if altitude is None:
         raise ValueError("format_breakdown_report requires fc.refresh() so last_altitude_regime is set")
-    context = _build_breakdown_report_context(fc, bundle, altitude=altitude)
+    context = _build_breakdown_report_context(
+        fc,
+        bundle,
+        altitude=altitude,
+        positions_detail=positions_detail,
+        target_base_by_symbol=target_base_by_symbol,
+        modes_by_symbol=modes_by_symbol,
+    )
     return render(template_name, context)

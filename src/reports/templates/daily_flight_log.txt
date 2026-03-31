@@ -31,36 +31,15 @@
 {% if cash_buffer_line %}{{ cash_buffer_line }}
 {% endif %}
 
-{% if futures_rows or futures_target_rows %}
+{% if position_state_sections %}
 ────────────────────
-[4] POSITIONS DETAIL
-{% if futures_rows %}
-Futures (Buy/Sell per contract)
-{% for row in futures_rows %}
-{% if row.symbol == "NQ" %}
-{{ row.symbol }} | NQ B={{ row.nq_buy }} S={{ row.nq_sell }} | MNQ B={{ row.mnq_buy }} S={{ row.mnq_sell }}
-{% elif row.symbol == "GC" %}
-{{ row.symbol }} | GC B={{ row.gc_buy }} S={{ row.gc_sell }} | MGC B={{ row.mgc_buy }} S={{ row.mgc_sell }}
-{% else %}
-{{ row.symbol }} | NQ B={{ row.nq_buy }} S={{ row.nq_sell }} | MNQ B={{ row.mnq_buy }} S={{ row.mnq_sell }} | GC B={{ row.gc_buy }} S={{ row.gc_sell }} | MGC B={{ row.mgc_buy }} S={{ row.mgc_sell }}
-{% endif %}
+[4] POSITION SNAPSHOT
+{% for sec in position_state_sections %}
+━━━━━━━━ {{ sec.symbol }} ━━━━━━━━
+{% for row in sec.rows %}
+{{ row.part }} | Engine={{ row.engine_state }} | Strategy={{ row.strategy_name }}
 {% endfor %}
-{% endif %}
-
-{% if options_rows %}
-Options strategy diff (target / actual / delta)
-{% for row in options_rows %}
-{{ row.symbol }} | {{ row.strategy }} | target={{ row.target }} | actual={{ row.actual }} | delta={{ row.delta }}
 {% endfor %}
-{% endif %}
-
-{% if futures_target_rows %}
-Futures target diff (MNQ/MGC 相当枚数; target / actual_net / delta)
-{% for row in futures_target_rows %}
-{{ row.micro_label }} | target={{ row.target }} | actual={{ row.actual }} | delta={{ row.delta }}
-{% endfor %}
-{% endif %}
-
 {% endif %}
 
 ────────────────────

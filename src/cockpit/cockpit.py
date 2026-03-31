@@ -15,7 +15,7 @@ from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Optional
 
-from avionics.account_parsers import build_actual_by_target
+from avionics.account_parsers import build_engine_actual_state
 from avionics.data.flight_controller_signal import FlightControllerSignal
 from avionics.data.data_source import DataSource
 from avionics.data.signals import AltitudeRegime
@@ -282,7 +282,7 @@ class Cockpit:
                         altitude=db_altitude,
                         base_target=base_target,
                     )
-                    actual_by_part = build_actual_by_target(symbol_actual, mode_targets)
+                    actual_by_part = build_engine_actual_state(symbol_actual, mode_targets)
                     await engine.apply_mode(
                         target_mode,
                         actual_by_part=actual_by_part,

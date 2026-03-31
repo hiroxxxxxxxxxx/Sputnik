@@ -43,4 +43,29 @@ Layer 2 シグナル（各因子の入力値）内訳
 {% endfor %}
 {% endif %}
 
+{% if pos_symbols %}
+────────────────────
+[6] POSITION SNAPSHOT
+{% for sym in pos_symbols %}
+━━━━━━━━ {{ sym }} ━━━━━━━━
+Futures target diff (MNQ/MGC 相当枚数; target / actual_net / delta)
+{% for row in pos_futures_target_rows %}
+{% if row.symbol == sym %}
+{{ row.micro_label }} | target={{ row.target }} | actual={{ row.actual }} | delta={{ row.delta }}
+{% endif %}
+{% endfor %}
+
+Options strategy diff (target / actual / delta)
+{% for row in pos_options_rows %}
+{% if row.symbol == sym %}
+{% if row.strategy == "UNCLASSIFIED" %}
+{{ row.strategy }} | actual={{ row.actual }} | {{ row.unclassified_detail }}
+{% else %}
+{{ row.strategy }} | target={{ row.target }} | actual={{ row.actual }} | delta={{ row.delta }}
+{% endif %}
+{% endif %}
+{% endfor %}
+{% endfor %}
+{% endif %}
+
 ━━━━━━━━━━━━━━━━━━━━
