@@ -1,4 +1,4 @@
-"""target_futures セッターの関数/CLI テスト。"""
+"""target_futures セッターの関数テスト。"""
 from __future__ import annotations
 
 import os
@@ -9,9 +9,9 @@ from pathlib import Path
 
 import pytest
 
-_scripts = Path(__file__).resolve().parent.parent.parent / "scripts"
-if str(_scripts) not in sys.path:
-    sys.path.insert(0, str(_scripts))
+_root = Path(__file__).resolve().parent.parent.parent
+if str(_root / "src") not in sys.path:
+    sys.path.insert(0, str(_root / "src"))
 
 
 @pytest.fixture()
@@ -71,26 +71,3 @@ def test_normalize_engine_symbol_mnq_mgc_alias() -> None:
     assert normalize_engine_symbol("MGC") == "GC"
 
 
-def test_set_target_futures_cli_dry_run(conn: sqlite3.Connection) -> None:
-    from set_target_futures import main
-    from store.state import read_target_futures
-
-    _seed_full_targets(conn)
-    before = read_target_futures(conn)
-    code = main(
-        ["NQ", "--base", "9", "--dry-run"]
-    )
-    after = read_target_futures(conn)
-    assert code == 0
-    assert before == after
-
-
-def test_set_target_futures_cli_updates(conn: sqlite3.Connection) -> None:
-    from set_target_futures import main
-    from store.state import read_target_futures
-
-    _seed_full_targets(conn)
-    code = main(["MNQ", "--base", "9"])
-    current = read_target_futures(conn)
-    assert code == 0
-    assert current["NQ"] == 9.0

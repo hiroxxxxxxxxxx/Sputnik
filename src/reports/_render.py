@@ -20,7 +20,7 @@ def render(template_name: str, context: dict[str, Any]) -> str:
     templates/ 直下のテンプレートをレンダリングする。
     context は表示用に整えた値のみ渡すこと（責務境界はモジュール docstring 参照）。
 
-    :param template_name: ファイル名（例: daily_flight_log.txt）。
+    :param template_name: ファイル名（例: daily_report.txt）。
     :param context: テンプレート変数（表示用文字列 or そのリスト）。
     :return: レンダリング済みテキスト。
     """

@@ -6,7 +6,7 @@ NY クローズ後の日次ジョブ: IB から Raw を取得し FC を更新し
 cron / systemd / EventBridge 等で **1 日 1 回**（NY RTH 終了後）だけ実行すること。
 
 用法:
-  PYTHONPATH=src python scripts/run_daily_signal_persist.py [--host HOST] [--port PORT] [--as-of YYYY-MM-DD]
+  PYTHONPATH=src python scripts/batch/run_daily_signal_persist.py [--host HOST] [--port PORT] [--as-of YYYY-MM-DD]
 
 ``--as-of`` は検証・再実行用。省略時は ``as_of_for_daily_signal_persist()`` に従う。
 """
@@ -19,16 +19,6 @@ import os
 import sys
 from datetime import date
 from pathlib import Path
-
-_root = Path(__file__).resolve().parent.parent
-_scripts = Path(__file__).resolve().parent
-if str(_root) not in sys.path:
-    sys.path.insert(0, str(_root))
-if str(_root / "src") not in sys.path:
-    sys.path.insert(0, str(_root / "src"))
-if str(_scripts) not in sys.path:
-    sys.path.insert(0, str(_scripts))
-
 
 async def main() -> int:
     parser = argparse.ArgumentParser(description="日次 signal_daily を SQLite に保存（NY クローズ後）")

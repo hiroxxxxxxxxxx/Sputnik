@@ -3,7 +3,7 @@
 IB 接続 → SignalBundle 取得 → Cockpit 更新 → 計器シグナル表示の一連フローを実行するサンプル。
 
 用法:
-  PYTHONPATH=src python scripts/run_cockpit_with_ib.py [--host HOST] [--port PORT] [--client-id ID]
+  PYTHONPATH=src python scripts/tools/run_cockpit_with_ib.py [--host HOST] [--port PORT] [--client-id ID]
   (IB Gateway / TWS はあらかじめ起動し API 有効にしておく)
 
 config/factors.toml がある場合は因子を登録し、ない場合は Cockpit のみでデータ取得までを表示する。
@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 
 # プロジェクトルートと scripts を path に追加
-_root = Path(__file__).resolve().parent.parent
+_root = Path(__file__).resolve().parent.parent.parent
 _scripts = Path(__file__).resolve().parent
 if str(_root) not in sys.path:
     sys.path.insert(0, str(_root))

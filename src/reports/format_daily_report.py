@@ -20,7 +20,7 @@ from avionics.data.account_state import DailyEnginePartState, DailySymbolState
 from cockpit.mode import BOOST, CRUISE, EMERGENCY, MODE_STR, ModeType
 from engines.target_policy import resolve_future_targets_by_part_from_toml
 from reports._render import render
-from reports.position_view_model import build_position_view_model
+from reports.position_report_context import build_position_report_context
 
 if TYPE_CHECKING:
     from avionics import FlightController
@@ -31,8 +31,7 @@ if TYPE_CHECKING:
 
 LEVEL_STR = {0: "0", 1: "1", 2: "2"}
 
-_DEFAULT_TEMPLATE = "daily_flight_log.txt"
-_POSITION_TEMPLATE = "positions_log.txt"
+_DEFAULT_TEMPLATE = "daily_report.txt"
 
 
 def _level_to_mode(level: int) -> ModeType:
@@ -301,60 +300,3 @@ async def format_daily_report(
     return render(template_name, context)
 
 
-async def _build_positions_log_context(
-    fc: "FlightController",
-    symbols: list[str],
-    *,
-    positions_detail: Optional[dict[str, dict[str, dict[str, float]]]] = None,
-    target_base_by_symbol: Optional[dict[str, float]] = None,
-    as_of: Optional[date] = None,
-) -> dict[str, Any]:
-    """positions_log 用のコンテキストを返す。"""
-    d = as_of or date.today()
-    signal = await fc.get_flight_controller_signal()
-    modes_by_symbol: dict[str, ModeType] = {}
-    for sym in symbols:
-        if sym in ("NQ", "GC"):
-            modes_by_symbol[sym] = _level_to_mode(signal.throttle_level(sym))
-    position_ctx = build_position_view_model(
-        symbols,
-        positions_detail=positions_detail,
-        target_base_by_symbol=target_base_by_symbol,
-        modes_by_symbol=modes_by_symbol,
-        altitude=str(fc.last_altitude_regime or "mid"),
-    )
-    return {
-        "date_iso": d.isoformat(),
-        "symbols": position_ctx["symbols"],
-        "futures_rows": position_ctx["futures_rows"],
-        "options_rows": position_ctx["options_rows"],
-        "futures_target_rows": position_ctx["futures_target_rows"],
-    }
-
-
-async def format_position_report(
-    fc: "FlightController",
-    symbols: list[str],
-    *,
-    positions_detail: Optional[dict[str, dict[str, dict[str, float]]]] = None,
-    target_base_by_symbol: Optional[dict[str, float]] = None,
-    as_of: Optional[date] = None,
-    template_name: str = _POSITION_TEMPLATE,
-) -> str:
-    """
-    positions セクションのみのレポートを生成する。
-
-    :param symbols: 銘柄リスト（例: ["NQ", "GC"]）。
-    :param positions_detail: 銘柄別ポジション詳細（fetch_position_detail の戻り）。
-    :param target_base_by_symbol: DB target_base_futures（MNQ/MGC 相当、内部キーは NQ/GC）。
-    :param as_of: 基準日。未指定なら date.today()。
-    :param template_name: 使用するテンプレートファイル名。
-    """
-    context = await _build_positions_log_context(
-        fc,
-        symbols,
-        positions_detail=positions_detail,
-        target_base_by_symbol=target_base_by_symbol,
-        as_of=as_of,
-    )
-    return render(template_name, context)

@@ -12,7 +12,7 @@ echo "--- Batch Start: $(date) ---" >> "$LOG_FILE" 2>&1
 
 # メイン処理を実行し、結果をログへ追記
 /usr/bin/docker compose -f docker/docker-compose.yml --env-file docker/.env run --rm runner \
-  python /app/scripts/run_daily_signal_persist.py >> "$LOG_FILE" 2>&1
+  python /app/scripts/batch/run_daily_signal_persist.py >> "$LOG_FILE" 2>&1
 
 # 終了ログを記録
 echo "--- Batch End: $(date) ---" >> "$LOG_FILE" 2>&1

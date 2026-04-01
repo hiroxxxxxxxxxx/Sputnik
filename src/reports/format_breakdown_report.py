@@ -2,7 +2,7 @@
 Layer 2 シグナル内訳（breakdown / detail）レポートのテンプレートレンダリング。
 
 責務: フォーマット後の値のみ渡す。表示文言・レイアウトはテンプレートに記載。
-`daily_flight_log.txt` と同様の区切り線・セクション見出しで読みやすくする。
+`daily_report.txt` と同様の区切り線・セクション見出しで読みやすくする。
 bundle は FC から get_last_bundle() で取得する。
 """
 
@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from cockpit.mode import ModeType
 from reports._render import render
-from reports.position_view_model import build_position_view_model
+from reports.position_report_context import build_position_report_context
 
 if TYPE_CHECKING:
     from avionics import FlightController
@@ -286,7 +286,7 @@ def _build_breakdown_report_context(
         "options_rows": [],
     }
     if positions_detail and target_base_by_symbol is not None and modes_by_symbol is not None:
-        position_ctx = build_position_view_model(
+        position_ctx = build_position_report_context(
             ["NQ", "GC"],
             positions_detail=positions_detail,
             target_base_by_symbol=target_base_by_symbol,

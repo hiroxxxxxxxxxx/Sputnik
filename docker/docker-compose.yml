@@ -73,11 +73,11 @@ services:
       - ib-gateway
     # 起動時に TELEGRAM_TOKEN/CHAT_ID があれば Telegram 通知してからメインコマンド実行
     # デフォルト: pytest。Cockpit+IB 実行例:
-    #   docker compose -f docker/docker-compose.yml run --rm runner python scripts/run_cockpit_with_ib.py
+    #   docker compose -f docker/docker-compose.yml run --rm runner python scripts/tools/run_cockpit_with_ib.py
     command:
       - sh
       - -c
-      - "python /app/scripts/telegram_startup_notify.py; exec python -m pytest tests/ -v --ignore=tests/avionics/test_factors_config.py"
+      - "python /app/scripts/bot/telegram_startup_notify.py; exec python -m pytest tests/ -v --ignore=tests/avionics/test_factors_config.py"
     logging:
       driver: "json-file"
       options:
@@ -115,7 +115,7 @@ services:
     command:
       - sh
       - -c
-      - "python /app/scripts/telegram_startup_notify.py; exec python /app/scripts/telegram_cockpit_bot.py"
+      - "python /app/scripts/bot/telegram_startup_notify.py; exec python /app/scripts/bot/telegram_cockpit_bot.py"
     logging:
       driver: "json-file"
       options:

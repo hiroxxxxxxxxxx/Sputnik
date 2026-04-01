@@ -299,5 +299,5 @@ flowchart TD
 ## 16. 因子レベルの寿命と Telegram 経路
 
 - **因子インスタンスの寿命**: `BaseFactor` は常に `level = levels[0]` で生成される（[base_factor.py](../../src/avionics/factors/base_factor.py)）。`FlightController` を新規に組み立てるたびに因子状態はリセットされる。
-- **Telegram ボット**: `scripts/telegram_cockpit_bot.py` の `_refreshed_fc` がコマンド（`/cockpit` 等）ごとに `build_cockpit_stack` してから `fc.refresh` を 1 回実行する。そのため **プロセス再起動なしでも、コマンド単位で因子は毎回クールドスタート**に近い挙動になる。
+- **Telegram ボット**: `scripts/bot/telegram_cockpit_bot.py` は薄いエントリポイントで、実処理は `src/app/telegram/usecases.py` の `fetch_cockpit_report` などが担う。各コマンド（`/cockpit` 等）で `build_cockpit_stack` 後に `fc.refresh` を 1 回実行するため、**プロセス再起動なしでもコマンド単位で因子は毎回クールドスタート**に近い挙動になる。
 - **DB の役割**: `store/signal_daily` は日次シグナルログ用であり、**因子レベルの入力シードには使わない**方針とする。レベル整合は **バンドルに載る履歴・Layer 2 からの再算出**で担保する（経路・リスクの網羅は [FACTOR_LEVEL_RESET_AUDIT.md](FACTOR_LEVEL_RESET_AUDIT.md)）。

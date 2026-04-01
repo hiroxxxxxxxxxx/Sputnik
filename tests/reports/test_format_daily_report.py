@@ -13,7 +13,8 @@ from avionics.data.signals import (
     SignalBundle,
     VolatilitySignal,
 )
-from reports.format_daily_report import format_daily_report, format_position_report
+from reports.format_daily_report import format_daily_report
+from reports.format_position_report import format_position_report
 
 
 class _DummyFC:

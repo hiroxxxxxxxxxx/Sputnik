@@ -9,7 +9,7 @@ V因子復帰（V1→V0）の 1h ノックイン監視ループ。
 - 以降、ノックインするまで 1h 毎に判定する
 
 起動:
-  PYTHONPATH=src python scripts/run_v_knockin_monitor.py --host ib-gateway --port 8888
+  PYTHONPATH=src python scripts/batch/run_v_knockin_monitor.py --host ib-gateway --port 8888
 """
 
 from __future__ import annotations
@@ -21,27 +21,6 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
-
-
-_root = Path(__file__).resolve().parent.parent
-_scripts = Path(__file__).resolve().parent
-if str(_root) not in sys.path:
-    sys.path.insert(0, str(_root))
-if str(_root / "src") not in sys.path:
-    sys.path.insert(0, str(_root / "src"))
-if str(_scripts) not in sys.path:
-    sys.path.insert(0, str(_scripts))
-
-
-async def _sleep_until(target_utc: datetime) -> None:
-    if target_utc.tzinfo is None:
-        raise ValueError("_sleep_until requires tz-aware datetime")
-    while True:
-        now = datetime.now(timezone.utc)
-        delta = (target_utc - now).total_seconds()
-        if delta <= 0:
-            return
-        await asyncio.sleep(min(delta, 30.0))
 
 
 async def main() -> int:

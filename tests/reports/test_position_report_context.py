@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from cockpit.mode import CRUISE
-from reports.position_view_model import build_position_view_model
+from reports.position_report_context import build_position_report_context
 
 
-def test_build_position_view_model_contains_strategy_and_unclassified_detail() -> None:
+def test_build_position_report_context_contains_strategy_and_unclassified_detail() -> None:
     positions_detail = {
         "NQ": {
             "futures": {
@@ -37,7 +37,7 @@ def test_build_position_view_model_contains_strategy_and_unclassified_detail() -
             },
         }
     }
-    out = build_position_view_model(
+    out = build_position_report_context(
         ["NQ"],
         positions_detail=positions_detail,
         target_base_by_symbol={"NQ": 10.0, "GC": 10.0},
@@ -49,7 +49,7 @@ def test_build_position_view_model_contains_strategy_and_unclassified_detail() -
     assert cc["actual"] == "2"
 
 
-def test_build_position_view_model_unclassified_detail_breakdown() -> None:
+def test_build_position_report_context_unclassified_detail_breakdown() -> None:
     positions_detail = {
         "NQ": {
             "futures": {
@@ -82,7 +82,7 @@ def test_build_position_view_model_unclassified_detail_breakdown() -> None:
             },
         }
     }
-    out = build_position_view_model(
+    out = build_position_report_context(
         ["NQ"],
         positions_detail=positions_detail,
         target_base_by_symbol={"NQ": 10.0, "GC": 10.0},

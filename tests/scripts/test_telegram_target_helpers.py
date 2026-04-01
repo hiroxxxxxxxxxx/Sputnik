@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 
 _root = Path(__file__).resolve().parent.parent.parent
-_scripts = _root / "scripts"
-if str(_scripts) not in sys.path:
-    sys.path.insert(0, str(_scripts))
+_scripts_bot = _root / "scripts" / "bot"
+if str(_scripts_bot) not in sys.path:
+    sys.path.insert(0, str(_scripts_bot))
 
 from telegram_cockpit_bot import (  # noqa: E402
     COCKPIT_BOT_COMMANDS_MESSAGE,

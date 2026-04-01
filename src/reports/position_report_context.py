@@ -172,7 +172,7 @@ def _build_futures_target_rows(
     return rows
 
 
-def build_position_view_model(
+def build_position_report_context(
     symbols: list[str],
     *,
     positions_detail: Optional[dict[str, dict[str, dict[str, float]]]],
