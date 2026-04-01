@@ -41,8 +41,9 @@ async def fetch_trading_hours_async(ib: Any, contract: Any) -> List[DaySchedule]
 
 def _contract_for_symbol(symbol: str) -> Any:
     """価格系列用 IB 契約（tradingHours 取得用）。fetcher と同じ関数に委譲。"""
-    from .fetcher import _contract_for_price
-    return _contract_for_price(symbol)
+    from .contracts import contract_for_price
+
+    return contract_for_price(symbol)
 
 
 async def run_daily_schedule_scan(

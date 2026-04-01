@@ -160,7 +160,7 @@ async def main() -> int:
 
     from avionics.calendar import ny_date_now
     from avionics.ib import with_ib_connection
-    from avionics.ib.fetcher import _contract_for_price, _contract_for_volatility
+    from avionics.ib.contracts import contract_for_price, contract_for_volatility
 
     ny_today = ny_date_now()
 
@@ -180,7 +180,7 @@ async def main() -> int:
             r = await _probe_symbol(
                 ib=ib,
                 symbol=sym,
-                contract_resolver=_contract_for_price,
+                contract_resolver=contract_for_price,
                 days=args.days,
                 ny_today=ny_today,
             )
@@ -191,7 +191,7 @@ async def main() -> int:
             r = await _probe_symbol(
                 ib=ib,
                 symbol=sym,
-                contract_resolver=_contract_for_volatility,
+                contract_resolver=contract_for_volatility,
                 days=args.days,
                 ny_today=ny_today,
             )
@@ -225,7 +225,7 @@ async def main() -> int:
         timeout=30.0,
     ) as ib:
         for sym in symbols_futures + symbols_indices:
-            resolver = _contract_for_price if sym in symbols_futures else _contract_for_volatility
+            resolver = contract_for_price if sym in symbols_futures else contract_for_volatility
             trading, liquid, tz_id = await _fetch_hours_raw(ib, resolver(sym))
             print(f"\n[{sym}] tradingHours={trading}")
             print(f"[{sym}] liquidHours={liquid}")

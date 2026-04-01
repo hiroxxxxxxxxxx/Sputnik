@@ -17,20 +17,21 @@ from avionics.data.raw_types import PriceBar, RawCapitalSnapshot
 from avionics.data.raw_market_snapshot import RawMarketSnapshot
 from avionics.bundle_builder import BundleBuildOptions
 from avionics.flight_controller import FlightController
-from avionics.ib.fetcher import IBRawFetcher, _bar_to_price_bar
+from avionics.ib.market_client import bar_to_price_bar
+from avionics.ib.fetcher import IBRawFetcher
 
 
 def _run(coro):
     return asyncio.run(coro)
 
 
-# --- _bar_to_price_bar ---
+# --- bar_to_price_bar ---
 
 
 def test_bar_to_price_bar_from_date() -> None:
     """BarData の date が date のとき PriceBar に変換する。"""
     bar = _mock_bar(date(2025, 3, 1), 100.5, 101.0, 1000.0)
-    out = _bar_to_price_bar(bar)
+    out = bar_to_price_bar(bar)
     assert out.date == date(2025, 3, 1)
     assert out.close == 100.5
     assert out.high == 101.0
@@ -41,7 +42,7 @@ def test_bar_to_price_bar_from_datetime() -> None:
     """BarData の date が datetime のとき .date() で date に変換する。"""
     from datetime import datetime, timezone
     bar = _mock_bar(datetime(2025, 3, 1, 16, 0, 0, tzinfo=timezone.utc), 99.0, 100.0, 500.0)
-    out = _bar_to_price_bar(bar)
+    out = bar_to_price_bar(bar)
     assert out.date == date(2025, 3, 1)
     assert out.close == 99.0
 
