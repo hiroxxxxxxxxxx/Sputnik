@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from typing import Any, List
 
-from ..data.raw_types import PriceBar, PriceBar1h, VolatilitySeriesPoint
+from ...data.raw_types import PriceBar, PriceBar1h, VolatilitySeriesPoint
 
 
 def bar_to_price_bar(bar: Any) -> PriceBar:
@@ -63,15 +63,27 @@ class IBMarketClient:
         )
         end_str = formatIBDatetime(end_dt)
         is_cont_future = isinstance(contract, ContFuture)
-        return await self._ib.reqHistoricalDataAsync(
-            contract,
-            endDateTime="" if is_cont_future else end_str,
-            durationStr=duration_str,
-            barSizeSetting=bar_size,
-            whatToShow="TRADES",
-            useRTH=True,
-            timeout=30,
-        )
+        try:
+            bars = await self._ib.reqHistoricalDataAsync(
+                contract,
+                endDateTime="" if is_cont_future else end_str,
+                durationStr=duration_str,
+                barSizeSetting=bar_size,
+                whatToShow="TRADES",
+                useRTH=True,
+                timeout=30,
+            )
+        except Exception as exc:
+            raise ValueError(
+                "failed to fetch historical bars "
+                f"(contract={contract!r}, end_date={end_date.isoformat()}, duration={duration_str}, bar_size={bar_size}): {exc}"
+            ) from exc
+        if bars is None:
+            raise ValueError(
+                "historical bars are None "
+                f"(contract={contract!r}, end_date={end_date.isoformat()}, duration={duration_str}, bar_size={bar_size})"
+            )
+        return bars
 
     async def fetch_bars(
         self,

@@ -24,7 +24,7 @@ import sys
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from pathlib import Path
-from typing import Iterable, Optional, Tuple
+from typing import Optional
 
 
 _root = Path(__file__).resolve().parent.parent
@@ -40,41 +40,6 @@ if str(_scripts) not in sys.path:
 from avionics.calendar import JST_TZ, NY_TZ, convert_datetime, local_datetime_from_date_time
 
 
-def _parse_session_start_hhmm(session: str) -> Optional[time]:
-    """
-    tradingHours parser の sessions から開始時刻（HH:MM）を抽出する。
-
-    例:
-      "0930-1600" -> 09:30
-      "08:20-13:30" -> 08:20（万一の別形式にも対応）
-    """
-    s = session.strip()
-    if not s:
-        return None
-
-    left = s.split("-")[0].strip()
-    left = left.replace(":", "")
-    if len(left) != 4 or not left.isdigit():
-        return None
-
-    hh = int(left[:2])
-    mm = int(left[2:])
-    return time(hh, mm)
-
-
-def _pick_day_schedule_by_ny_date(schedule_list: Iterable[object], ny_date: date) -> Optional[object]:
-    """
-    DaySchedule（date_str=YYYYMMDD）から、NY日付一致のものを優先して選ぶ。
-    """
-    target = ny_date.strftime("%Y%m%d")
-    lst = list(schedule_list)
-    for d in lst:
-        date_str = getattr(d, "date_str", None)
-        if date_str == target:
-            return d
-    return lst[0] if lst else None
-
-
 @dataclass(frozen=True)
 class ProbeResult:
     symbol: str
@@ -87,24 +52,20 @@ class ProbeResult:
 
 async def _probe_symbol(
     *,
-    ib: object,
+    schedule_service: object,
     symbol: str,
     contract_resolver: object,
-    days: int,
     ny_today: date,
 ) -> Optional[ProbeResult]:
     """
     tradingHours から、最初のセッション開始を core start として抽出する。
     """
-    contract = contract_resolver(symbol)
-    raw_trading, raw_liquid, tz_id = await _fetch_hours_raw(ib, contract)
-
-    from avionics.ib.trading_hours import core_start_from_hours_raw
-
-    picked = core_start_from_hours_raw(raw_liquid or raw_trading, ny_date=ny_today)
-    if picked is None:
-        return None
-    chosen_date, core_start_local = picked
+    picked = await schedule_service.resolve_core_start(
+        symbol=symbol,
+        ny_date=ny_today,
+        contract_resolver=contract_resolver,
+    )
+    chosen_date, core_start_local, tz_id = picked
     date_str = chosen_date.strftime("%Y%m%d")
 
     dt_local = local_datetime_from_date_time(d=chosen_date, t=core_start_local, tz_id=tz_id)
@@ -121,35 +82,6 @@ async def _probe_symbol(
     )
 
 
-async def _fetch_hours_raw(ib: object, contract: object) -> Tuple[str, str, str]:
-    """
-    IB の reqContractDetails から tradingHours / liquidHours を取得する。
-    取れない場合は空文字列。
-    """
-    try:
-        details_list = await ib.reqContractDetailsAsync(contract)
-    except Exception:
-        return ("", "", "")
-    if not details_list:
-        return ("", "", "")
-    details = details_list[0]
-    trading = getattr(details, "tradingHours", None) or getattr(details, "trading_hours", None) or ""
-    liquid = getattr(details, "liquidHours", None) or getattr(details, "liquid_hours", None) or ""
-    tz_id = getattr(details, "timeZoneId", None) or getattr(details, "time_zone_id", None) or ""
-    return (str(trading), str(liquid), str(tz_id))
-
-
-def _parse_hours(raw: str) -> list[object]:
-    from avionics.ib.trading_hours import parse_trading_hours
-    return list(parse_trading_hours(raw))
-
-
-def _core_start_from_sessions(sessions: Iterable[str]) -> Optional[time]:
-    starts = [_parse_session_start_hhmm(s) for s in sessions]
-    starts = [st for st in starts if st is not None]
-    return min(starts) if starts else None
-
-
 async def main() -> int:
     parser = argparse.ArgumentParser(description="V因子復帰判定: core time 開始の取得確認プローブ")
     parser.add_argument("--host", default="127.0.0.1", help="IB Gateway / TWS host")
@@ -160,7 +92,8 @@ async def main() -> int:
 
     from avionics.calendar import ny_date_now
     from avionics.ib import with_ib_connection
-    from avionics.ib.contracts import contract_for_price, contract_for_volatility
+    from avionics.ib.models.contracts import contract_for_price, contract_for_volatility
+    from avionics.ib.services.schedule_service import IBScheduleService
 
     ny_today = ny_date_now()
 
@@ -176,12 +109,12 @@ async def main() -> int:
         client_id=args.client_id,
         timeout=30.0,
     ) as ib:
+        schedule_service = IBScheduleService(ib)
         for sym in symbols_futures:
             r = await _probe_symbol(
-                ib=ib,
+                schedule_service=schedule_service,
                 symbol=sym,
                 contract_resolver=contract_for_price,
-                days=args.days,
                 ny_today=ny_today,
             )
             if r:
@@ -189,10 +122,9 @@ async def main() -> int:
 
         for sym in symbols_indices:
             r = await _probe_symbol(
-                ib=ib,
+                schedule_service=schedule_service,
                 symbol=sym,
                 contract_resolver=contract_for_volatility,
-                days=args.days,
                 ny_today=ny_today,
             )
             if r:
@@ -216,20 +148,7 @@ async def main() -> int:
     print("=== Indices (VXN/GVZ) tradingHours -> core start ===")
     print(_fmt(indices_results) if indices_results else "(no results)")
 
-    # 追加: raw も表示して確認できるようにする（当日判断用）
-    print("\n=== Raw hours (tradingHours / liquidHours) ===")
-    async with with_ib_connection(
-        args.host,
-        args.port,
-        client_id=args.client_id,
-        timeout=30.0,
-    ) as ib:
-        for sym in symbols_futures + symbols_indices:
-            resolver = contract_for_price if sym in symbols_futures else contract_for_volatility
-            trading, liquid, tz_id = await _fetch_hours_raw(ib, resolver(sym))
-            print(f"\n[{sym}] tradingHours={trading}")
-            print(f"[{sym}] liquidHours={liquid}")
-            print(f"[{sym}] timeZoneId={tz_id}")
+    print("\n=== schedule source is service-parsed ===")
 
     return 0
 

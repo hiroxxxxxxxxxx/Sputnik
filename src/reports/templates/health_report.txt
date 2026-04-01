@@ -1,0 +1,7 @@
+IB Health Check
+IB socket: {{ ib_socket_status }}
+Historical NQ: {{ historical_nq_status }} (bars={{ historical_nq_bars }}, err={{ historical_nq_error }})
+whatIf MNQ: {{ whatif_mnq_status }} (path={{ whatif_mnq_path }}, account={{ whatif_mnq_account }}, warning={{ whatif_mnq_warning }}, err={{ whatif_mnq_error }})
+MNQ contract: {{ whatif_mnq_contract }}
+whatIf AAPL: {{ whatif_aapl_status }} (path={{ whatif_aapl_path }}, warning={{ whatif_aapl_warning }}, err={{ whatif_aapl_error }})
+Overall: {{ overall }}

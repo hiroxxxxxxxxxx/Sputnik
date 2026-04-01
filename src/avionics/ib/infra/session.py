@@ -1,0 +1,96 @@
+"""
+IB（ib_async）接続を局所化する窓口。
+
+avionics.ib パッケージ以外では ib_async を import しない。
+reports や scripts は with_ib_market_data_service / with_ib_connection / check_ib_connection のみ使う。
+"""
+
+from __future__ import annotations
+
+from contextlib import asynccontextmanager
+from typing import Any, AsyncIterator, Callable
+
+from ..services.market_data_service import IBMarketDataService
+
+
+@asynccontextmanager
+async def _ib_session(
+    host: str,
+    port: int,
+    *,
+    client_id: int = 3,
+    timeout: float = 30.0,
+    wrap: Callable[[Any], Any] = lambda ib: ib,
+) -> AsyncIterator[Any]:
+    """IB に接続し、wrap(ib) の結果を yield する。抜けたら disconnect。"""
+    try:
+        from ib_async import IB  # type: ignore
+    except ImportError as e:
+        raise ImportError(
+            "ib_async is required for avionics.ib session. Install with: pip install ib_async"
+        ) from e
+
+    ib = IB()
+    await ib.connectAsync(host=host, port=port, clientId=client_id, timeout=timeout)
+    try:
+        yield wrap(ib)
+    finally:
+        ib.disconnect()
+
+
+@asynccontextmanager
+async def with_ib_market_data_service(
+    host: str,
+    port: int,
+    *,
+    client_id: int = 3,
+    timeout: float = 75.0,
+) -> AsyncIterator[Any]:
+    """
+    IB に接続し、Raw 取得用の IBMarketDataService を yield する。
+    抜けたら disconnect。reports / scripts は service を FC.refresh に渡して最新取得する。
+    """
+    async with _ib_session(
+        host, port, client_id=client_id, timeout=timeout, wrap=IBMarketDataService
+    ) as service:
+        yield service
+
+
+@asynccontextmanager
+async def with_ib_connection(
+    host: str,
+    port: int,
+    *,
+    client_id: int = 3,
+    timeout: float = 30.0,
+) -> AsyncIterator[Any]:
+    """
+    IB に接続し、接続済み ib インスタンスを yield する。
+    取引時間スキャン（run_daily_schedule_scan）等で使う。抜けたら disconnect。
+    """
+    async with _ib_session(host, port, client_id=client_id, timeout=timeout) as ib:
+        yield ib
+
+
+async def check_ib_connection(
+    host: str,
+    port: int,
+    *,
+    client_id: int = 3,
+    timeout: float = 30.0,
+) -> bool:
+    """
+    接続試行のみ行い、成功すれば True・失敗すれば False を返す。
+    Gateway 起動完了通知用。呼び出し側は ib_async を import しない。
+    """
+    try:
+        from ib_async import IB  # type: ignore
+    except ImportError:
+        return False
+    try:
+        ib = IB()
+        await ib.connectAsync(host=host, port=port, clientId=client_id, timeout=timeout)
+        ib.disconnect()
+        return True
+    except Exception:
+        return False

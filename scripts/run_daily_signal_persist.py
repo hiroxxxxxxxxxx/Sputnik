@@ -56,7 +56,7 @@ async def main() -> int:
     args = parser.parse_args()
 
     try:
-        from avionics.ib import with_ib_fetcher
+        from avionics.ib import with_ib_market_data_service
     except ImportError:
         print("ib_async がインストールされていません: pip install ib_async", file=sys.stderr)
         return 1
@@ -98,7 +98,7 @@ async def main() -> int:
             altitude=altitude,
             s_baseline_by_symbol=s_baseline_by_symbol,
         )
-        async with with_ib_fetcher(
+        async with with_ib_market_data_service(
             args.host,
             args.port,
             client_id=args.client_id,

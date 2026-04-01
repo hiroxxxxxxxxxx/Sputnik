@@ -1,8 +1,8 @@
 """
 IB（ib_async）経由で Raw のみ取得する（Layer 1）。
 
-IBRawFetcher は IB から Raw を取得し RawMarketSnapshot（NQ/GC固定DTO）として返す。SignalBundle は作らない。
-SignalBundle は FC.refresh 経由で get_last_bundle() から取得する。
+IBMarketDataService は IB から Raw を取得し RawMarketSnapshot（NQ/GC固定DTO）として返す。
+SignalBundle は作らない。SignalBundle は FC.refresh 経由で get_last_bundle() から取得する。
 """
 
 from __future__ import annotations
@@ -11,27 +11,28 @@ import asyncio
 from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
 
-from ..data.account_positions import PositionDetailBySymbol, PositionLegsBySymbol
-from ..data.raw_types import PriceBar, PriceBar1h, RawCapitalSnapshot, VolatilitySeriesPoint
-from ..data.raw_market_snapshot import RawMarketSnapshot
-from .account_client import IBAccountClient
-from .contracts import contract_for_etf, contract_for_price, contract_for_volatility
-from .market_client import IBMarketClient
-from .fetch_results import AccountFetchResult, MarketFetchResult
+from ...data.account_positions import PositionDetailBySymbol, PositionLegsBySymbol
+from ...data.raw_market_snapshot import RawMarketSnapshot
+from ...data.raw_types import (
+    PriceBar,
+    PriceBar1h,
+    RawCapitalSnapshot,
+    VolatilitySeriesPoint,
+)
+from ..clients.account_client import IBAccountClient
+from ..clients.market_client import IBMarketClient
+from ..models.contracts import contract_for_etf, contract_for_price, contract_for_volatility
+from ..models.fetch_results import AccountFetchResult, MarketFetchResult
+from .whatif_order_service import IBWhatIfOrderService
 
 
-class IBRawFetcher:
-    """
-    ib_async の IB インスタンスを使い、Raw を非同期で取得する（Layer 1 のみ）。
-    IB から Raw を取得し RawMarketSnapshot として返す。SignalBundle は作らない。
-    """
-
+class IBMarketDataService:
     def __init__(self, ib: Any) -> None:
         self._ib = ib
         self._market = IBMarketClient(ib)
         self._account = IBAccountClient(ib)
+        self._whatif_order_service = IBWhatIfOrderService(ib)
 
-    # Backward-compatible private wrappers
     async def _fetch_positions_raw(self) -> List[Any]:
         return await self._account.fetch_positions_raw()
 
@@ -41,38 +42,34 @@ class IBRawFetcher:
         base_density: float = 1.0,
         as_of: Optional[date] = None,
         s_baseline_by_symbol: Optional[Dict[str, float]] = None,
+        s_whatif_mm_per_lot: Optional[Dict[str, float]] = None,
+        s_whatif_errors: Optional[Dict[str, str]] = None,
     ) -> Optional[RawCapitalSnapshot]:
         return await self._account.fetch_account_summary(
             account=account,
             base_density=base_density,
             as_of=as_of,
             s_baseline_by_symbol=s_baseline_by_symbol,
+            s_whatif_mm_per_lot=s_whatif_mm_per_lot,
+            s_whatif_errors=s_whatif_errors,
         )
 
     async def _fetch_s_whatif_mm_per_lot(
         self, symbols: List[str]
     ) -> Tuple[Dict[str, float], Dict[str, str]]:
-        return await self._account.fetch_s_whatif_mm_per_lot(symbols)
+        return await self._whatif_order_service.fetch_s_whatif_mm_per_lot(symbols)
 
     async def fetch_position_legs(self, symbols: List[str]) -> Dict[str, Dict[str, float]]:
-        """
-        口座ポジションを銘柄別に集計し、{symbol: {future,k1,k2}} を返す。
-
-        - future: 先物（FUT/CONTFUT）を **マイクロ相当枚数**（NQ 群→MNQ 相当、GC 群→MGC 相当）に換算したネット
-        - k1: オプションC（OPT/FOP, right=C）。エンジン銘柄（NQ/GC）へ MNQ/MGC ルートは正規化して集計
-        - k2: オプションP（OPT/FOP, right=P）。同上
-        """
-        return await self._account.fetch_position_legs(symbols)
+        try:
+            return await self._account.fetch_position_legs(symbols)
+        except ValueError as exc:
+            raise ValueError(f"failed to fetch position legs (symbols={symbols}): {exc}") from exc
 
     async def fetch_position_detail(self, symbols: List[str]) -> Dict[str, Dict[str, Dict[str, float]]]:
-        """
-        Daily 表示用の詳細ポジションを返す。
-
-        futures は契約ごとに buy/sell 枚数（正の position を buy、負を sell に分類）。
-        キー: nq_buy, nq_sell, mnq_buy, mnq_sell, gc_buy, gc_sell, mgc_buy, mgc_sell。
-        options も契約ごとに C/P の buy/sell を分離。
-        """
-        return await self._account.fetch_position_detail(symbols)
+        try:
+            return await self._account.fetch_position_detail(symbols)
+        except ValueError as exc:
+            raise ValueError(f"failed to fetch position detail (symbols={symbols}): {exc}") from exc
 
     async def fetch_raw(
         self,
@@ -93,12 +90,6 @@ class IBRawFetcher:
         PositionLegsBySymbol,
         PositionDetailBySymbol,
     ]:
-        """
-        IB から Raw を取得し、RawMarketSnapshot（NQ/GC固定DTO）として返す。
-        Layer 2 計算は行わない。SignalBundle が欲しい場合は呼び出し側で build_signal_bundle を呼ぶ。
-
-        :return: (RawMarketSnapshot, Optional[RawCapitalSnapshot])
-        """
         vol_map = volatility_symbols or {s: "VXN" if s == "NQ" else "GVZ" for s in price_symbols}
 
         def _series_limit(sym: str) -> int:
@@ -111,9 +102,7 @@ class IBRawFetcher:
 
         market_tasks: dict[str, Any] = {}
         for sym in price_symbols:
-            market_tasks[f"price:{sym}"] = self._market.fetch_bars(
-                contract_for_price(sym), as_of
-            )
+            market_tasks[f"price:{sym}"] = self._market.fetch_bars(contract_for_price(sym), as_of)
             market_tasks[f"vol:{sym}"] = self._market.fetch_volatility_series(
                 contract_for_volatility(vol_map[sym]), as_of, limit=_series_limit(sym)
             )
@@ -132,35 +121,54 @@ class IBRawFetcher:
             )
 
         market_keys = list(market_tasks.keys())
-        market_values = await asyncio.gather(*(market_tasks[k] for k in market_keys))
+        try:
+            market_values = await asyncio.gather(*(market_tasks[k] for k in market_keys))
+        except ValueError as exc:
+            raise ValueError(
+                f"failed to fetch market data (as_of={as_of.isoformat()}, symbols={price_symbols}): {exc}"
+            ) from exc
         market_map = dict(zip(market_keys, market_values))
 
-        price_bars: Dict[str, List[PriceBar]] = {
-            sym: market_map[f"price:{sym}"] for sym in price_symbols
-        }
+        price_bars: Dict[str, List[PriceBar]] = {sym: market_map[f"price:{sym}"] for sym in price_symbols}
         vol_series: Dict[str, List[VolatilitySeriesPoint]] = {
             sym: market_map[f"vol:{sym}"] for sym in price_symbols if market_map[f"vol:{sym}"]
         }
-        bars_1h: Dict[str, List[PriceBar1h]] = {
-            sym: market_map[f"bars1h:{sym}"] for sym in price_symbols
-        }
+        bars_1h: Dict[str, List[PriceBar1h]] = {sym: market_map[f"bars1h:{sym}"] for sym in price_symbols}
         credit_map: Dict[str, List[PriceBar]] = {
             liquidity_credit_hyg_symbol: market_map[f"credit:{liquidity_credit_hyg_symbol}"],
             liquidity_credit_lqd_symbol: market_map[f"credit:{liquidity_credit_lqd_symbol}"],
         }
-        tip: List[PriceBar] = (
-            market_map.get(f"tip:{liquidity_tip_symbol}", []) if liquidity_tip_symbol else []
-        )
+        tip: List[PriceBar] = market_map.get(f"tip:{liquidity_tip_symbol}", []) if liquidity_tip_symbol else []
 
-        positions_raw, capital = await asyncio.gather(
-            self._account.fetch_positions_raw(),
-            self._account.fetch_account_summary(
-                account=account,
-                base_density=base_density,
-                as_of=as_of,
-                s_baseline_by_symbol=s_baseline_by_symbol,
-            ),
-        )
+        s_whatif_mm_per_lot: Optional[Dict[str, float]] = None
+        s_whatif_errors: Optional[Dict[str, str]] = None
+        if s_baseline_by_symbol is not None:
+            try:
+                s_whatif_mm_per_lot, s_whatif_errors = await self._whatif_order_service.fetch_s_whatif_mm_per_lot(
+                    sorted(s_baseline_by_symbol.keys())
+                )
+                if not s_whatif_mm_per_lot:
+                    s_whatif_mm_per_lot = None
+            except Exception:
+                s_whatif_mm_per_lot = None
+                s_whatif_errors = None
+
+        try:
+            positions_raw, capital = await asyncio.gather(
+                self._account.fetch_positions_raw(),
+                self._account.fetch_account_summary(
+                    account=account,
+                    base_density=base_density,
+                    as_of=as_of,
+                    s_baseline_by_symbol=s_baseline_by_symbol,
+                    s_whatif_mm_per_lot=s_whatif_mm_per_lot,
+                    s_whatif_errors=s_whatif_errors,
+                ),
+            )
+        except ValueError as exc:
+            raise ValueError(
+                f"failed to fetch account data (account={account!r}, as_of={as_of.isoformat()}): {exc}"
+            ) from exc
         positions_legs = self._account.parse_position_legs_from_raw(price_symbols, positions_raw)
         positions_detail = self._account.parse_position_detail_from_raw(price_symbols, positions_raw)
         account_result = AccountFetchResult(

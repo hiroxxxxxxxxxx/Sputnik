@@ -2,7 +2,7 @@
 """
 Telegram から /cockpit または /status で現在の FlightController 計器内容を返すボット。
 
-コマンド: /start, /ping, /health, /cockpit, /status, /breakdown, /daily, /position, /schedule, /target, /settarget
+コマンド: /start, /ping, /cockpit, /status, /breakdown, /daily, /position, /schedule, /target, /settarget
   /schedule: 取引時間スキャン（夏冬・短縮・休場の事前通知）。毎朝のルーチンや週次で実行推奨。
   /target: target_base_futures を MNQ/MGC 相当で表示（現在高度の有効legs付き）。
   /settarget: 片側だけ更新（mnq|mgc|nq|gc と base 数）。要 TELEGRAM_TARGET_ADMIN_USER_IDS。
@@ -51,11 +51,11 @@ def _env_host_port_symbols() -> tuple[str, int, list[str], int, float]:
 COCKPIT_BOT_COMMANDS_MESSAGE = (
     "Sputnik Cockpit Bot\n"
     "/ping … 接続・設定確認\n"
-    "/health … IB 接続段階診断（socket / NQ bars / MGC whatIf）\n"
     "/cockpit または /status … 現在の計器（IB から取得）\n"
     "/daily … Daily Flight Log（市場・資本・各層）\n"
     "/position … ポジション明細 + target 差分\n"
     "/breakdown … 各因子の計算内訳（Layer 2 シグナル）\n"
+    "/health … IB 接続と whatIf のヘルスチェック\n"
     "/schedule … 取引時間スキャン（夏冬・短縮・休場の事前通知）\n"
     "/target … target_base_futures（MNQ/MGC 相当 + 現在高度の有効legs）\n"
     "/settarget <mnq|mgc|nq|gc> <base> … 該当側のみ更新（要管理者 user_id）"
@@ -83,80 +83,8 @@ async def ping_command(update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
-def _health_flag(ok: bool) -> str:
-    return "OK" if ok else "FAIL"
-
-
-def _format_health_report(diag: dict) -> str:
-    ib_ok = bool(diag.get("ib_connected", False))
-    hist_ok = bool(diag.get("historical_nq_ok", False))
-    hist_bars = diag.get("historical_nq_bars")
-    hist_err = str(diag.get("historical_nq_error") or "none")
-    whatif_ok = bool(diag.get("whatif_mgc_ok", False))
-    whatif_err = str(diag.get("whatif_mgc_error") or "none")
-    overall = str(diag.get("overall") or "FAIL")
-    return (
-        "IB Health Check\n"
-        f"IB socket: {_health_flag(ib_ok)}\n"
-        f"Historical NQ: {_health_flag(hist_ok)} (bars={hist_bars}, err={hist_err})\n"
-        f"whatIf MGC: {_health_flag(whatif_ok)} (err={whatif_err})\n"
-        f"Overall: {overall}"
-    )
-
-
-async def health_command(update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """ /health で IB 段階診断を返す。"""
-    msg = update.effective_message
-    if msg is None:
-        return
-    host, port, _symbols, client_id, ib_timeout = _env_host_port_symbols()
-    try:
-        await msg.reply_text("Health check 実行中…")
-    except Exception:
-        pass
-    try:
-        from avionics.ib import run_ib_healthcheck
-
-        diag = await asyncio.wait_for(
-            run_ib_healthcheck(
-                host,
-                port,
-                client_id=client_id,
-                timeout=min(ib_timeout, 30.0),
-            ),
-            timeout=45,
-        )
-        await msg.reply_text(_format_health_report(diag)[:4000])
-    except asyncio.TimeoutError:
-        await msg.reply_text("Health check 取得失敗: タイムアウト")
-    except Exception as e:
-        await msg.reply_text(
-            f"Health check 取得失敗: {type(e).__name__}: {e!s}"[:4000]
-        )
-
-
 # 接続に最大75秒＋取得に余裕。Gateway 起動直後は約60秒かかることがある
 COCKPIT_FETCH_TIMEOUT = 90
-
-
-def _env_float(name: str, default: float) -> float:
-    raw = os.environ.get(name, "").strip()
-    if not raw:
-        return default
-    try:
-        return float(raw)
-    except ValueError:
-        return default
-
-
-def _env_int(name: str, default: int) -> int:
-    raw = os.environ.get(name, "").strip()
-    if not raw:
-        return default
-    try:
-        return int(raw)
-    except ValueError:
-        return default
 
 
 def _parse_optional_telegram_numeric_id(value: str) -> int | None:
@@ -208,23 +136,26 @@ async def target_command(update: object, context: "ContextTypes.DEFAULT_TYPE") -
     if msg is None:
         return
     from avionics.data.futures_micro_equiv import engine_symbol_to_micro_notional_label
+    from store.db import get_connection
     from engines.blueprint import (
         PART_NAMES,
         load_effective_mode_part_config_from_toml_path,
     )
-    from store.state import (
-        read_altitude_regime_from_db,
-        read_target_futures_from_db,
-    )
+    from store.state import read_altitude_regime, read_target_futures
+
+    conn = get_connection()
     try:
-        cur = read_target_futures_from_db()
-        altitude = read_altitude_regime_from_db()
-    except ValueError as e:
-        await msg.reply_text(
-            f"{e}\n"
-            "set_target_futures CLI または /settarget で MNQ/MGC 側を設定してください。"
-        )
-        return
+        try:
+            cur = read_target_futures(conn)
+            altitude = read_altitude_regime(conn)
+        except ValueError as e:
+            await msg.reply_text(
+                f"{e}\n"
+                "set_target_futures CLI または /settarget で MNQ/MGC 側を設定してください。"
+            )
+            return
+    finally:
+        conn.close()
     from pathlib import Path
 
     root = Path(__file__).resolve().parent.parent
@@ -278,7 +209,9 @@ async def settarget_command(update: object, context: "ContextTypes.DEFAULT_TYPE"
         )
         return
     from avionics.data.futures_micro_equiv import engine_symbol_to_micro_notional_label
-    from store.target_futures import normalize_engine_symbol, set_target_futures_in_db
+    from store.db import get_connection
+    from store.state import read_target_futures
+    from store.target_futures import normalize_engine_symbol, set_target_futures
 
     try:
         engine_sym = normalize_engine_symbol(args[0])
@@ -291,11 +224,18 @@ async def settarget_command(update: object, context: "ContextTypes.DEFAULT_TYPE"
         await msg.reply_text(f"{e}\n例: /settarget mnq 10")
         return
 
+    conn = get_connection()
     try:
-        cur = set_target_futures_in_db(engine_sym, base=base)
-    except ValueError as e:
-        await msg.reply_text(f"検証エラー: {e}")
-        return
+        try:
+            set_target_futures(
+                conn, engine_sym, base=base
+            )
+        except ValueError as e:
+            await msg.reply_text(f"検証エラー: {e}")
+            return
+        cur = read_target_futures(conn)
+    finally:
+        conn.close()
     ml = engine_symbol_to_micro_notional_label(engine_sym)
     await msg.reply_text(
         f"{ml} 相当の target(base) を更新。\n"
@@ -313,25 +253,23 @@ async def _refreshed_fc(
     timeout: float = 75.0,
 ):
     """IB 接続 → FC refresh の共通処理。"""
-    from avionics.ib import with_ib_fetcher
+    from avionics.ib import with_ib_market_data_service
     from avionics.calendar import as_of_for_bundle
     from cockpit.stack import build_cockpit_stack
-    from store.state import (
-        read_altitude_regime_from_db,
-        read_s_factor_baseline_from_db,
-        read_target_futures_from_db,
-    )
+    from store.db import get_connection
+    from store.state import read_altitude_regime, read_target_futures
 
-    altitude = read_altitude_regime_from_db()
-    target_base_by_symbol = read_target_futures_from_db()
-    s_baseline_by_symbol = read_s_factor_baseline_from_db()
-    async with with_ib_fetcher(host, port, client_id=client_id, timeout=timeout) as fetcher:
-        fc, _ = build_cockpit_stack(
-            symbols, altitude=altitude, s_baseline_by_symbol=s_baseline_by_symbol
-        )
-        as_of = as_of_for_bundle()
-        await fc.refresh(fetcher, as_of, symbols, altitude=altitude)
-        yield fc, fetcher, target_base_by_symbol
+    conn = get_connection()
+    try:
+        altitude = read_altitude_regime(conn)
+        target_base_by_symbol = read_target_futures(conn)
+        async with with_ib_market_data_service(host, port, client_id=client_id, timeout=timeout) as fetcher:
+            fc, _ = build_cockpit_stack(symbols, altitude=altitude)
+            as_of = as_of_for_bundle()
+            await fc.refresh(fetcher, as_of, symbols, altitude=altitude)
+            yield fc, fetcher, target_base_by_symbol
+    finally:
+        conn.close()
 
 
 async def _fetch_cockpit_report(
@@ -539,15 +477,47 @@ async def position_command(update: object, context: ContextTypes.DEFAULT_TYPE) -
             pass
 
 
+async def health_command(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """ /health で IB 接続と履歴/whatIf の健全性を返す。"""
+    msg = getattr(update, "effective_message", None)
+    if msg is None:
+        return
+    host, port, _symbols, client_id, _timeout = _env_host_port_symbols()
+    try:
+        await msg.reply_text("Health Check 実行中…")
+    except Exception:
+        pass
+    try:
+        from avionics.ib import run_ib_healthcheck
+        from reports.format_health_report import format_health_report
+
+        out = await asyncio.wait_for(
+            run_ib_healthcheck(host, port, client_id=client_id, timeout=30.0),
+            timeout=45,
+        )
+        await msg.reply_text(format_health_report(out)[:4000])
+    except asyncio.TimeoutError:
+        try:
+            await msg.reply_text("取得失敗: タイムアウト。")
+        except Exception:
+            pass
+    except Exception as e:
+        try:
+            await msg.reply_text(f"取得失敗: {type(e).__name__}: {e!s}"[:4000])
+        except Exception:
+            pass
+
+
 async def fetch_schedule_alerts(host: str, port: int, symbols: list[str]) -> str:
     """
     IB から取引時間を取得し、翌日以降の DST・短縮・休場の通知文を組み立てて返す。
     """
-    from avionics.ib import run_daily_schedule_scan, with_ib_connection
+    from avionics.ib import with_ib_connection
+    from avionics.ib.services.schedule_service import IBScheduleService
 
     client_id = int(os.environ.get("IBKR_CLIENT_ID", "3"))
     async with with_ib_connection(host, port, client_id=client_id, timeout=30.0) as ib:
-        results = await run_daily_schedule_scan(ib, symbols)
+        results = await IBScheduleService(ib).run_daily_schedule_scan(symbols)
 
     lines = ["【取引時間スキャン】"]
     for symbol, messages in results:
@@ -599,23 +569,12 @@ async def _notify_gateway_ready(application: object) -> None:
         print("TELEGRAM_CHAT_ID が未設定のため、起動完了メッセージは送信しません。", file=sys.stderr)
         return
     host, port, _symbols, client_id, _timeout = _env_host_port_symbols()
-    initial_delay_sec = _env_float("STARTUP_NOTIFY_INITIAL_DELAY_SEC", 5.0)
-    connect_timeout_sec = _env_float("STARTUP_NOTIFY_CONNECT_TIMEOUT_SEC", 10.0)
-    retry_interval_sec = _env_float("STARTUP_NOTIFY_RETRY_INTERVAL_SEC", 2.0)
-    max_attempts = _env_int("STARTUP_NOTIFY_MAX_ATTEMPTS", 3)
-    if max_attempts <= 0:
-        max_attempts = 1
-    await asyncio.sleep(initial_delay_sec)
+    await asyncio.sleep(30)
 
     from avionics.ib import check_ib_connection
 
-    for attempt in range(max_attempts):
-        ok = await check_ib_connection(
-            host,
-            port,
-            client_id=client_id,
-            timeout=connect_timeout_sec,
-        )
+    for attempt in range(3):
+        ok = await check_ib_connection(host, port, client_id=client_id, timeout=30.0)
         if ok:
             bot = getattr(application, "bot", None)
             if bot:
@@ -625,11 +584,10 @@ async def _notify_gateway_ready(application: object) -> None:
                 )
             return
         print(
-            f"Gateway 接続試行 {attempt + 1}/{max_attempts} 失敗: {host}:{port} clientId={client_id}",
+            f"Gateway 接続試行 {attempt + 1}/3 失敗: {host}:{port} clientId={client_id}",
             file=sys.stderr,
         )
-        if attempt + 1 < max_attempts:
-            await asyncio.sleep(retry_interval_sec)
+        await asyncio.sleep(5)
 
     bot = getattr(application, "bot", None)
     if bot:
@@ -669,12 +627,12 @@ def main() -> int:
     )
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("ping", ping_command))
-    app.add_handler(CommandHandler("health", health_command))
     app.add_handler(CommandHandler("cockpit", cockpit_command))
     app.add_handler(CommandHandler("status", cockpit_command))
     app.add_handler(CommandHandler("breakdown", breakdown_command))
     app.add_handler(CommandHandler("daily", daily_command))
     app.add_handler(CommandHandler("position", position_command))
+    app.add_handler(CommandHandler("health", health_command))
     app.add_handler(CommandHandler("schedule", schedule_command))
     app.add_handler(CommandHandler("target", target_command))
     app.add_handler(CommandHandler("settarget", settarget_command))

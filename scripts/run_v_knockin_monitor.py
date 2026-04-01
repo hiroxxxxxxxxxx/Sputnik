@@ -63,8 +63,9 @@ async def main() -> int:
         ny_date_now,
     )
     from avionics.ib import with_ib_connection
-    from avionics.ib.fetcher import IBRawFetcher, _contract_for_volatility
-    from avionics.ib.trading_hours import core_session_from_hours_raw
+    from avionics.ib.models.contracts import contract_for_volatility
+    from avionics.ib.services.market_data_service import IBMarketDataService
+    from avionics.ib.services.schedule_service import IBScheduleService
     from cockpit.stack import build_cockpit_stack
     from notifications.telegram import send_telegram_message
     from store.db import get_connection
@@ -85,24 +86,19 @@ async def main() -> int:
         altitude = read_altitude_regime(conn)
 
         async with with_ib_connection(args.host, args.port, client_id=args.client_id, timeout=30.0) as ib:
-            fetcher = IBRawFetcher(ib)
+            fetcher = IBMarketDataService(ib)
+            schedule_service = IBScheduleService(ib)
             fc, _ = build_cockpit_stack(list(args.symbols), altitude=altitude)
 
-            # コアタイム取得: VXN/GVZ（指数）の tradingHours/timeZoneId を利用する
+            # コアタイム取得: VXN/GVZ（指数）を service 経由で解決する
             core_ref = "VXN"
-            details_list = await ib.reqContractDetailsAsync(_contract_for_volatility(core_ref))
-            if not details_list:
-                raise RuntimeError(f"reqContractDetailsAsync returned empty list for {core_ref}")
-            details = details_list[0]
-            trading = str(getattr(details, "tradingHours", "") or getattr(details, "trading_hours", "") or "")
-            tz_id = str(getattr(details, "timeZoneId", "") or getattr(details, "time_zone_id", "") or "")
-            if not trading:
-                raise RuntimeError(f"{core_ref} tradingHours is empty; cannot resolve core time")
-
-            core = core_session_from_hours_raw(trading, ny_date=ny_today)
-            if core is None:
-                raise RuntimeError(f"Cannot parse core session from tradingHours for {ny_today}")
-            trade_date, core_start_local, core_end_local = core
+            core = await schedule_service.resolve_core_session(
+                symbol=core_ref,
+                ny_date=ny_today,
+                contract_resolver=contract_for_volatility,
+                prefer_liquid_hours=False,
+            )
+            trade_date, core_start_local, core_end_local, tz_id = core
 
             dt_core_start_local = local_datetime_from_date_time(d=trade_date, t=core_start_local, tz_id=tz_id)
             dt_core_end_local = local_datetime_from_date_time(d=trade_date, t=core_end_local, tz_id=tz_id)

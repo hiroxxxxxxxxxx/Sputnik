@@ -17,8 +17,8 @@ from avionics.data.raw_types import PriceBar, RawCapitalSnapshot
 from avionics.data.raw_market_snapshot import RawMarketSnapshot
 from avionics.bundle_builder import BundleBuildOptions
 from avionics.flight_controller import FlightController
-from avionics.ib.market_client import bar_to_price_bar
-from avionics.ib.fetcher import IBRawFetcher
+from avionics.ib.clients.market_client import bar_to_price_bar
+from avionics.ib.services.market_data_service import IBMarketDataService
 
 
 def _run(coro):
@@ -213,7 +213,7 @@ def test_fetch_s_whatif_collects_error_for_none_qualified_contract() -> None:
         async def whatIfOrderAsync(self, _contract, _order):
             raise AssertionError("whatIfOrderAsync must not be called when contract is None")
 
-    fetcher = IBRawFetcher(_FakeIb())
+    fetcher = IBMarketDataService(_FakeIb())
     values, errors = asyncio.run(fetcher._fetch_s_whatif_mm_per_lot(["NQ"]))
     assert values == {}
     assert "NQ" in errors
@@ -228,7 +228,7 @@ def test_fetch_account_summary_continues_when_whatif_fails() -> None:
             self.tag = tag
             self.value = value
 
-    class _Fetcher(IBRawFetcher):
+    class _Fetcher(IBMarketDataService):
         async def _fetch_s_whatif_mm_per_lot(self, symbols):  # type: ignore[override]
             raise ValueError(f"boom: {symbols}")
 
@@ -252,3 +252,120 @@ def test_fetch_account_summary_continues_when_whatif_fails() -> None:
     assert cap is not None
     assert cap.s_whatif_mm_per_lot is None
     assert cap.s_baseline_mm_per_lot == {"NQ": 1200.0, "GC": 600.0}
+
+
+def test_fetch_s_whatif_uses_before_after_fallback_and_sets_account() -> None:
+    pytest.importorskip("ib_async")
+
+    class _FakeIb:
+        managedAccounts = "U1111111"
+
+        async def reqContractDetailsAsync(self, _base_contract):
+            class _Detail:
+                def __init__(self) -> None:
+                    self.contract = type(
+                        "C",
+                        (),
+                        {
+                            "secType": "FUT",
+                            "symbol": "MNQ",
+                            "lastTradeDateOrContractMonth": "202606",
+                        },
+                    )()
+
+            return [_Detail()]
+
+        async def whatIfOrderAsync(self, _contract, order):
+            assert getattr(order, "account", None) == "U1111111"
+            assert float(getattr(order, "lmtPrice", 0.0)) > 0.0
+
+            class _State:
+                maintMarginChange = ""
+                initMarginChange = ""
+                initMarginBefore = "1000"
+                initMarginAfter = "1125.5"
+
+            return _State()
+
+    fetcher = IBMarketDataService(_FakeIb())
+    values, errors = asyncio.run(fetcher._fetch_s_whatif_mm_per_lot(["NQ"]))
+    assert errors == {}
+    assert values["NQ"] == 125.5
+
+
+def test_fetch_s_whatif_error_contains_diagnostics_when_fields_missing() -> None:
+    pytest.importorskip("ib_async")
+
+    class _FakeIb:
+        managedAccounts = ["U2222222"]
+
+        async def reqContractDetailsAsync(self, _base_contract):
+            class _Detail:
+                def __init__(self) -> None:
+                    self.contract = type(
+                        "C",
+                        (),
+                        {
+                            "secType": "FUT",
+                            "symbol": "MNQ",
+                            "lastTradeDateOrContractMonth": "202606",
+                        },
+                    )()
+
+            return [_Detail()]
+
+        async def whatIfOrderAsync(self, _contract, _order):
+            class _State:
+                maintMarginChange = None
+                initMarginChange = None
+                initMarginBefore = None
+                initMarginAfter = None
+                maintMarginBefore = None
+                maintMarginAfter = None
+                warningText = "No margin impact available"
+
+            return _State()
+
+    fetcher = IBMarketDataService(_FakeIb())
+    values, errors = asyncio.run(fetcher._fetch_s_whatif_mm_per_lot(["NQ"]))
+    assert values == {}
+    assert "NQ" in errors
+    assert "whatIf margin fields missing" in errors["NQ"]
+    assert "account='U2222222'" in errors["NQ"]
+    assert "warning='No margin impact available'" in errors["NQ"]
+
+
+def test_fetch_s_whatif_reads_state_from_order_status_path() -> None:
+    pytest.importorskip("ib_async")
+
+    class _FakeIb:
+        managedAccounts = ["U3333333"]
+
+        async def reqContractDetailsAsync(self, _base_contract):
+            class _Detail:
+                def __init__(self) -> None:
+                    self.contract = type(
+                        "C",
+                        (),
+                        {
+                            "secType": "FUT",
+                            "symbol": "MNQ",
+                            "lastTradeDateOrContractMonth": "202606",
+                        },
+                    )()
+
+            return [_Detail()]
+
+        async def whatIfOrderAsync(self, _contract, _order):
+            class _State:
+                initMarginChange = "77.7"
+
+            class _OrderStatus:
+                orderState = _State()
+
+            return type("Trade", (), {"orderStatus": _OrderStatus()})()
+
+    fetcher = IBMarketDataService(_FakeIb())
+    values, errors = asyncio.run(fetcher._fetch_s_whatif_mm_per_lot(["NQ"]))
+    assert errors == {}
+    assert values["NQ"] == 77.7

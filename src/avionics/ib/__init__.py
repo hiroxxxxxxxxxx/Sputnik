@@ -1,27 +1,24 @@
 """
 IB（ib_async）依存を集約するパッケージ。
 
-- IBRawFetcher: Layer 1 のみ（Raw 取得）。with_ib_fetcher が yield する型。FC.refresh に渡す。
+- IBMarketDataService: Layer 1 のみ（Raw 取得）。with_ib_market_data_service が yield する型。FC.refresh に渡す。
 戻りは RawMarketSnapshot（NQ/GC固定DTO）+ Optional[RawCapitalSnapshot]。
 SignalBundle は FC.refresh(data_source, as_of, symbols) のあと fc.get_last_bundle() で取得する。
 reports / scripts は avionics.ib のみ import し、ib_async は直接 import しない。
 """
 
-from .fetcher import IBRawFetcher
-from .schedule_scan import fetch_trading_hours_async, run_daily_schedule_scan
-from .session import (
+from .infra import (
     check_ib_connection,
-    run_ib_healthcheck,
+    with_ib_market_data_service,
     with_ib_connection,
-    with_ib_fetcher,
 )
+from .services.healthcheck_service import run_ib_healthcheck
+from .services.market_data_service import IBMarketDataService
 
 __all__ = [
     "check_ib_connection",
-    "fetch_trading_hours_async",
-    "IBRawFetcher",
+    "IBMarketDataService",
     "run_ib_healthcheck",
-    "run_daily_schedule_scan",
     "with_ib_connection",
-    "with_ib_fetcher",
+    "with_ib_market_data_service",
 ]

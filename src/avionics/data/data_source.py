@@ -17,7 +17,7 @@ from .raw_market_snapshot import RawMarketSnapshot
 class DataSource(Protocol):
     """
     Raw を取得できるデータ源。FC.refresh に注入する。
-    実装例: avionics.ib.fetcher.IBRawFetcher。
+    実装例: avionics.ib.services.market_data_service.IBMarketDataService。
     """
 
     async def fetch_raw(
