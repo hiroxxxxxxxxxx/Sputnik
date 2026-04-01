@@ -151,7 +151,10 @@ def test_signal_bundle_apply_all_distributes_to_factors() -> None:
         cum2_change=-0.06,
         high_20_gap=-0.06,
     )
-    vol = VolatilitySignal(index_value=35.0)
+    vol = VolatilitySignal(
+        index_value=35.0,
+        index_history=((date(2026, 1, 15), 35.0),),
+    )
     bundle = SignalBundle(
         liquidity_credit_hyg=LiquiditySignals(),
         liquidity_credit_lqd=LiquiditySignals(),

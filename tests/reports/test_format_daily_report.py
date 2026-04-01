@@ -29,6 +29,7 @@ class _DummyFC:
                     cum5_change=0.02,
                     cum2_change=0.01,
                     last_close=18000.0,
+                    high_20_gap=-0.02,
                 ),
                 "GC": PriceSignals(
                     symbol="GC",
@@ -37,11 +38,18 @@ class _DummyFC:
                     cum5_change=0.0,
                     cum2_change=0.0,
                     last_close=2300.0,
+                    high_20_gap=-0.02,
                 ),
             },
             volatility_signals={
-                "NQ": VolatilitySignal(index_value=18.5),
-                "GC": VolatilitySignal(index_value=14.2),
+                "NQ": VolatilitySignal(
+                    index_value=18.5,
+                    index_history=((date(2026, 3, 30), 18.5),),
+                ),
+                "GC": VolatilitySignal(
+                    index_value=14.2,
+                    index_history=((date(2026, 3, 30), 14.2),),
+                ),
             },
             capital_signals=CapitalSignals(mm_over_nlv=0.1, span_ratio=1.05),
         )

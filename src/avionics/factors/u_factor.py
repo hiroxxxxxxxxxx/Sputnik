@@ -13,6 +13,33 @@ if TYPE_CHECKING:
     from avionics.data.signals import AltitudeRegime, SignalBundle
 
 
+def u_step_level(prev: LevelType, mm_over_nlv: float, thresholds: dict) -> LevelType:
+    """
+    SPEC.md 3-1 U 因子表（発動・復帰とも即時、バッファ幅の on/off のみ）。
+
+    日次連続日数や価格履歴の畳み込みは用いない。入力は当該ティックの MM/NLV と閾値・前レベル
+    （on/off ヒステリシス用）のみ。
+    """
+    t = thresholds
+    c2_on = float(t["C2_on"])
+    c2_off = float(t["C2_off"])
+    c1_on = float(t["C1_on"])
+    c1_off = float(t["C1_off"])
+    if prev == 2:
+        return 1 if mm_over_nlv < c2_off else 2
+    if prev == 1:
+        if mm_over_nlv >= c2_on:
+            return 2
+        if mm_over_nlv < c1_off:
+            return 0
+        return 1
+    if mm_over_nlv >= c2_on:
+        return 2
+    if mm_over_nlv >= c1_on:
+        return 1
+    return 0
+
+
 class UFactor(BaseFactor):
     """
     U因子（Gメーター：MM/NLV）の計器クラス。
@@ -40,36 +67,6 @@ class UFactor(BaseFactor):
 
     async def update_from_ratio(self, mm_over_nlv: float) -> LevelType:
         """MM/NLV比率からUレベルを更新する。定義書「0-4」「4-2-2-1」参照。"""
-        t = self._thresholds
-        c2_on = float(t["C2_on"])
-        c2_off = float(t["C2_off"])
-        c1_on = float(t["C1_on"])
-        c1_off = float(t["C1_off"])
-
-        current = self.level
-        if current == 2:
-            candidate: LevelType = 1 if mm_over_nlv < c2_off else 2
-        elif current == 1:
-            if mm_over_nlv >= c2_on:
-                candidate = 2
-            elif mm_over_nlv < c1_off:
-                candidate = 0
-            else:
-                candidate = 1
-        else:
-            if mm_over_nlv >= c2_on:
-                candidate = 2
-            elif mm_over_nlv >= c1_on:
-                candidate = 1
-            else:
-                candidate = 0
-
-        if candidate > self.level:
-            self.downgrade(candidate)
-        elif candidate < self.level:
-            self.level = candidate
-            self.record_level()
-            self.reset_confirmation()
-        else:
-            self.record_level()
+        nxt = u_step_level(self.level, mm_over_nlv, self._thresholds)
+        self.assign_level_from_computation(nxt)
         return self.level

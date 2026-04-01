@@ -66,6 +66,21 @@ class BaseFactor:
             ignore_invalid_triggers=True,
         )
 
+    def assign_level_from_computation(self, new_level: LevelType) -> None:
+        """
+        バンドル畳み込みなどで得たレベルをその場で適用し、FSM 表示状態と整合させる。
+        upgrade/downgrade の内部カウンタは使わない。
+        """
+        if new_level not in self.levels:
+            raise ValueError(
+                f"invalid level {new_level} for factor {self.name}: "
+                f"allowed {self.levels}"
+            )
+        self.level = new_level
+        self.reset_confirmation()
+        self._machine.set_state(f"level_{new_level}")
+        self.record_level()
+
     async def apply_signal_bundle(
         self,
         symbol: Optional[str],

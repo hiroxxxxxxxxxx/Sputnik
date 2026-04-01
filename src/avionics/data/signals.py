@@ -51,6 +51,8 @@ class VolatilitySignal:
     knock_in_bar_end: Optional[str] = None
     recovery_confirm_satisfied_days_v1_off: int = 0
     recovery_confirm_satisfied_days_v2_off: int = 0
+    # as_of までの (date, index) を日付昇順。完全ステートレス V はこれを畳み込む。
+    index_history: Tuple[Tuple[date, float], ...] = ()
 
 
 @dataclass(frozen=True)

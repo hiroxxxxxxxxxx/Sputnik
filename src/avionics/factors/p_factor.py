@@ -9,8 +9,10 @@ P因子（Price Stress）：価格ストレス計器。
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any, Literal, Optional, Sequence, TYPE_CHECKING
 
+from avionics.data.signals import PriceDailyRow
 from .base_factor import BaseFactor, LevelType
 
 if TYPE_CHECKING:
@@ -18,6 +20,91 @@ if TYPE_CHECKING:
 
 
 TrendType = Literal["up", "down", "flat"]
+
+
+def p_level_from_daily_rows(
+    rows_oldest_first: list[PriceDailyRow],
+    thresholds: dict,
+) -> LevelType:
+    """daily 行（古い順）を畳み込み P レベルを決定する（インスタンス状態に依存しない）。"""
+    level: LevelType = 0
+    confirm = int(thresholds["confirm_days"])
+    for k in range(len(rows_oldest_first)):
+        row = rows_oldest_first[k]
+        if len(row) < 6:
+            break
+        _dt, daily_change, cum5_change, high_20_gap, trend, cum2_change = (
+            row[0],
+            row[1],
+            row[2],
+            row[3],
+            row[4],
+            row[5] if len(row) > 5 else None,
+        )
+        newest_first_prefix = tuple(reversed(rows_oldest_first[: k + 1]))
+        recovery = 0
+        for r2 in newest_first_prefix:
+            if len(r2) < 6:
+                break
+            if (
+                _p_classify_row(
+                    thresholds,
+                    r2[1],
+                    r2[2],
+                    r2[3],
+                    r2[4],
+                    r2[5] if len(r2) > 5 else None,
+                )
+                == 0
+            ):
+                recovery += 1
+            else:
+                break
+        new_level = _p_classify_row(
+            thresholds,
+            daily_change,
+            cum5_change,
+            high_20_gap,
+            trend,
+            cum2_change,
+        )
+        if new_level > level:
+            level = new_level
+        elif new_level < level:
+            if recovery >= confirm:
+                level = new_level
+    return level
+
+
+def _p_classify_row(
+    thresholds: dict,
+    daily_change: float,
+    cum5_change: float,
+    high_20_gap: float,
+    trend: TrendType,
+    cum2_change: Optional[float],
+) -> LevelType:
+    t = thresholds
+    if daily_change <= t["P2_daily_max"]:
+        return 2
+    if cum2_change is not None and cum2_change <= t["P2_cum2_max"]:
+        return 2
+    if high_20_gap < t["P2_gap_trend"] and trend == "down":
+        return 2
+    if t["P1_daily_lo"] < daily_change <= t["P1_daily_hi"]:
+        return 1
+    if t["P1_cum5_lo"] <= cum5_change < t["P1_cum5_hi"]:
+        return 1
+    if t["P1_gap_lo"] <= high_20_gap <= t["P1_gap_hi"]:
+        return 1
+    if (
+        abs(daily_change) <= t["P0_daily_abs"]
+        and cum5_change >= t["P0_cum5_min"]
+        and high_20_gap > t["P0_gap_min"]
+        and trend == "up"
+    ):
+        return 0
+    return 1
 
 
 class PFactor(BaseFactor):
@@ -95,27 +182,35 @@ class PFactor(BaseFactor):
         confirm = int(self.thresholds["confirm_days"])
         return (min(count, confirm), confirm)
 
-    async def update_from_price_signals(self, signals: PriceSignals) -> LevelType:
+    def _price_rows_oldest_first(self, signals: "PriceSignals") -> list[PriceDailyRow]:
+        """daily_history（newest first）を古い順に並べ替え。空なら当日スナップショット 1 行のみ。"""
+        if signals.high_20_gap is None:
+            raise ValueError("PriceSignals.high_20_gap is required for PFactor")
+        dh = list(signals.daily_history)
+        if dh:
+            return list(reversed(dh))
+        return [
+            (
+                date.min,
+                signals.daily_change,
+                signals.cum5_change,
+                signals.high_20_gap,
+                signals.trend,
+                signals.cum2_change,
+            )
+        ]
+
+    async def update_from_price_signals(self, signals: "PriceSignals") -> LevelType:
         """
         Layer 2 の PriceSignals から P レベルを更新する。
 
         因子は Layer 2 の出力のみを入力とする（定義書 4-2）。
-        復帰連続日数は daily_history を基準日から遡って数える（ステートレス）。
+        日次履歴を畳み込み、インスタンスの前回 level に依存しない。
         """
-        daily_history = getattr(signals, "daily_history", ())
-        recovery_satisfied = (
-            self._count_recovery_satisfied_days(daily_history) if daily_history else 0
-        )
-        if signals.high_20_gap is None:
-            raise ValueError("PriceSignals.high_20_gap is required for PFactor")
-        return await self.update_from_signals(
-            daily_change=signals.daily_change,
-            cum5_change=signals.cum5_change,
-            high_20_gap=signals.high_20_gap,
-            trend=signals.trend,
-            cum2_change=signals.cum2_change,
-            recovery_confirm_satisfied_days=recovery_satisfied,
-        )
+        rows = self._price_rows_oldest_first(signals)
+        level = p_level_from_daily_rows(rows, self.thresholds)
+        self.assign_level_from_computation(level)
+        return level
 
     async def update_from_signals(
         self,
@@ -127,33 +222,22 @@ class PFactor(BaseFactor):
         cum2_change: Optional[float] = None,
     ) -> LevelType:
         """
-        事前計算済みシグナル（Layer 2 出力）から P レベルを更新する。
+        事前計算済みシグナル（Layer 2 出力）から P レベルを更新する（テスト・直接呼び出し用）。
 
-        しきい値はコンストラクタで注入されたもののみを使用。銘柄分岐なし。
-        悪化は即時、改善は confirm_days 連続確認（計器のノイズ除去）。
-        定義書「0-4」「4-2-1-1」「4-2 情報の階層構造」参照。
+        recovery_confirm_satisfied_days は無視され、単一日行のみ畳み込む。
         """
-        new_level = self._classify(
-            daily_change=daily_change,
-            cum5_change=cum5_change,
-            high_20_gap=high_20_gap,
-            trend=trend,
-            cum2_change=cum2_change,
+        _ = recovery_confirm_satisfied_days
+        row: PriceDailyRow = (
+            date.min,
+            daily_change,
+            cum5_change,
+            high_20_gap,
+            trend,
+            cum2_change,
         )
-
-        if new_level > self.level:
-            self.downgrade(new_level)
-        elif new_level < self.level:
-            confirm = int(self.thresholds["confirm_days"])
-            await self.upgrade(
-                new_level,
-                confirm_days=confirm,
-                recovery_confirm_satisfied_days=recovery_confirm_satisfied_days,
-            )
-        else:
-            self.record_level()
-
-        return self.level
+        level = p_level_from_daily_rows([row], self.thresholds)
+        self.assign_level_from_computation(level)
+        return level
 
     def _classify(
         self,
@@ -163,34 +247,12 @@ class PFactor(BaseFactor):
         trend: TrendType,
         cum2_change: Optional[float] = None,
     ) -> LevelType:
-        """
-        注入されたしきい値のみで P レベルを判定する純粋関数。銘柄は参照しない。
-        定義書「4-2-1-1 P因子」参照。
-        """
-        t = self.thresholds
-        # P2: ショック条件
-        if daily_change <= t["P2_daily_max"]:
-            return 2
-        if cum2_change is not None and cum2_change <= t["P2_cum2_max"]:
-            return 2
-        if high_20_gap < t["P2_gap_trend"] and trend == "down":
-            return 2
-
-        # P1: プレッシャー条件
-        if t["P1_daily_lo"] < daily_change <= t["P1_daily_hi"]:
-            return 1
-        if t["P1_cum5_lo"] <= cum5_change < t["P1_cum5_hi"]:
-            return 1
-        if t["P1_gap_lo"] <= high_20_gap <= t["P1_gap_hi"]:
-            return 1
-
-        # P0: Calm（すべて満たす）
-        if (
-            abs(daily_change) <= t["P0_daily_abs"]
-            and cum5_change >= t["P0_cum5_min"]
-            and high_20_gap > t["P0_gap_min"]
-            and trend == "up"
-        ):
-            return 0
-
-        return 1
+        """互換: 純関数分類。"""
+        return _p_classify_row(
+            self.thresholds,
+            daily_change,
+            cum5_change,
+            high_20_gap,
+            trend,
+            cum2_change,
+        )

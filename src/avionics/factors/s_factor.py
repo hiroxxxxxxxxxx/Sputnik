@@ -14,6 +14,34 @@ if TYPE_CHECKING:
     from avionics.data.signals import AltitudeRegime, SignalBundle
 
 
+def s_step_level(prev: LevelType, span_ratio: float, thresholds: dict) -> LevelType:
+    """
+    SPEC.md 3-1 S 因子表（発動・復帰とも即時、切上げ/切捨て＋バッファの on/off のみ）。
+
+    日次連続日数や履歴畳み込みは用いない。入力は当該ティックの比率と閾値・前レベル（on/off 用）のみ。
+    """
+    t = thresholds
+    s2_on = float(t["S2_on"])
+    s2_off = float(t["S2_off"])
+    s1_on = float(t["S1_on"])
+    s1_off = float(t["S1_off"])
+    s_up = math.ceil(span_ratio * 100.0) / 100.0
+    s_down = math.floor(span_ratio * 100.0) / 100.0
+    if prev == 2:
+        return 1 if s_down < s2_off else 2
+    if prev == 1:
+        if s_up >= s2_on:
+            return 2
+        if s_down < s1_off:
+            return 0
+        return 1
+    if s_up >= s2_on:
+        return 2
+    if s_up >= s1_on:
+        return 1
+    return 0
+
+
 class SFactor(BaseFactor):
     """
     S因子（タコメーター：SPAN乖離率）の計器クラス。
@@ -42,39 +70,6 @@ class SFactor(BaseFactor):
 
     async def update_from_ratio(self, span_ratio: float) -> LevelType:
         """SPAN乖離率からSレベルを更新する。定義書「0-4」「4-2-2-2」参照。"""
-        t = self._thresholds
-        s2_on = float(t["S2_on"])
-        s2_off = float(t["S2_off"])
-        s1_on = float(t["S1_on"])
-        s1_off = float(t["S1_off"])
-
-        s_up = math.ceil(span_ratio * 100.0) / 100.0
-        s_down = math.floor(span_ratio * 100.0) / 100.0
-
-        current = self.level
-        if current == 2:
-            candidate: LevelType = 1 if s_down < s2_off else 2
-        elif current == 1:
-            if s_up >= s2_on:
-                candidate = 2
-            elif s_down < s1_off:
-                candidate = 0
-            else:
-                candidate = 1
-        else:
-            if s_up >= s2_on:
-                candidate = 2
-            elif s_up >= s1_on:
-                candidate = 1
-            else:
-                candidate = 0
-
-        if candidate > self.level:
-            self.downgrade(candidate)
-        elif candidate < self.level:
-            self.level = candidate
-            self.record_level()
-            self.reset_confirmation()
-        else:
-            self.record_level()
+        nxt = s_step_level(self.level, span_ratio, self._thresholds)
+        self.assign_level_from_computation(nxt)
         return self.level

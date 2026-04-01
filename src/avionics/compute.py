@@ -262,6 +262,7 @@ def compute_volatility_signal_from_inputs(
     high_20: Optional[float],
     knock_in: bool,
     series: List[VolatilitySeriesPoint],
+    index_history: Tuple[VolatilitySeriesPoint, ...],
     v1_off_threshold: Optional[float],
     v2_off_threshold: Optional[float],
 ) -> VolatilitySignal:
@@ -281,6 +282,7 @@ def compute_volatility_signal_from_inputs(
         v1_to_v0_knock_in_ok=knock_in,
         recovery_confirm_satisfied_days_v1_off=satisfied_v1,
         recovery_confirm_satisfied_days_v2_off=satisfied_v2,
+        index_history=index_history,
     )
 
 
@@ -457,12 +459,14 @@ def compute_volatility_signal_from_snapshot(
     knock_in = _v1_to_v0_knock_in_ok(daily, bars_1h, as_of)
     knock_in_bar_end = _v1_to_v0_knock_in_bar_end_iso(daily, bars_1h, as_of)
 
-    series = full_series[-5:] if len(full_series) > 5 else full_series
+    series_upto = tuple(sorted((d, val) for d, val in full_series if d <= as_of))
+    series_list = list(series_upto)
     sig = compute_volatility_signal_from_inputs(
         index_value=v,
         high_20=high_20,
         knock_in=knock_in,
-        series=series,
+        series=series_list,
+        index_history=series_upto,
         v1_off_threshold=v1_off_threshold,
         v2_off_threshold=v2_off_threshold,
     )
@@ -474,6 +478,7 @@ def compute_volatility_signal_from_snapshot(
         knock_in_bar_end=knock_in_bar_end,
         recovery_confirm_satisfied_days_v1_off=sig.recovery_confirm_satisfied_days_v1_off,
         recovery_confirm_satisfied_days_v2_off=sig.recovery_confirm_satisfied_days_v2_off,
+        index_history=sig.index_history,
     )
 
 

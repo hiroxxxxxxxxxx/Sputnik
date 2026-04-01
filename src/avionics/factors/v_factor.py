@@ -4,6 +4,10 @@ V因子（Volatility Stress）：ボラティリティストレス計器。
 銘柄に依存せず、注入されたしきい値（高度レジーム別）に従って V0/V1/V2 を判定する。
 入力は Layer 2 の出力（シグナル）のみ。Raw Data を直接参照しない。
 しきい値は設定ファイルから注入。定義書「4-2-1-2 V因子」「4-2 情報の階層構造」参照。
+
+レベルは VolatilitySignal.index_history（as_of までの日次指数・日付昇順）を畳み込んだ結果のみとし、
+プロセス内の前回 self.level や upgrade の内部カウンタに依存しない（完全ステートレス）。
+V2→V0 の直接遷移は行わない（V2_off 経由で V1、V1 は V1_off＋確認＋ノックインで V0）。
 """
 
 from __future__ import annotations
@@ -11,11 +15,96 @@ from __future__ import annotations
 from collections.abc import Awaitable
 from typing import Any, Optional, TYPE_CHECKING
 
+from avionics.compute import _count_consecutive_days_below
 from avionics.data.signals import AltitudeRegime
 from .base_factor import BaseFactor, BufferCondition, LevelType
 
 if TYPE_CHECKING:
     from avionics.data.signals import SignalBundle, VolatilitySignal
+
+
+def _v_transition_step(
+    prev: LevelType,
+    v: float,
+    th: dict,
+    sat_v1: int,
+    sat_v2: int,
+    knock_in: bool,
+) -> LevelType:
+    """1 日分の指数 v と復帰カウントに対する次レベル（畳み込み用・純関数）。"""
+    V2_on = float(th["V2_on"])
+    V2_off = float(th["V2_off"])
+    V1_on = float(th["V1_on"])
+    V1_off = float(th["V1_off"])
+    v2cd = int(th["V2_confirm_days"])
+    v1cd = int(th["V1_confirm_days"])
+
+    candidate: LevelType = prev
+    if v >= V2_on:
+        candidate = 2
+    elif prev == 2 and v < V2_off:
+        candidate = 1
+    elif v >= V1_on:
+        candidate = max(candidate, 1)
+    elif prev == 1 and v < V1_off:
+        candidate = 0
+
+    if candidate > prev:
+        return candidate
+    if candidate < prev:
+        if prev == 2 and candidate == 1:
+            return 1 if sat_v2 >= v2cd else 2
+        if prev == 1 and candidate == 0:
+            return 0 if (sat_v1 >= v1cd and knock_in) else 1
+        return prev
+    return prev
+
+
+async def _v_level_from_index_history_async(
+    index_history: tuple[tuple[Any, float], ...],
+    th: dict,
+    *,
+    last_knock_in_from_signal: bool,
+    buffer_condition_v1_to_v0: Optional[BufferCondition],
+    factor: BaseFactor,
+) -> LevelType:
+    """
+    index_history を日付昇順で畳み込み、最終日に SPEC 4-2-1-2 の 1h ノックインを適用する。
+
+    過去日は日次系列のみのため V1→V0 のノックインを満たしたとみなす（intraday 非保持のため）。
+    最終日は signal の v1_to_v0_knock_in_ok または buffer_condition を使う。
+    """
+    if not index_history:
+        raise ValueError("VolatilitySignal.index_history must not be empty")
+
+    n = len(index_history)
+    level: LevelType = 0
+    for i, (_d, v) in enumerate(index_history):
+        series_upto = list(index_history[: i + 1])
+        sat_v1 = _count_consecutive_days_below(series_upto, float(th["V1_off"]))
+        sat_v2 = _count_consecutive_days_below(series_upto, float(th["V2_off"]))
+        is_last = i == n - 1
+
+        if is_last and buffer_condition_v1_to_v0 is not None:
+            pretend = _v_transition_step(
+                level, float(v), th, sat_v1, sat_v2, knock_in=True,
+            )
+            if level == 1 and pretend == 0:
+                buf = buffer_condition_v1_to_v0(factor, 0)
+                if isinstance(buf, Awaitable):
+                    buf = await buf
+                knock_eff = bool(buf)
+            else:
+                knock_eff = last_knock_in_from_signal
+        elif is_last:
+            knock_eff = last_knock_in_from_signal
+        else:
+            knock_eff = True
+
+        level = _v_transition_step(
+            level, float(v), th, sat_v1, sat_v2, knock_eff,
+        )
+    return level
 
 
 class VFactor(BaseFactor):
@@ -89,7 +178,7 @@ class VFactor(BaseFactor):
 
     async def update_from_volatility_signal(
         self,
-        signal: VolatilitySignal,
+        signal: "VolatilitySignal",
         *,
         altitude: AltitudeRegime,
         buffer_condition_v1_to_v0: Optional[BufferCondition] = None,
@@ -97,19 +186,27 @@ class VFactor(BaseFactor):
         """
         Layer 2 の VolatilitySignal から V レベルを更新する。
 
-        因子は Layer 2 の出力のみを入力とする（定義書 4-2）。
-        V1→V0復帰時は SPEC 4-2-1-2 の 1hノックインを適用する。
+        index_history が必須。V1→V0復帰時は SPEC 4-2-1-2 の 1hノックインを最終日に適用する。
         呼び出し元が buffer_condition を渡さない場合は signal.v1_to_v0_knock_in_ok を用いる。
         """
+        hist = signal.index_history
+        if not hist:
+            raise ValueError(
+                "VolatilitySignal.index_history is required for stateless V; "
+                "ensure build_signal_bundle / compute_volatility_signal_from_snapshot populates it."
+            )
         if buffer_condition_v1_to_v0 is None:
             buffer_condition_v1_to_v0 = lambda _f, _l: signal.v1_to_v0_knock_in_ok
-        return await self.update_from_index(
-            index_value=signal.index_value,
-            altitude=altitude,
-            recovery_confirm_satisfied_days_v1_off=signal.recovery_confirm_satisfied_days_v1_off,
-            recovery_confirm_satisfied_days_v2_off=signal.recovery_confirm_satisfied_days_v2_off,
+        th = self._get_thresholds(altitude)
+        level = await _v_level_from_index_history_async(
+            hist,
+            th,
+            last_knock_in_from_signal=signal.v1_to_v0_knock_in_ok,
             buffer_condition_v1_to_v0=buffer_condition_v1_to_v0,
+            factor=self,
         )
+        self.assign_level_from_computation(level)
+        return level
 
     async def update_from_index(
         self,
@@ -120,56 +217,41 @@ class VFactor(BaseFactor):
         buffer_condition_v1_to_v0: Optional[BufferCondition] = None,
     ) -> LevelType:
         """
-        VXN/GVZ 相当の指数値（Layer 2 出力）から V レベルを更新する。ステートレス専用。
+        非推奨: 単一日のみの履歴で畳み込む（テスト互換用）。
 
-        復帰はシグナル由来の連続日数で一発判定（docs/archive/recovery_confirm_spec_options.md）。
-        recovery_confirm_satisfied_days_* は呼び出し元（Layer 2 算出結果）で必ず渡すこと。
+        運用は VolatilitySignal.index_history を用いること。
         """
-        thresholds = self._get_thresholds(altitude)
-        current = self.level
-        v = index_value
+        _ = recovery_confirm_satisfied_days_v1_off
+        _ = recovery_confirm_satisfied_days_v2_off
+        from avionics.data.signals import VolatilitySignal
 
-        candidate: LevelType = current
+        async def no_buffer(_f: BaseFactor, _lvl: LevelType) -> bool:
+            return False
 
-        if v >= thresholds["V2_on"]:
-            candidate = 2
-        elif current == 2 and v < thresholds["V1_off"]:
-            candidate = 0
-        elif current == 2 and v < thresholds["V2_off"]:
-            candidate = 1
-        elif v >= thresholds["V1_on"]:
-            candidate = max(candidate, 1)
-        elif current == 1 and v < thresholds["V1_off"]:
-            candidate = 0
-
-        if candidate > self.level:
-            self.downgrade(candidate)
-        elif candidate < self.level:
-            if self.level == 2 and candidate == 1:
-                required = int(thresholds["V2_confirm_days"])
-                if recovery_confirm_satisfied_days_v2_off >= required:
-                    self.level = 1
-                    self.record_level()
-                    self.reset_confirmation()
-            elif self.level == 1 and candidate == 0:
-                required = int(thresholds["V1_confirm_days"])
-                buf_ok = buffer_condition_v1_to_v0 is not None
-                if buf_ok:
-                    result = buffer_condition_v1_to_v0(self, 0)
-                    if isinstance(result, Awaitable):
-                        result = await result
-                    buf_ok = bool(result)
-                if recovery_confirm_satisfied_days_v1_off >= required and buf_ok:
-                    self.level = 0
-                    self.record_level()
-                    self.reset_confirmation()
-            else:
-                await self.upgrade(
-                    candidate,
-                    confirm_days=1,
-                    recovery_confirm_satisfied_days=1,
-                )
+        buf = buffer_condition_v1_to_v0
+        if buf is None:
+            eff_buf: BufferCondition = no_buffer
         else:
-            self.record_level()
 
-        return self.level
+            async def eff_buf(f: BaseFactor, lvl: LevelType) -> bool:
+                r = buf(f, lvl)
+                if isinstance(r, Awaitable):
+                    return bool(await r)
+                return bool(r)
+
+        sig = VolatilitySignal(
+            index_value=index_value,
+            index_history=((self._placeholder_date(), index_value),),
+            v1_to_v0_knock_in_ok=False,
+        )
+        return await self.update_from_volatility_signal(
+            sig,
+            altitude=altitude,
+            buffer_condition_v1_to_v0=eff_buf,
+        )
+
+    @staticmethod
+    def _placeholder_date() -> Any:
+        from datetime import date
+
+        return date(1970, 1, 1)
