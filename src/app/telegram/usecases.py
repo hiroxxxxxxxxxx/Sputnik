@@ -133,19 +133,12 @@ async def fetch_health_report(
 async def fetch_schedule_alerts(host: str, port: int, symbols: list[str]) -> str:
     from avionics.ib import with_ib_connection
     from avionics.ib.services.schedule_service import IBScheduleService
+    from reports.format_schedule_scan import format_schedule_scan
 
     client_id = int(os.environ.get("IBKR_CLIENT_ID", "3"))
     async with with_ib_connection(host, port, client_id=client_id, timeout=30.0) as ib:
         results = await IBScheduleService(ib).run_daily_schedule_scan(symbols)
-    lines = ["【取引時間スキャン】"]
-    for symbol, messages in results:
-        lines.append(f"\n{symbol}:")
-        if messages:
-            for m in messages:
-                lines.append(f"  {m}")
-        else:
-            lines.append("  特記事項なし（明日以降の変化なし）")
-    return "\n".join(lines)
+    return format_schedule_scan(results)
 
 
 async def notify_gateway_ready(application: Any) -> None:

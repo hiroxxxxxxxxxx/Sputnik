@@ -71,11 +71,14 @@ def parse_trading_hours(raw: str) -> List[DaySchedule]:
                 end_times.append(time(int(right[:2]), int(right[2:])))
                 close_time = right
 
+        only_closed = bool(sessions) and all(s == "CLOSED" for s in sessions)
+        effective_close = "" if only_closed else (close_time or "1600")
+
         result.append(
             DaySchedule(
                 date_str=date_str,
                 sessions=sessions,
-                close_time=close_time or "1600",
+                close_time=effective_close,
                 start_times=start_times,
                 end_times=end_times,
             )
@@ -127,10 +130,13 @@ class IBScheduleClient:
         if not raw_trading:
             raise ValueError("tradingHours field is empty")
         trading_schedule = parse_trading_hours(str(raw_trading))
-        liquid_schedule = parse_trading_hours(str(raw_liquid)) if raw_liquid else []
+        liquid_raw_str = str(raw_liquid).strip() if raw_liquid else ""
+        liquid_schedule = parse_trading_hours(liquid_raw_str) if liquid_raw_str else []
         return {
             "trading_schedule": trading_schedule,
             "liquid_schedule": liquid_schedule,
             "timezone_id": str(raw_tz or ""),
+            "trading_hours_raw": str(raw_trading),
+            "liquid_hours_raw": liquid_raw_str,
         }
 

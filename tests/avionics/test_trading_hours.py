@@ -4,12 +4,12 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import date
+from datetime import date, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from avionics.ib.clients.schedule_client import IBScheduleClient
+from avionics.ib.clients.schedule_client import IBScheduleClient, parse_trading_hours
 from avionics.ib.services.schedule_service import IBScheduleService
 
 
@@ -34,6 +34,13 @@ def test_client_fetch_trading_hours_empty_when_blank() -> None:
         asyncio.run(client.fetch_trading_hours(object()))
 
 
+def test_parse_trading_hours_closed_day_has_empty_close_time() -> None:
+    out = parse_trading_hours("20250403:CLOSED")
+    assert len(out) == 1
+    assert out[0].sessions == ["CLOSED"]
+    assert out[0].close_time == ""
+
+
 def test_client_fetch_trading_hours_single_day() -> None:
     raw = "20250310:0930-1600"
     client = IBScheduleClient(_FakeIb([_Detail(raw)]))
@@ -46,11 +53,30 @@ def test_client_fetch_trading_hours_single_day() -> None:
 
 def test_service_run_daily_schedule_scan_returns_messages() -> None:
     today = date.today().strftime("%Y%m%d")
-    service = IBScheduleService(_FakeIb([_Detail(f"{today}:0930-1300")]))
-    out = asyncio.run(service.run_daily_schedule_scan(["NQ"]))
+    raw = f"{today}:0930-1300"
+    service = IBScheduleService(_FakeIb([_Detail(raw)]))
+    out = asyncio.run(
+        service.run_daily_schedule_scan(["NQ"], contract_resolver=lambda _sym: object())
+    )
     assert len(out) == 1
-    assert out[0][0] == "NQ"
-    assert isinstance(out[0][1], list)
+    assert out[0].symbol == "NQ"
+    assert isinstance(out[0].alerts, list)
+    assert out[0].fetch_error is None
+    assert out[0].scan_used_liquid is False
+    assert raw in out[0].trading_hours_raw
+
+
+def test_service_run_daily_schedule_scan_prefers_liquid_when_present() -> None:
+    today = date.today().strftime("%Y%m%d")
+    t1 = (date.today() + timedelta(days=1)).strftime("%Y%m%d")
+    tr = f"{today}:0930-1600"
+    liq = f"{today}:0930-1600;{t1}:CLOSED"
+    service = IBScheduleService(_FakeIb([_Detail(tr, liquid=liq)]))
+    out = asyncio.run(
+        service.run_daily_schedule_scan(["NQ"], contract_resolver=lambda _sym: object())
+    )
+    assert out[0].scan_used_liquid is True
+    assert any(a.kind == "closed_day" for a in out[0].alerts)
 
 
 @pytest.mark.asyncio
