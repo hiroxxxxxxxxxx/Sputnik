@@ -4,11 +4,9 @@ from dataclasses import dataclass
 from typing import Literal
 
 ScheduleAlertKind = Literal[
-    "missing_schedule_day",
-    "closed_day",
+    "market_closed",
     "shortened_close",
-    "dst_shift_1h",
-    "dst_shift_other",
+    "dst_transition",
 ]
 
 
@@ -20,8 +18,8 @@ class ScheduleAlert:
     relative_offset: int
     """today からの日数（1 = 翌暦日）。"""
     trade_date_key: str
-    """YYYYMMDD。DST 系など日付が未定義のときは空。"""
+    """YYYYMMDD。DST のときは該当する暦日が取れるなら入れる（なければ空）。"""
     close_hhmm: str | None = None
     """短縮営業時の終了 4 桁 HHMM。"""
     tz_label: str | None = None
-    """短縮営業メッセージ用 CT/ET 等。"""
+    """短縮メッセージ用 CT/ET 等。"""

@@ -68,7 +68,7 @@ def test_build_schedule_alerts_detects_closed_tomorrow() -> None:
         tz_label="ET",
         today_anchor=anchor,
     )
-    closed = [a for a in alerts if a.kind == "closed_day"]
+    closed = [a for a in alerts if a.kind == "market_closed"]
     assert closed and closed[0].trade_date_key == t1
 
 
@@ -157,7 +157,7 @@ def test_format_schedule_scan_renders_closed_day_with_liquid_source() -> None:
         symbol="NQ",
         alerts=[
             ScheduleAlert(
-                kind="closed_day",
+                kind="market_closed",
                 relative_offset=1,
                 trade_date_key="20260403",
             )
@@ -169,7 +169,7 @@ def test_format_schedule_scan_renders_closed_day_with_liquid_source() -> None:
         fetch_error=None,
     )
     text = format_schedule_scan([row])
-    assert "終日休場" in text
+    assert "【休場】" in text
     assert "liquidHours" in text
     assert "判定スケジュール: liquidHours" in text
 

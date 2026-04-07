@@ -80,7 +80,7 @@ def build_schedule_alerts(
         if not sched:
             alerts.append(
                 ScheduleAlert(
-                    kind="missing_schedule_day",
+                    kind="market_closed",
                     relative_offset=i,
                     trade_date_key=key,
                 )
@@ -90,7 +90,7 @@ def build_schedule_alerts(
         if _is_closed_day(sched):
             alerts.append(
                 ScheduleAlert(
-                    kind="closed_day",
+                    kind="market_closed",
                     relative_offset=i,
                     trade_date_key=key,
                 )
@@ -117,20 +117,13 @@ def build_schedule_alerts(
                         tz_label=tz_label,
                     )
                 )
-            if abs(day_close_val - today_close_val) == 100:
+            dst_delta = abs(day_close_val - today_close_val)
+            if dst_delta == 100 or dst_delta in (2300, 900):
                 alerts.append(
                     ScheduleAlert(
-                        kind="dst_shift_1h",
+                        kind="dst_transition",
                         relative_offset=i,
-                        trade_date_key="",
-                    )
-                )
-            elif abs(day_close_val - today_close_val) in (2300, 900):
-                alerts.append(
-                    ScheduleAlert(
-                        kind="dst_shift_other",
-                        relative_offset=i,
-                        trade_date_key="",
+                        trade_date_key=key,
                     )
                 )
     return alerts

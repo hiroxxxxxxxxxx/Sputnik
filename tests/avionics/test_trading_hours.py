@@ -76,7 +76,7 @@ def test_service_run_daily_schedule_scan_prefers_liquid_when_present() -> None:
         service.run_daily_schedule_scan(["NQ"], contract_resolver=lambda _sym: object())
     )
     assert out[0].scan_used_liquid is True
-    assert any(a.kind == "closed_day" for a in out[0].alerts)
+    assert any(a.kind == "market_closed" for a in out[0].alerts)
 
 
 @pytest.mark.asyncio

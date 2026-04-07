@@ -35,35 +35,24 @@ def _format_alert_line(alert: ScheduleAlert, scan_used_liquid: bool) -> str:
     key = alert.trade_date_key
     day_l = _relative_day_label_jp(off)
     src = _ib_hours_source_label(scan_used_liquid)
-    if alert.kind == "missing_schedule_day":
-        if off == 1:
-            return (
-                "⚠️ 明日は取引所休場のため、システム監視をスキップすることを推奨します。"
-            )
+    if alert.kind == "market_closed":
         return (
-            f"⚠️ {day_l}（{key}）はスケジュールに含まれていません。"
-            "休場の可能性があります。"
+            f"【休場】{day_l}（{key}）。"
+            f"IB {src} 上は取引なし（または当該日がスケジュールに含まれない）。"
         )
-    if alert.kind == "closed_day":
-        return f"⚠️ {day_l}（{key}）は終日休場です（IB {src}）。"
     if alert.kind == "shortened_close":
         hhmm = alert.close_hhmm or ""
         tz = alert.tz_label or "ET"
         if len(hhmm) != 4:
             raise ValueError(f"shortened_close requires 4-digit close_hhmm, got {hhmm!r}")
         return (
-            f"⚠️ 明日は短縮営業です（終了: {hhmm[:2]}:{hhmm[2:]} {tz}）。"
-            "1時間足監視はスキップすることを推奨します。"
+            f"【短縮営業】{day_l}（{key}）。"
+            f"終了 {hhmm[:2]}:{hhmm[2:]} {tz}（通常より早い）。"
         )
-    if alert.kind == "dst_shift_1h":
+    if alert.kind == "dst_transition":
         return (
-            "⏰ 明日から米国時間（夏時間/冬時間）が切り替わります。"
-            "日本時間の日次判定・監視開始時刻が1時間スライドします。"
-        )
-    if alert.kind == "dst_shift_other":
-        return (
-            "⏰ 明日から米国時間が切り替わります。"
-            "日次判定・監視開始時刻の見直しを推奨します。"
+            f"【夏冬時間】{day_l}（{key}）。"
+            "米国の夏時間/冬時間切替の見込み。日本時間での監視開始時刻を確認してください。"
         )
     raise ValueError(f"unknown ScheduleAlert.kind: {alert.kind!r}")
 
@@ -95,5 +84,5 @@ def format_schedule_scan(rows: list[ScheduleScanRow]) -> str:
             for alert in row.alerts:
                 lines.append(f"  {_format_alert_line(alert, row.scan_used_liquid)}")
         else:
-            lines.append("  特記事項なし（明日以降の変化なし）")
+            lines.append("明日以降の変化なし")
     return "\n".join(lines)
