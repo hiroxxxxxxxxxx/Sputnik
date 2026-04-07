@@ -7,8 +7,10 @@ Layer 2 シグナル（各因子の入力値）内訳
 ────────────────────
 [{{ sec.section_id }}] {{ sec.title }}
 {% for row in sec.rows %}
-{{ row.label }} | {{ row.value }}
+{{ row.label }} | {{ row.value }}{% if row.hit %} {{ row.hit }}{% endif %}
+
 {% endfor %}
+
 {% endfor %}
 
 {% for sec in volatility_sections %}
@@ -29,7 +31,7 @@ Layer 2 シグナル（各因子の入力値）内訳
 
 {% if r_section %}
 ────────────────────
-[4] R（TIP）
+{{ r_section.title }}
 {% for row in r_section.rows %}
 {{ row.label }} | {{ row.value }}
 {% endfor %}
@@ -37,7 +39,7 @@ Layer 2 シグナル（各因子の入力値）内訳
 
 {% if u_section %}
 ────────────────────
-[5-A] U（資本使用率）
+{{ u_section.title }}
 {% for row in u_section.rows %}
 {{ row.label }} | {{ row.value }}
 {% endfor %}
@@ -45,7 +47,7 @@ Layer 2 シグナル（各因子の入力値）内訳
 
 {% if s_section %}
 ────────────────────
-[5-B] S（SPAN）
+{{ s_section.title }}
 {% for row in s_section.rows %}
 {{ row.label }} | {{ row.value }}
 {% endfor %}
@@ -77,3 +79,5 @@ Options strategy diff (target / actual / delta)
 {% endif %}
 
 ━━━━━━━━━━━━━━━━━━━━
+{{ hit_legend }}
+

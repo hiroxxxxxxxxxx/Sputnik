@@ -11,7 +11,10 @@ from avionics.data.signals import (
     PriceSignals,
     SignalBundle,
 )
-from reports.format_breakdown_report import format_breakdown_report
+from reports.format_breakdown_report import (
+    BREAKDOWN_HIT_LEGEND,
+    format_breakdown_report,
+)
 
 
 class _DummyFC:
@@ -84,6 +87,10 @@ def test_format_breakdown_report_without_positions_detail() -> None:
     fc = _DummyFC()
     text = format_breakdown_report(fc)
     assert "[6] POSITION SNAPSHOT" not in text
+    assert BREAKDOWN_HIT_LEGEND in text
+    assert "P/T 入力 <NQ> [ P=— T=— ]" in text
+    assert "[5-A] U（資本使用率） [ U=— ]" in text
+    assert "[5-B] S（SPAN） [ S=— ]" in text
 
 
 def test_format_breakdown_report_span_breakdown_na_fallback() -> None:

@@ -25,9 +25,20 @@ _PT_IDS = ("1-A", "1-B")
 _V_IDS = ("2-A", "2-B")
 _C_IDS = ("3-A", "3-B")
 
+_BREAKDOWN_LEVEL_STR = {0: "0", 1: "1", 2: "2"}
 
-def _kv(label: str, value: str) -> dict[str, str]:
-    return {"label": label, "value": value}
+# breakdown 末尾に一度だけ出す（全因子共通の ★ 説明）
+BREAKDOWN_HIT_LEGEND = "※ ★ = 因子判定の決定枝に関係する入力行を示す。"
+
+
+def _kv(label: str, value: str, *, row_key: str | None = None) -> dict[str, Any]:
+    row: dict[str, Any] = {"label": label, "value": value, "hit": ""}
+    if row_key is not None:
+        row["row_key"] = row_key
+    return row
+
+
+P_BREAKDOWN_HIT_MARKER = "★"
 
 
 def _fmt_price(value: float | None) -> str:
@@ -72,6 +83,38 @@ def _v_factor_level(fc: "FlightController", symbol: str) -> int:
         if isinstance(f, VFactor):
             return int(f.level)
     raise ValueError(f"VFactor not found for symbol={symbol!r} in FlightController mapping")
+
+
+def _factor_from_symbol(fc: "FlightController", symbol: str, cls: type) -> Any:
+    for f in fc.mapping.symbol_factors.get(symbol, []):
+        if isinstance(f, cls):
+            return f
+    return None
+
+
+def _first_factor_among_symbols(
+    fc: "FlightController",
+    symbols: list[str],
+    cls: type,
+) -> Any:
+    for sym in symbols:
+        f = _factor_from_symbol(fc, sym, cls)
+        if f is not None:
+            return f
+    return None
+
+
+def _limit_factor(fc: "FlightController", cls: type) -> Any:
+    for f in fc.mapping.limit_factors:
+        if isinstance(f, cls):
+            return f
+    return None
+
+
+def _breakdown_level_suffix(fac: Any) -> str:
+    if fac is None:
+        return "—"
+    return _BREAKDOWN_LEVEL_STR.get(int(fac.level), "?")
 
 
 def _fmt_progress(x: int, total: int) -> str:
@@ -122,6 +165,9 @@ def _build_breakdown_report_context(
     price_symbols = [s for s in ("NQ", "GC") if s in bundle.price_signals]
     price_symbols += sorted(s for s in bundle.price_signals if s not in ("NQ", "GC"))
 
+    from avionics.factors.p_factor import PFactor, p_classify_row_hit_row_keys, p_classify_row_with_reason
+    from avionics.factors.t_factor import TFactor
+
     price_sections: list[dict[str, Any]] = []
     for idx, sym in enumerate(price_symbols):
         ps = bundle.price_signals[sym]
@@ -131,20 +177,64 @@ def _build_breakdown_report_context(
         sma20_gap_txt = _fmt_pct(ps.sma20_gap)
         high20_txt = _fmt_price(ps.high_20)
         high20_gap_txt = _fmt_pct(ps.high_20_gap)
-        rows = [
+        rows: list[dict[str, Any]] = [
             _kv("清算値", settlement_txt),
             _kv("20SMA", sma20_txt),
             _kv("20SMA乖離率", sma20_gap_txt),
-            _kv("トレンド", ps.trend),
-            _kv("日次変化率", _fmt_pct(ps.daily_change)),
-            _kv("2日累積変動率", _fmt_pct(ps.cum2_change)),
-            _kv("5日累積変動率", _fmt_pct(ps.cum5_change)),
+            _kv("トレンド", ps.trend, row_key="trend"),
+            _kv("日次変化率", _fmt_pct(ps.daily_change), row_key="daily_change"),
+            _kv("2日累積変動率", _fmt_pct(ps.cum2_change), row_key="cum2_change"),
+            _kv("5日累積変動率", _fmt_pct(ps.cum5_change), row_key="cum5_change"),
             _kv("20日高値", high20_txt),
-            _kv("20日高値乖離率", high20_gap_txt),
+            _kv("20日高値乖離率", high20_gap_txt, row_key="high_20_gap"),
         ]
+        p_factor = _factor_from_symbol(fc, sym, PFactor)
+        t_fac = _factor_from_symbol(fc, sym, TFactor)
+        sec_title = (
+            f"P/T 入力 <{sym}> [ P={_breakdown_level_suffix(p_factor)} "
+            f"T={_breakdown_level_suffix(t_fac)} ]"
+        )
+        if p_factor is not None and ps.high_20_gap is not None:
+            try:
+                latest = p_factor.latest_price_daily_row(ps)
+                _, dc, c5, hg, tr, c2 = (
+                    latest[0],
+                    latest[1],
+                    latest[2],
+                    latest[3],
+                    latest[4],
+                    latest[5] if len(latest) > 5 else None,
+                )
+                lvl_snap, rid = p_classify_row_with_reason(
+                    p_factor.thresholds, dc, c5, hg, tr, c2
+                )
+                hit_keys = p_classify_row_hit_row_keys(rid)
+                for r in rows:
+                    rk = r.get("row_key")
+                    if rk and rk in hit_keys:
+                        r["hit"] = P_BREAKDOWN_HIT_MARKER
+                eff = int(p_factor.level)
+                if eff != lvl_snap:
+                    rows.append(
+                        _kv(
+                            "P 注釈",
+                            "表示時点の因子レベルと最新行分類が一致しません（refresh 順序を確認）。",
+                        )
+                    )
+            except ValueError:
+                pass
+        elif p_factor is not None:
+            rows.append(
+                _kv(
+                    "P 注釈",
+                    "high_20_gap 未取得のため P 分類マークを付けていません。",
+                )
+            )
+        for r in rows:
+            r.pop("row_key", None)
         price_sections.append({
             "section_id": sid,
-            "title": f"P/T 入力 <{sym}>",
+            "title": sec_title,
             "rows": rows,
         })
 
@@ -181,16 +271,23 @@ def _build_breakdown_report_context(
             )
         volatility_sections.append({
             "section_id": sid,
-            "title": f"V 入力 <{sym}>",
+            "title": f"V 入力 <{sym}> [ V={_BREAKDOWN_LEVEL_STR[v_level]} ]",
             "rows": rows,
         })
+
+    from avionics.factors.c_factor import CFactor
+    from avionics.factors.r_factor import RFactor
+    from avionics.factors.s_factor import SFactor
+    from avionics.factors.u_factor import UFactor
+
+    c_lv = _breakdown_level_suffix(_first_factor_among_symbols(fc, price_symbols, CFactor))
 
     credit_sections: list[dict[str, Any]] = []
     if bundle.liquidity_credit_hyg:
         credit_sections.append(
             _liquidity_credit_section(
                 _C_IDS[0],
-                "C（HYG）",
+                f"C（HYG） [ C={c_lv} ]",
                 bundle.liquidity_credit_hyg,
             )
         )
@@ -199,10 +296,13 @@ def _build_breakdown_report_context(
         credit_sections.append(
             _liquidity_credit_section(
                 _C_IDS[1] if len(_C_IDS) > 1 else "3-B",
-                "C（LQD）",
+                f"C（LQD） [ C={c_lv} ]",
                 lc_lqd,
             )
         )
+
+    r_fac = _first_factor_among_symbols(fc, price_symbols, RFactor)
+    r_lv = _breakdown_level_suffix(r_fac)
 
     r_section: dict[str, Any] | None = None
     if bundle.liquidity_tip:
@@ -211,6 +311,7 @@ def _build_breakdown_report_context(
         close_txt = _fmt_price(lt.last_close)
         ref_high_txt = _fmt_price(lt.tip_reference_high)
         r_section = {
+            "title": f"[4] R（TIP） [ R={r_lv} ]",
             "rows": [
                 _kv("終値", close_txt),
                 _kv("20日高値", ref_high_txt),
@@ -277,8 +378,16 @@ def _build_breakdown_report_context(
             )
             if w is None and sym in whatif_errors:
                 s_rows.append(_kv(f"S {sym} reason", whatif_errors[sym]))
-        u_section = {"rows": u_rows}
-        s_section = {"rows": s_rows}
+        u_fac = _limit_factor(fc, UFactor)
+        s_fac = _limit_factor(fc, SFactor)
+        u_section = {
+            "title": f"[5-A] U（資本使用率） [ U={_breakdown_level_suffix(u_fac)} ]",
+            "rows": u_rows,
+        }
+        s_section = {
+            "title": f"[5-B] S（SPAN） [ S={_breakdown_level_suffix(s_fac)} ]",
+            "rows": s_rows,
+        }
 
     position_ctx = {
         "symbols": [],
@@ -305,6 +414,7 @@ def _build_breakdown_report_context(
         "pos_symbols": position_ctx["symbols"],
         "pos_futures_target_rows": position_ctx["futures_target_rows"],
         "pos_options_rows": position_ctx["options_rows"],
+        "hit_legend": BREAKDOWN_HIT_LEGEND,
     }
 
 

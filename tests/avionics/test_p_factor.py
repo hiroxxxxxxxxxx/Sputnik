@@ -5,8 +5,14 @@ import asyncio
 import pytest
 
 from avionics import PFactor
+from avionics.data.signals import LiquiditySignals, PriceSignals, SignalBundle
 from avionics.factors import FactorsConfigError, get_p_thresholds, load_factors_config
-from avionics.data.signals import LiquiditySignals, SignalBundle
+from avionics.factors.p_factor import (
+    _p_classify_row,
+    p_classify_row_hit_row_keys,
+    p_classify_row_with_reason,
+    p_level_from_daily_rows,
+)
 
 try:
     _config = load_factors_config()
@@ -49,9 +55,9 @@ def test_downgrade_immediate() -> None:
     _run(scenario())
 
 
-def test_upgrade_delayed() -> None:
+def test_upgrade_immediate_when_p0_conditions_met() -> None:
     """
-    P因子が改善方向では confirm_days 連続確認後にのみ昇格することを確認する。
+    P0 条件を満たす最新行があれば、履歴上の高レベルに関係なく即 P0 になる（N 日確認なし）。
     """
     pf = PFactor(name="P_NQ", thresholds=_p_nq())
     pf.level = 2
@@ -62,15 +68,39 @@ def test_upgrade_delayed() -> None:
             cum5_change=0.0,
             high_20_gap=-0.01,
             trend="up",
-            recovery_confirm_satisfied_days=1,
+            recovery_confirm_satisfied_days=0,
             cum2_change=-0.01,
         )
 
-        # 1日目：calm 条件かつ recovery_confirm_satisfied_days=1 で昇格
         await pf.update_from_signals(**calm_kwargs)
         assert pf.level == 0
 
     _run(scenario())
+
+
+def test_p_level_from_daily_rows_empty_raises() -> None:
+    with pytest.raises(ValueError, match="at least one"):
+        p_level_from_daily_rows([], _p_nq())
+
+
+def test_p_level_from_daily_rows_short_last_row_raises() -> None:
+    from datetime import date as date_type
+
+    bad_last = (date_type(2026, 1, 1), -0.01, -0.02, -0.03, "flat")
+    with pytest.raises(ValueError, match="at least 6 fields"):
+        p_level_from_daily_rows([bad_last], _p_nq())
+
+
+def test_p_level_from_daily_rows_uses_last_row_only() -> None:
+    """
+    畳み込み復帰が無いため、末尾が P1 なら履歴先頭が P2 でもレベルは 1 になる。
+    """
+    from datetime import date as date_type
+
+    t = _p_nq()
+    row_old = (date_type(2026, 1, 1), -0.04, -0.04, -0.06, "down", -0.06)
+    row_new = (date_type(2026, 1, 2), -0.02, -0.04, -0.035, "flat", -0.03)
+    assert p_level_from_daily_rows([row_old, row_new], t) == 1
 
 
 def test_level_calculation_nq_vs_gc() -> None:
@@ -171,6 +201,55 @@ def test_classify_gc_p2_and_fallback_p1() -> None:
         assert level_fb == 1
 
     _run(scenario())
+
+
+def test_p_classify_row_wrapper_matches_with_reason_level() -> None:
+    t = _p_nq()
+    inputs = (-0.04, -0.04, -0.06, "down", -0.06)
+    assert _p_classify_row(t, *inputs) == p_classify_row_with_reason(t, *inputs)[0]
+
+
+def test_p_classify_row_with_reason_p2_daily() -> None:
+    t = _p_nq()
+    level, rid = p_classify_row_with_reason(t, -0.04, 0.0, -0.02, "flat", None)
+    assert level == 2 and rid == "P2_daily"
+
+
+def test_p_classify_row_with_reason_p2_cum2_chain_order() -> None:
+    t = _p_nq()
+    level, rid = p_classify_row_with_reason(t, -0.02, -0.04, -0.02, "up", -0.06)
+    assert level == 2 and rid == "P2_cum2"
+
+
+def test_p_classify_row_hit_row_keys_p0_all_four() -> None:
+    keys = p_classify_row_hit_row_keys("P0_relaxed")
+    assert keys == frozenset(
+        {"daily_change", "cum5_change", "high_20_gap", "trend"}
+    )
+
+
+def test_p_classify_row_hit_row_keys_p1_default_empty() -> None:
+    assert p_classify_row_hit_row_keys("P1_default") == frozenset()
+
+
+def test_latest_price_daily_row_newest_from_history() -> None:
+    from datetime import date as date_type
+
+    pf = PFactor(name="P", thresholds=_p_nq())
+    row_old = (date_type(2026, 1, 1), -0.01, -0.02, -0.03, "flat", None)
+    row_new = (date_type(2026, 1, 5), -0.05, -0.05, -0.05, "down", -0.05)
+    ps = PriceSignals(
+        symbol="NQ",
+        trend="down",
+        daily_change=-0.05,
+        cum5_change=-0.05,
+        cum2_change=-0.05,
+        last_close=1.0,
+        high_20_gap=-0.05,
+        daily_history=(row_new, row_old),
+    )
+    latest = pf.latest_price_daily_row(ps)
+    assert latest[0] == row_new[0]
 
 
 def test_classify_gc_p1_gap_edge_case() -> None:

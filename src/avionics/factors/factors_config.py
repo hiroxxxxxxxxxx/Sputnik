@@ -46,12 +46,7 @@ def get_p_thresholds(config: Dict[str, Any], symbol: str) -> Dict[str, Any]:
             f"factors config missing P thresholds for {symbol!r}. "
             f"Add [{symbol}.P] in config/factors.toml."
         )
-    out = dict(p)
-    if "confirm_days" not in out:
-        raise FactorsConfigError(
-            f"factors config [{symbol}.P] must have 'confirm_days'. Add in config/factors.toml."
-        )
-    return out
+    return dict(p)
 
 
 def get_v_thresholds(config: Dict[str, Any], symbol: str) -> Dict[str, Any]:

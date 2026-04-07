@@ -45,9 +45,9 @@ def test_pfactor_from_loaded_config() -> None:
         pytest.skip("config/factors.toml not found")
     if not config or "NQ" not in config or "P" not in config["NQ"]:
         pytest.skip("config missing NQ.P")
-    pf = PFactor(name="P_NQ", thresholds=config["NQ"]["P"])
+    pf = PFactor(name="P_NQ", thresholds=get_p_thresholds(config, "NQ"))
     assert pf.name == "P_NQ"
-    assert pf.thresholds["confirm_days"] == 1
+    assert "confirm_days" not in pf.thresholds
     # ショック条件で P2
     import asyncio
     async def run():
