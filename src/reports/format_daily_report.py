@@ -134,12 +134,13 @@ def _build_scl_lcl_rows(
     s_val = f"{cap.span_ratio:.2f}" if cap else "1.00"
 
     scl_level = LEVEL_STR.get(signal.scl, "?")
-    scl_rows = [{"factor": "T", "lv": LEVEL_STR.get(signal.scl, "?"), "value": scl_value, "recovery": first_sig_recovery.get("T", "")}]
+    # T は待機日数を持たない仕様のため、daily report では recovery を常に空表示にする。
+    scl_rows = [{"factor": "T", "lv": LEVEL_STR.get(signal.scl, "?"), "value": scl_value, "recovery": ""}]
 
     lcl_level = LEVEL_STR.get(max(int(u_lv), int(s_lv)), "?")
     lcl_rows = [
-        {"factor": "U", "lv": LEVEL_STR.get(u_lv, "?"), "value": f"{u_pct}% (C1:40% C2:50%)", "recovery": first_sig_recovery.get("U", "")},
-        {"factor": "S", "lv": LEVEL_STR.get(s_lv, "?"), "value": f"{s_val} (S1:1.1 S2:1.3)", "recovery": first_sig_recovery.get("S", "")},
+        {"factor": "U", "lv": LEVEL_STR.get(u_lv, "?"), "value": f"{u_pct}%", "recovery": first_sig_recovery.get("U", "")},
+        {"factor": "S", "lv": LEVEL_STR.get(s_lv, "?"), "value": s_val, "recovery": first_sig_recovery.get("S", "")},
     ]
     return scl_level, scl_rows, lcl_level, lcl_rows
 

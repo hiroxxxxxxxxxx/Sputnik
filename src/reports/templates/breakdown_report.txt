@@ -2,60 +2,69 @@
 ━━━━━━━━━━━━━━━━━━━━
 Layer 2 シグナル（各因子の入力値）内訳
 ━━━━━━━━━━━━━━━━━━━━
-
 {% for sec in price_sections %}
 ────────────────────
-[{{ sec.section_id }}] {{ sec.title }}
+[{{ sec.section_id }}] P/T 入力 <{{ sec.symbol }}> [ P={{ sec.p_level }} T={{ sec.t_level }} ]
+────────────────────
 {% for row in sec.rows %}
 {{ row.label }} | {{ row.value }}{% if row.hit %} {{ row.hit }}{% endif %}
 
 {% endfor %}
-
 {% endfor %}
-
 {% for sec in volatility_sections %}
 ────────────────────
-[{{ sec.section_id }}] {{ sec.title }}
+[{{ sec.section_id }}] V 入力 <{{ sec.symbol }}> [ V={{ sec.v_level }} ]
+────────────────────
 {% for row in sec.rows %}
-{{ row.label }} | {{ row.value }}
-{% endfor %}
-{% endfor %}
+{{ row.label }} | {{ row.value }}{% if row.hit %} {{ row.hit }}{% endif %}
 
+{% endfor %}
+{% endfor %}
 {% for csec in credit_sections %}
 ────────────────────
-[{{ csec.section_id }}] {{ csec.title }}
+[{{ csec.section_id }}] C（{{ csec.credit_symbol }}） [ C={{ csec.c_level }} ]
+────────────────────
 {% for row in csec.rows %}
-{{ row.label }} | {{ row.value }}
-{% endfor %}
-{% endfor %}
+{{ row.label }} | {{ row.value }}{% if row.hit %} {{ row.hit }}{% endif %}
 
+{% endfor %}
+{% endfor %}
 {% if r_section %}
 ────────────────────
-{{ r_section.title }}
+[{{ r_section.section_id }}] R（TIP） [ R={{ r_section.r_level }} ]
+────────────────────
 {% for row in r_section.rows %}
+{{ row.label }} | {{ row.value }}{% if row.hit %} {{ row.hit }}{% endif %}
+
+{% endfor %}
+{% endif %}
+{% if t_section %}
+────────────────────
+[{{ t_section.section_id }}] T（SCL） [ SCL={{ t_section.scl_level }} ]
+────────────────────
+{% for row in t_section.rows %}
 {{ row.label }} | {{ row.value }}
 {% endfor %}
 {% endif %}
-
 {% if u_section %}
 ────────────────────
-{{ u_section.title }}
+[{{ u_section.section_id }}] U（資本使用率） [ U={{ u_section.u_level }} ]
+────────────────────
 {% for row in u_section.rows %}
 {{ row.label }} | {{ row.value }}
 {% endfor %}
 {% endif %}
-
 {% if s_section %}
 ────────────────────
-{{ s_section.title }}
+[{{ s_section.section_id }}] S（SPAN） [ S={{ s_section.s_level }} ]
+────────────────────
 {% for row in s_section.rows %}
 {{ row.label }} | {{ row.value }}
 {% endfor %}
 {% endif %}
-
 {% if pos_symbols %}
 ────────────────────
-[6] POSITION SNAPSHOT
+[7] POSITION SNAPSHOT
 {% for sym in pos_symbols %}
 ━━━━━━━━ {{ sym }} ━━━━━━━━
 Futures target diff (MNQ/MGC 相当枚数; target / actual_net / delta)
@@ -80,4 +89,3 @@ Options strategy diff (target / actual / delta)
 
 ━━━━━━━━━━━━━━━━━━━━
 {{ hit_legend }}
-

@@ -1,10 +1,4 @@
-"""
-Layer 2 シグナル内訳（breakdown / detail）レポートのテンプレートレンダリング。
-
-責務: フォーマット後の値のみ渡す。表示文言・レイアウトはテンプレートに記載。
-`daily_report.txt` と同様の区切り線・セクション見出しで読みやすくする。
-bundle は FC から get_last_bundle() で取得する。
-"""
+"""Layer 2 シグナル内訳（breakdown / detail）レポートのテンプレートレンダリング。"""
 
 from __future__ import annotations
 
@@ -13,399 +7,306 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from cockpit.mode import ModeType
 from reports._render import render
+from reports.breakdown_helpers import (
+    BREAKDOWN_HIT_LEGEND,
+    BREAKDOWN_LEVEL_STR,
+    P_BREAKDOWN_HIT_MARKER,
+    breakdown_level_suffix,
+    factor_from_symbol,
+    first_factor_among_symbols,
+    fmt_float_or_na,
+    fmt_pct,
+    fmt_price,
+    fmt_progress,
+    kv,
+    limit_factor,
+    liquidity_credit_section,
+    mark_hits,
+    safe_ratio_text,
+    scl_level_for_breakdown,
+    v_confirm_days,
+    v_factor_level,
+)
 from reports.position_report_context import build_position_report_context
 
 if TYPE_CHECKING:
     from avionics import FlightController
-    from avionics.data.signals import AltitudeRegime, LiquiditySignals, SignalBundle
+    from avionics.data.signals import AltitudeRegime, SignalBundle
 
 BREAKDOWN_TEMPLATE = "breakdown_report.txt"
-
 _PT_IDS = ("1-A", "1-B")
 _V_IDS = ("2-A", "2-B")
 _C_IDS = ("3-A", "3-B")
 
-_BREAKDOWN_LEVEL_STR = {0: "0", 1: "1", 2: "2"}
 
-# breakdown 末尾に一度だけ出す（全因子共通の ★ 説明）
-BREAKDOWN_HIT_LEGEND = "※ ★ = 因子判定の決定枝に関係する入力行を示す。"
-
-
-def _kv(label: str, value: str, *, row_key: str | None = None) -> dict[str, Any]:
-    row: dict[str, Any] = {"label": label, "value": value, "hit": ""}
-    if row_key is not None:
-        row["row_key"] = row_key
-    return row
+def _collect_price_symbols(bundle: "SignalBundle") -> list[str]:
+    symbols = [s for s in ("NQ", "GC") if s in bundle.price_signals]
+    symbols += sorted(s for s in bundle.price_signals if s not in ("NQ", "GC"))
+    return symbols
 
 
-P_BREAKDOWN_HIT_MARKER = "★"
-
-
-def _fmt_price(value: float | None) -> str:
-    return "—" if value is None else f"{float(value):,.2f}"
-
-
-def _fmt_pct(value: float | None) -> str:
-    return "—" if value is None else f"{float(value) * 100:.2f}%"
-
-
-def _fmt_float_or_na(value: float | None) -> str:
-    return "N/A" if value is None else f"{float(value):.2f}"
-
-
-def _safe_ratio_text(numerator: float | None, denominator: float | None) -> str:
-    if numerator is None or denominator is None or denominator <= 0:
-        return "N/A"
-    return f"{float(numerator / denominator):.2f}"
-
-
-def _v_confirm_days(
-    fc: "FlightController",
-    symbol: str,
-    *,
-    altitude: "AltitudeRegime",
-) -> tuple[int | None, int | None]:
-    """V因子の confirm_days（V1/V2）を取得する。見つからない場合は例外。"""
-    from avionics.factors.v_factor import VFactor
-
-    for f in fc.mapping.symbol_factors.get(symbol, []):
-        if isinstance(f, VFactor):
-            th = f._get_thresholds(altitude)
-            return (int(th["V1_confirm_days"]), int(th["V2_confirm_days"]))
-    raise ValueError(f"VFactor not found for symbol={symbol!r} in FlightController mapping")
-
-
-def _v_factor_level(fc: "FlightController", symbol: str) -> int:
-    """銘柄に紐づく V 因子の現在レベル（0/1/2）を返す。"""
-    from avionics.factors.v_factor import VFactor
-
-    for f in fc.mapping.symbol_factors.get(symbol, []):
-        if isinstance(f, VFactor):
-            return int(f.level)
-    raise ValueError(f"VFactor not found for symbol={symbol!r} in FlightController mapping")
-
-
-def _factor_from_symbol(fc: "FlightController", symbol: str, cls: type) -> Any:
-    for f in fc.mapping.symbol_factors.get(symbol, []):
-        if isinstance(f, cls):
-            return f
-    return None
-
-
-def _first_factor_among_symbols(
-    fc: "FlightController",
-    symbols: list[str],
-    cls: type,
-) -> Any:
-    for sym in symbols:
-        f = _factor_from_symbol(fc, sym, cls)
-        if f is not None:
-            return f
-    return None
-
-
-def _limit_factor(fc: "FlightController", cls: type) -> Any:
-    for f in fc.mapping.limit_factors:
-        if isinstance(f, cls):
-            return f
-    return None
-
-
-def _breakdown_level_suffix(fac: Any) -> str:
-    if fac is None:
-        return "—"
-    return _BREAKDOWN_LEVEL_STR.get(int(fac.level), "?")
-
-
-def _fmt_progress(x: int, total: int) -> str:
-    if total <= 0:
-        raise ValueError(f"confirm_days must be positive, got {total}")
-    return f"{x}/{total}日目"
-
-
-def _liquidity_credit_section(
-    section_id: str,
-    title: str,
-    lc: "LiquiditySignals",
-) -> dict[str, Any]:
-    """C（credit）1本ぶん: スナップショット行のみ。"""
-    below_txt = "—" if lc.below_sma20 is None else ("Below SMA20" if lc.below_sma20 else "Above SMA20")
-    dc_txt = _fmt_pct(lc.daily_change)
-    close_txt = _fmt_price(lc.last_close)
-    sma_txt = _fmt_price(lc.sma20)
-    sma_gap_txt = _fmt_pct(lc.sma20_gap)
-    rows = [
-        _kv("終値", close_txt),
-        _kv("SMA20", sma_txt),
-        _kv("SMA20乖離率", sma_gap_txt),
-        _kv("日次変化率", dc_txt),
+def _price_rows(ps: Any) -> list[dict[str, Any]]:
+    return [
+        kv("清算値", fmt_price(ps.last_close)),
+        kv("20SMA", fmt_price(ps.sma20)),
+        kv("20SMA乖離率", fmt_pct(ps.sma20_gap)),
+        kv("トレンド", ps.trend, row_key="trend"),
+        kv("日次変化率", fmt_pct(ps.daily_change), row_key="daily_change"),
+        kv("2日累積変動率", fmt_pct(ps.cum2_change), row_key="cum2_change"),
+        kv("5日累積変動率", fmt_pct(ps.cum5_change), row_key="cum5_change"),
+        kv("20日高値", fmt_price(ps.high_20)),
+        kv("20日高値乖離率", fmt_pct(ps.high_20_gap), row_key="high_20_gap"),
     ]
-    return {
-        "section_id": section_id,
-        "title": title,
-        "rows": rows,
-    }
 
 
-def _build_breakdown_report_context(
-    fc: "FlightController",
-    bundle: "SignalBundle",
-    *,
-    altitude: "AltitudeRegime",
-    positions_detail: Optional[dict[str, dict[str, dict[str, float]]]] = None,
-    target_base_by_symbol: Optional[dict[str, float]] = None,
-    modes_by_symbol: Optional[dict[str, ModeType]] = None,
-) -> dict[str, Any]:
-    """
-    Layer 2 シグナル内訳用のテンプレートコンテキストを組み立てる。
-    """
-    cap = fc.get_last_capital_snapshot()
-    date_iso = cap.as_of.isoformat() if cap and getattr(cap, "as_of", None) else date.today().isoformat()
+def _apply_p_hits(rows: list[dict[str, Any]], p_factor: Any, ps: Any) -> None:
+    from avionics.factors.p_factor import p_classify_row_hit_row_keys, p_classify_row_with_reason
 
-    price_symbols = [s for s in ("NQ", "GC") if s in bundle.price_signals]
-    price_symbols += sorted(s for s in bundle.price_signals if s not in ("NQ", "GC"))
+    if p_factor is not None and ps.high_20_gap is not None:
+        try:
+            latest = p_factor.latest_price_daily_row(ps)
+            _, dc, c5, hg, tr, c2 = latest[0], latest[1], latest[2], latest[3], latest[4], latest[5] if len(latest) > 5 else None
+            lvl_snap, rid = p_classify_row_with_reason(p_factor.thresholds, dc, c5, hg, tr, c2)
+            mark_hits(rows, set(p_classify_row_hit_row_keys(rid)))
+            if int(p_factor.level) != lvl_snap:
+                rows.append(kv("P 注釈", "表示時点の因子レベルと最新行分類が一致しません（refresh 順序を確認）。"))
+        except ValueError:
+            pass
+    elif p_factor is not None:
+        rows.append(kv("P 注釈", "high_20_gap 未取得のため P 分類マークを付けていません。"))
 
-    from avionics.factors.p_factor import PFactor, p_classify_row_hit_row_keys, p_classify_row_with_reason
+
+def _build_price_sections(fc: "FlightController", bundle: "SignalBundle", price_symbols: list[str]) -> list[dict[str, Any]]:
+    from avionics.factors.p_factor import PFactor
     from avionics.factors.t_factor import TFactor
 
-    price_sections: list[dict[str, Any]] = []
+    sections: list[dict[str, Any]] = []
     for idx, sym in enumerate(price_symbols):
         ps = bundle.price_signals[sym]
         sid = _PT_IDS[idx] if idx < len(_PT_IDS) else str(idx + 1)
-        settlement_txt = _fmt_price(ps.last_close)
-        sma20_txt = _fmt_price(ps.sma20)
-        sma20_gap_txt = _fmt_pct(ps.sma20_gap)
-        high20_txt = _fmt_price(ps.high_20)
-        high20_gap_txt = _fmt_pct(ps.high_20_gap)
-        rows: list[dict[str, Any]] = [
-            _kv("清算値", settlement_txt),
-            _kv("20SMA", sma20_txt),
-            _kv("20SMA乖離率", sma20_gap_txt),
-            _kv("トレンド", ps.trend, row_key="trend"),
-            _kv("日次変化率", _fmt_pct(ps.daily_change), row_key="daily_change"),
-            _kv("2日累積変動率", _fmt_pct(ps.cum2_change), row_key="cum2_change"),
-            _kv("5日累積変動率", _fmt_pct(ps.cum5_change), row_key="cum5_change"),
-            _kv("20日高値", high20_txt),
-            _kv("20日高値乖離率", high20_gap_txt, row_key="high_20_gap"),
-        ]
-        p_factor = _factor_from_symbol(fc, sym, PFactor)
-        t_fac = _factor_from_symbol(fc, sym, TFactor)
-        sec_title = (
-            f"P/T 入力 <{sym}> [ P={_breakdown_level_suffix(p_factor)} "
-            f"T={_breakdown_level_suffix(t_fac)} ]"
-        )
-        if p_factor is not None and ps.high_20_gap is not None:
-            try:
-                latest = p_factor.latest_price_daily_row(ps)
-                _, dc, c5, hg, tr, c2 = (
-                    latest[0],
-                    latest[1],
-                    latest[2],
-                    latest[3],
-                    latest[4],
-                    latest[5] if len(latest) > 5 else None,
-                )
-                lvl_snap, rid = p_classify_row_with_reason(
-                    p_factor.thresholds, dc, c5, hg, tr, c2
-                )
-                hit_keys = p_classify_row_hit_row_keys(rid)
-                for r in rows:
-                    rk = r.get("row_key")
-                    if rk and rk in hit_keys:
-                        r["hit"] = P_BREAKDOWN_HIT_MARKER
-                eff = int(p_factor.level)
-                if eff != lvl_snap:
-                    rows.append(
-                        _kv(
-                            "P 注釈",
-                            "表示時点の因子レベルと最新行分類が一致しません（refresh 順序を確認）。",
-                        )
-                    )
-            except ValueError:
-                pass
-        elif p_factor is not None:
-            rows.append(
-                _kv(
-                    "P 注釈",
-                    "high_20_gap 未取得のため P 分類マークを付けていません。",
-                )
-            )
+        rows = _price_rows(ps)
+        p_factor = factor_from_symbol(fc, sym, PFactor)
+        t_fac = factor_from_symbol(fc, sym, TFactor)
+        p_level = breakdown_level_suffix(p_factor)
+        t_level = breakdown_level_suffix(t_fac)
+        _apply_p_hits(rows, p_factor, ps)
         for r in rows:
             r.pop("row_key", None)
-        price_sections.append({
-            "section_id": sid,
-            "title": sec_title,
-            "rows": rows,
-        })
+        sections.append(
+            {
+                "section_id": sid,
+                "symbol": sym,
+                "p_level": p_level,
+                "t_level": t_level,
+                "rows": rows,
+            }
+        )
+    return sections
 
-    vol_symbols = [s for s in ("NQ", "GC") if s in bundle.volatility_signals]
-    vol_symbols += sorted(s for s in bundle.volatility_signals if s not in ("NQ", "GC"))
 
-    volatility_sections: list[dict[str, Any]] = []
+def _build_t_section(fc: "FlightController", bundle: "SignalBundle", price_symbols: list[str]) -> dict[str, Any] | None:
+    if not price_symbols:
+        return None
+    t_rows = [kv(f"{sym} トレンド", bundle.price_signals[sym].trend) for sym in price_symbols]
+    return {"section_id": "5", "scl_level": BREAKDOWN_LEVEL_STR.get(scl_level_for_breakdown(fc), "?"), "rows": t_rows}
+
+
+def _collect_vol_symbols(bundle: "SignalBundle") -> list[str]:
+    symbols = [s for s in ("NQ", "GC") if s in bundle.volatility_signals]
+    symbols += sorted(s for s in bundle.volatility_signals if s not in ("NQ", "GC"))
+    return symbols
+
+
+def _volatility_rows(vs: Any) -> list[dict[str, Any]]:
+    return [kv("ボラ指数 (VXN/GVZ 相当)", f"{vs.index_value:.2f}", row_key="index_value"), kv("20日高値", fmt_price(vs.high_20))]
+
+
+def _volatility_hit_keys(vs: Any, v_th: Any, v_level: int) -> set[str]:
+    keys: set[str] = set()
+    if v_th is not None:
+        v = float(vs.index_value)
+        if v >= float(v_th["V2_on"]) or v >= float(v_th["V1_on"]):
+            keys.add("index_value")
+    if v_level == 2:
+        keys.update({"index_value", "v2_recovery"})
+    return keys
+
+
+def _build_volatility_sections(fc: "FlightController", bundle: "SignalBundle", vol_symbols: list[str], *, altitude: "AltitudeRegime") -> list[dict[str, Any]]:
+    from avionics.factors.v_factor import VFactor
+
+    sections: list[dict[str, Any]] = []
     for idx, sym in enumerate(vol_symbols):
         vs = bundle.volatility_signals[sym]
-        v1_days, v2_days = _v_confirm_days(fc, sym, altitude=altitude)
-        v_level = _v_factor_level(fc, sym)
+        v_fac = factor_from_symbol(fc, sym, VFactor)
+        v_th = v_fac._get_thresholds(altitude) if v_fac is not None else None
+        v1_days, v2_days = v_confirm_days(fc, sym, altitude=altitude)
+        v_level = v_factor_level(fc, sym)
         sid = _V_IDS[idx] if idx < len(_V_IDS) else str(idx + 10)
-        rows = [
-            _kv("ボラ指数 (VXN/GVZ 相当)", f"{vs.index_value:.2f}"),
-            _kv("20日高値", _fmt_price(vs.high_20)),
-        ]
+        rows = _volatility_rows(vs)
+        v_hit_keys = _volatility_hit_keys(vs, v_th, v_level)
         if v_level == 1:
             x1 = min(vs.recovery_confirm_satisfied_days_v1_off, v1_days)
-            rows.append(
-                _kv("V1→V0復帰判定", _fmt_progress(x1, v1_days)),
-            )
+            rows.append(kv("V1→V0復帰判定", fmt_progress(x1, v1_days), row_key="v1_recovery"))
+            v_hit_keys.add("v1_recovery")
             if vs.recovery_confirm_satisfied_days_v1_off >= v1_days:
-                knock_txt = "はい" if vs.v1_to_v0_knock_in_ok else "いいえ"
-                rows.extend(
-                    [
-                        _kv(" ・ノックイン成立", knock_txt),
-                        _kv(" ・ノックイン判定時刻", vs.knock_in_bar_end or "—"),
-                    ]
-                )
+                rows.extend([kv(" ・ノックイン成立", "はい" if vs.v1_to_v0_knock_in_ok else "いいえ", row_key="v1_knock_in"), kv(" ・ノックイン判定時刻", vs.knock_in_bar_end or "—")])
+                v_hit_keys.add("v1_knock_in")
         elif v_level == 2:
             x2 = min(vs.recovery_confirm_satisfied_days_v2_off, v2_days)
-            rows.append(
-                _kv("V2→V1復帰判定", _fmt_progress(x2, v2_days)),
-            )
-        volatility_sections.append({
-            "section_id": sid,
-            "title": f"V 入力 <{sym}> [ V={_BREAKDOWN_LEVEL_STR[v_level]} ]",
-            "rows": rows,
-        })
+            rows.append(kv("V2→V1復帰判定", fmt_progress(x2, v2_days), row_key="v2_recovery"))
+            v_hit_keys.update({"index_value", "v2_recovery"})
+        mark_hits(rows, v_hit_keys)
+        for r in rows:
+            r.pop("row_key", None)
+        sections.append({"section_id": sid, "symbol": sym, "v_level": BREAKDOWN_LEVEL_STR[v_level], "rows": rows})
+    return sections
 
+
+def _build_credit_sections(fc: "FlightController", bundle: "SignalBundle", price_symbols: list[str]) -> list[dict[str, Any]]:
     from avionics.factors.c_factor import CFactor
+
+    c_fac = first_factor_among_symbols(fc, price_symbols, CFactor)
+    c_lv = breakdown_level_suffix(c_fac)
+    sections: list[dict[str, Any]] = []
+    if bundle.liquidity_credit_hyg:
+        c_hyg = liquidity_credit_section(_C_IDS[0], "", bundle.liquidity_credit_hyg)
+        c_hit_keys: set[str] = set()
+        if c_fac is not None:
+            dc_th = float(c_fac.thresholds["daily_change_C2"])
+            if bundle.liquidity_credit_hyg.below_sma20:
+                c_hit_keys.add("sma20_gap")
+            if bundle.liquidity_credit_hyg.daily_change is not None and float(bundle.liquidity_credit_hyg.daily_change) <= dc_th:
+                c_hit_keys.add("daily_change")
+        mark_hits(c_hyg["rows"], c_hit_keys)
+        for r in c_hyg["rows"]:
+            r.pop("row_key", None)
+        c_hyg["credit_symbol"] = "HYG"
+        c_hyg["c_level"] = c_lv
+        c_hyg.pop("title", None)
+        sections.append(c_hyg)
+    lc_lqd = getattr(bundle, "liquidity_credit_lqd", None)
+    if lc_lqd:
+        c_lqd = liquidity_credit_section(_C_IDS[1] if len(_C_IDS) > 1 else "3-B", "", lc_lqd)
+        c_hit_keys: set[str] = set()
+        if c_fac is not None:
+            dc_th = float(c_fac.thresholds["daily_change_C2"])
+            if lc_lqd.below_sma20:
+                c_hit_keys.add("sma20_gap")
+            if lc_lqd.daily_change is not None and float(lc_lqd.daily_change) <= dc_th:
+                c_hit_keys.add("daily_change")
+        mark_hits(c_lqd["rows"], c_hit_keys)
+        for r in c_lqd["rows"]:
+            r.pop("row_key", None)
+        c_lqd["credit_symbol"] = "LQD"
+        c_lqd["c_level"] = c_lv
+        c_lqd.pop("title", None)
+        sections.append(c_lqd)
+    return sections
+
+
+def _build_r_section(fc: "FlightController", bundle: "SignalBundle", price_symbols: list[str]) -> dict[str, Any] | None:
     from avionics.factors.r_factor import RFactor
+
+    r_fac = first_factor_among_symbols(fc, price_symbols, RFactor)
+    if not bundle.liquidity_tip:
+        return None
+    lt = bundle.liquidity_tip
+    rows = [kv("終値", fmt_price(lt.last_close)), kv("20日高値", fmt_price(lt.tip_reference_high)), kv("20日高値乖離率", fmt_pct(lt.tip_drawdown_from_high), row_key="tip_drawdown")]
+    if r_fac is not None and int(r_fac.level) == 2:
+        for row in rows:
+            if row.get("row_key") == "tip_drawdown":
+                row["hit"] = P_BREAKDOWN_HIT_MARKER
+    for r in rows:
+        r.pop("row_key", None)
+    return {"section_id": "4", "r_level": breakdown_level_suffix(r_fac), "rows": rows}
+
+
+def _build_limit_sections(fc: "FlightController", bundle: "SignalBundle") -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     from avionics.factors.s_factor import SFactor
     from avionics.factors.u_factor import UFactor
 
-    c_lv = _breakdown_level_suffix(_first_factor_among_symbols(fc, price_symbols, CFactor))
-
-    credit_sections: list[dict[str, Any]] = []
-    if bundle.liquidity_credit_hyg:
-        credit_sections.append(
-            _liquidity_credit_section(
-                _C_IDS[0],
-                f"C（HYG） [ C={c_lv} ]",
-                bundle.liquidity_credit_hyg,
-            )
-        )
-    lc_lqd = getattr(bundle, "liquidity_credit_lqd", None)
-    if lc_lqd:
-        credit_sections.append(
-            _liquidity_credit_section(
-                _C_IDS[1] if len(_C_IDS) > 1 else "3-B",
-                f"C（LQD） [ C={c_lv} ]",
-                lc_lqd,
-            )
-        )
-
-    r_fac = _first_factor_among_symbols(fc, price_symbols, RFactor)
-    r_lv = _breakdown_level_suffix(r_fac)
-
-    r_section: dict[str, Any] | None = None
-    if bundle.liquidity_tip:
-        lt = bundle.liquidity_tip
-        dd_txt = _fmt_pct(lt.tip_drawdown_from_high)
-        close_txt = _fmt_price(lt.last_close)
-        ref_high_txt = _fmt_price(lt.tip_reference_high)
-        r_section = {
-            "title": f"[4] R（TIP） [ R={r_lv} ]",
-            "rows": [
-                _kv("終値", close_txt),
-                _kv("20日高値", ref_high_txt),
-                _kv("20日高値乖離率", dd_txt),
-            ],
-        }
-
-    u_section: dict[str, Any] | None = None
-    s_section: dict[str, Any] | None = None
-    if bundle.capital_signals:
-        cs = bundle.capital_signals
-        u_rows = [
-            _kv("MM/NLV", f"{cs.mm_over_nlv:.2f} ({cs.mm_over_nlv * 100:.2f}%)"),
+    if not bundle.capital_signals:
+        return None, None
+    cs = bundle.capital_signals
+    u_rows = [kv("MM/NLV", f"{cs.mm_over_nlv:.2f} ({cs.mm_over_nlv * 100:.2f}%)")]
+    s_rows = [kv("SPAN 比 (span_ratio)", f"{cs.span_ratio:.2f}")]
+    baseline_map = cs.s_baseline_mm_per_lot
+    whatif_map = cs.s_whatif_mm_per_lot
+    whatif_errors = cs.s_whatif_errors or {}
+    syms = sorted(baseline_map.keys()) if baseline_map else sorted(whatif_map.keys()) if whatif_map else []
+    has_full_whatif = bool(syms and whatif_map is not None and all(sym in whatif_map for sym in syms))
+    whatif_total = sum(float(whatif_map[s]) for s in syms) if has_full_whatif else None  # type: ignore[index]
+    baseline_total = sum(float(baseline_map[s]) for s in syms if baseline_map and s in baseline_map) if baseline_map is not None and syms else None
+    s_rows.extend(
+        [
+            kv("S whatIf total", fmt_float_or_na(whatif_total)),
+            kv("S baseline total", fmt_float_or_na(baseline_total)),
+            kv("S total ratio (whatIf/base)", safe_ratio_text(whatif_total, baseline_total)),
         ]
-        s_rows = [
-            _kv("SPAN 比 (span_ratio)", f"{cs.span_ratio:.2f}"),
-        ]
-        baseline_map = cs.s_baseline_mm_per_lot
-        whatif_map = cs.s_whatif_mm_per_lot
-        whatif_errors = cs.s_whatif_errors or {}
-        syms = sorted(baseline_map.keys()) if baseline_map else []
-        if not syms:
-            syms = sorted(whatif_map.keys()) if whatif_map else []
+    )
+    for sym in ("NQ", "GC"):
+        w = float(whatif_map[sym]) if whatif_map is not None and sym in whatif_map else None
+        b = float(baseline_map[sym]) if baseline_map is not None and sym in baseline_map else None
+        s_rows.append(kv(f"S {sym} (whatIf/base/ratio)", f"{fmt_float_or_na(w)} / {fmt_float_or_na(b)} / {safe_ratio_text(w, b)}"))
+        if w is None and sym in whatif_errors:
+            s_rows.append(kv(f"S {sym} reason", whatif_errors[sym]))
+    u_section = {"section_id": "6-A", "u_level": breakdown_level_suffix(limit_factor(fc, UFactor)), "rows": u_rows}
+    s_section = {"section_id": "6-B", "s_level": breakdown_level_suffix(limit_factor(fc, SFactor)), "rows": s_rows}
+    return u_section, s_section
 
-        has_full_whatif = bool(
-            syms
-            and whatif_map is not None
-            and all(sym in whatif_map for sym in syms)
-        )
-        whatif_total = (
-            sum(float(whatif_map[s]) for s in syms)  # type: ignore[index]
-            if has_full_whatif
-            else None
-        )
-        baseline_total = (
-            sum(float(baseline_map[s]) for s in syms if baseline_map and s in baseline_map)
-            if baseline_map is not None and syms
-            else None
-        )
-        s_rows.extend(
-            [
-                _kv("S whatIf total", _fmt_float_or_na(whatif_total)),
-                _kv("S baseline total", _fmt_float_or_na(baseline_total)),
-                _kv("S total ratio (whatIf/base)", _safe_ratio_text(whatif_total, baseline_total)),
-            ]
-        )
 
-        for sym in ("NQ", "GC"):
-            w = (
-                float(whatif_map[sym])
-                if whatif_map is not None and sym in whatif_map
-                else None
-            )
-            b = (
-                float(baseline_map[sym])
-                if baseline_map is not None and sym in baseline_map
-                else None
-            )
-            s_rows.append(
-                _kv(
-                    f"S {sym} (whatIf/base/ratio)",
-                    f"{_fmt_float_or_na(w)} / {_fmt_float_or_na(b)} / {_safe_ratio_text(w, b)}",
-                )
-            )
-            if w is None and sym in whatif_errors:
-                s_rows.append(_kv(f"S {sym} reason", whatif_errors[sym]))
-        u_fac = _limit_factor(fc, UFactor)
-        s_fac = _limit_factor(fc, SFactor)
-        u_section = {
-            "title": f"[5-A] U（資本使用率） [ U={_breakdown_level_suffix(u_fac)} ]",
-            "rows": u_rows,
-        }
-        s_section = {
-            "title": f"[5-B] S（SPAN） [ S={_breakdown_level_suffix(s_fac)} ]",
-            "rows": s_rows,
-        }
-
-    position_ctx = {
-        "symbols": [],
-        "futures_target_rows": [],
-        "options_rows": [],
-    }
+def _build_position_ctx(
+    *,
+    altitude: "AltitudeRegime",
+    positions_detail: Optional[dict[str, dict[str, dict[str, float]]]],
+    target_base_by_symbol: Optional[dict[str, float]],
+    modes_by_symbol: Optional[dict[str, ModeType]],
+) -> dict[str, Any]:
     if positions_detail and target_base_by_symbol is not None and modes_by_symbol is not None:
-        position_ctx = build_position_report_context(
+        return build_position_report_context(
             ["NQ", "GC"],
             positions_detail=positions_detail,
             target_base_by_symbol=target_base_by_symbol,
             modes_by_symbol=modes_by_symbol,
             altitude=str(altitude),
         )
+    return {"symbols": [], "futures_target_rows": [], "options_rows": []}
 
-    return {
+
+def format_breakdown_report(
+    fc: "FlightController",
+    positions_detail: Optional[dict[str, dict[str, dict[str, float]]]] = None,
+    target_base_by_symbol: Optional[dict[str, float]] = None,
+    modes_by_symbol: Optional[dict[str, ModeType]] = None,
+    template_name: str = BREAKDOWN_TEMPLATE,
+) -> str:
+    bundle = fc.get_last_bundle()
+    if bundle is None:
+        raise ValueError("format_breakdown_report requires fc.refresh() to have been called first")
+    altitude = fc.last_altitude_regime
+    if altitude is None:
+        raise ValueError("format_breakdown_report requires fc.refresh() so last_altitude_regime is set")
+    cap = fc.get_last_capital_snapshot()
+    date_iso = cap.as_of.isoformat() if cap and getattr(cap, "as_of", None) else date.today().isoformat()
+    price_symbols = _collect_price_symbols(bundle)
+    price_sections = _build_price_sections(fc, bundle, price_symbols)
+    t_section = _build_t_section(fc, bundle, price_symbols)
+    vol_symbols = _collect_vol_symbols(bundle)
+    volatility_sections = _build_volatility_sections(fc, bundle, vol_symbols, altitude=altitude)
+    credit_sections = _build_credit_sections(fc, bundle, price_symbols)
+    r_section = _build_r_section(fc, bundle, price_symbols)
+    u_section, s_section = _build_limit_sections(fc, bundle)
+    position_ctx = _build_position_ctx(
+        altitude=altitude,
+        positions_detail=positions_detail,
+        target_base_by_symbol=target_base_by_symbol,
+        modes_by_symbol=modes_by_symbol,
+    )
+    context = {
         "date_iso": date_iso,
         "price_sections": price_sections,
+        "t_section": t_section,
         "volatility_sections": volatility_sections,
         "credit_sections": credit_sections,
         "r_section": r_section,
@@ -416,35 +317,4 @@ def _build_breakdown_report_context(
         "pos_options_rows": position_ctx["options_rows"],
         "hit_legend": BREAKDOWN_HIT_LEGEND,
     }
-
-
-def format_breakdown_report(
-    fc: "FlightController",
-    positions_detail: Optional[dict[str, dict[str, dict[str, float]]]] = None,
-    target_base_by_symbol: Optional[dict[str, float]] = None,
-    modes_by_symbol: Optional[dict[str, ModeType]] = None,
-    template_name: str = BREAKDOWN_TEMPLATE,
-) -> str:
-    """
-    Layer 2 シグナル内訳レポート文字列をテンプレートで生成する。
-    bundle は fc.get_last_bundle() から取得する（refresh 済みの FC を渡すこと）。
-
-    :param fc: refresh 済みの FlightController。
-    :param template_name: テンプレートファイル名。
-    :return: レポート文字列。
-    """
-    bundle = fc.get_last_bundle()
-    if bundle is None:
-        raise ValueError("format_breakdown_report requires fc.refresh() to have been called first")
-    altitude = fc.last_altitude_regime
-    if altitude is None:
-        raise ValueError("format_breakdown_report requires fc.refresh() so last_altitude_regime is set")
-    context = _build_breakdown_report_context(
-        fc,
-        bundle,
-        altitude=altitude,
-        positions_detail=positions_detail,
-        target_base_by_symbol=target_base_by_symbol,
-        modes_by_symbol=modes_by_symbol,
-    )
     return render(template_name, context)

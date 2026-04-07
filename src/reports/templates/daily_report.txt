@@ -23,7 +23,7 @@
 ────────────────────
 [3] LCL（制限層） | {{ lcl_level }}
 {% for row in lcl_rows %}
-{{ row.factor }} | {{ row.lv }} | {{ row.value }}{% if row.recovery %} (復帰{{ row.recovery }}日目){% endif %}
+{{ row.factor }} | {{ row.lv }} | {{ row.value }}{% if row.factor == "U" %} (C1:40% C2:50%){% elif row.factor == "S" %} (S1:1.1 S2:1.3){% endif %}{% if row.recovery %} (復帰{{ row.recovery }}日目){% endif %}
 
 {% endfor %}
 {{ nlv_line }}
