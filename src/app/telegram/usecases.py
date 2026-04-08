@@ -150,7 +150,7 @@ async def notify_gateway_ready(application: Any) -> None:
     import asyncio
 
     for _ in range(3):
-        ok = await check_ib_connection(host, port, client_id=client_id, timeout=30.0)
+        ok = await check_ib_connection(host, port, client_id=client_id, timeout=5.0)
         if ok:
             bot = getattr(application, "bot", None)
             if bot:
