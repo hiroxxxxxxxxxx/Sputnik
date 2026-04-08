@@ -66,7 +66,7 @@ confirm_days = 2
 [GC.P]
 P2_daily_max = -0.03
 P2_cum2_max = -0.05
-P2_gap_trend = -0.04
+P2_gap_trend = -0.05
 P1_daily_lo = -0.03
 P1_daily_hi = -0.015
 P1_cum5_lo = -0.06
@@ -75,7 +75,7 @@ P1_gap_lo = -0.04
 P1_gap_hi = -0.025
 P0_daily_abs = 0.015
 P0_cum5_min = -0.03
-P0_gap_min = -0.025
+P0_gap_min = -0.03
 
 [GC.V.high]
 V2_on = 40.0
