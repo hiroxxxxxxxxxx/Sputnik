@@ -93,6 +93,7 @@ class SignalBundle:
     """
     liquidity_credit_hyg: LiquiditySignals
     liquidity_credit_lqd: LiquiditySignals
+    as_of: date
     price_signals: dict[str, PriceSignals] = field(default_factory=dict)
     volatility_signals: dict[str, VolatilitySignal] = field(default_factory=dict)
     liquidity_tip: Optional[LiquiditySignals] = None

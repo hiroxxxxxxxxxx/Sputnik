@@ -69,30 +69,18 @@ def next_ny_business_day(ny_date: date) -> date:
     return d
 
 
-def as_of_for_bundle(utc_now: datetime | None = None) -> date:
+def latest_closed_ny_session_date(utc_now: datetime | None = None) -> date:
     """
-    fetch_signal_bundle に渡す as_of を返す。
-    場中（NY RTH）のときは前営業日を使い、復帰 x/N が未確定の当日バーで 0 に振れるのを防ぐ。
-    場外なら NY の「今日」。
-    """
-    ny_today = ny_date_now(utc_now)
-    if is_ny_rth(utc_now):
-        return previous_ny_business_day(ny_today)
-    return ny_today
+    直前に close した NY セッション日を返す。
 
+    入口層（Telegram/CLI/Batch）で as_of を統一決定するための共通関数。
+    以下の規則で、必ず「既に確定した日足」を返す:
+    - 週末: 直前営業日
+    - 平日 RTH 場中: 前営業日
+    - 平日 RTH 外かつ 16:00 ET 以降: 当日
+    - 平日 RTH 外かつ 16:00 ET 未満: 前営業日
 
-def as_of_for_daily_signal_persist(utc_now: datetime | None = None) -> date:
-    """
-    日次 ``signal_daily`` 保存用の as_of（NY セッションの営業日）。
-
-    **前提**: ジョブは NY クローズ（RTH 終了）後に実行する。計画書 0.6 参照。
-
-    - 週末（NY）: 直前の営業日（金曜など）
-    - 平日・RTH 場中: 前営業日（当日バー未確定のため）
-    - 平日・RTH 外かつ 16:00 ET 以降: 当日（直前に完了したセッション）
-    - 平日・RTH 外かつ 16:00 ET 未満: 前営業日（深夜〜プレは前日セッションが最後に完了）
-
-    米国祝休場は未モデル化（必要なら後でカレンダー拡張）。
+    注: 米国祝日は未モデル化（必要なら取引所カレンダー連携で拡張）。
     """
     if utc_now is None:
         utc_now = datetime.now(timezone.utc)
@@ -104,9 +92,8 @@ def as_of_for_daily_signal_persist(utc_now: datetime | None = None) -> date:
         return previous_ny_business_day(d)
     if is_ny_rth(utc_now):
         return previous_ny_business_day(d)
-    t = ny.time()
     close_t = time(NY_RTH_END[0], NY_RTH_END[1])
-    if t >= close_t:
+    if ny.time() >= close_t:
         return d
     return previous_ny_business_day(d)
 

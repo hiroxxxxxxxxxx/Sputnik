@@ -143,6 +143,7 @@ def test_vfactor_apply_empty_bundle_runs_safely() -> None:
             SignalBundle(
                 liquidity_credit_hyg=LiquiditySignals(),
                 liquidity_credit_lqd=LiquiditySignals(),
+                as_of=date(2025, 3, 1),
             ),
             altitude="mid",
         )

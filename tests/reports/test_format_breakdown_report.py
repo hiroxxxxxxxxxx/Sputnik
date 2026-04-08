@@ -26,6 +26,7 @@ class _DummyFC:
         self._bundle = SignalBundle(
             liquidity_credit_hyg=LiquiditySignals(below_sma20=False, daily_change=0.01),
             liquidity_credit_lqd=LiquiditySignals(below_sma20=False, daily_change=0.01),
+            as_of=date(2026, 3, 30),
             price_signals={
                 "NQ": PriceSignals(symbol="NQ", trend="up", daily_change=0.01, cum5_change=0.02, cum2_change=0.01, last_close=18000.0),
                 "GC": PriceSignals(symbol="GC", trend="flat", daily_change=0.0, cum5_change=0.0, cum2_change=0.0, last_close=2300.0),
@@ -104,6 +105,7 @@ def test_format_breakdown_report_span_breakdown_na_fallback() -> None:
     fc._bundle = SignalBundle(
         liquidity_credit_hyg=LiquiditySignals(below_sma20=False, daily_change=0.01),
         liquidity_credit_lqd=LiquiditySignals(below_sma20=False, daily_change=0.01),
+        as_of=date(2026, 3, 30),
         price_signals={
             "NQ": PriceSignals(symbol="NQ", trend="up", daily_change=0.01, cum5_change=0.02, cum2_change=0.01, last_close=18000.0),
             "GC": PriceSignals(symbol="GC", trend="flat", daily_change=0.0, cum5_change=0.0, cum2_change=0.0, last_close=2300.0),
@@ -124,6 +126,7 @@ def test_format_breakdown_report_span_breakdown_partial_success() -> None:
     fc._bundle = SignalBundle(
         liquidity_credit_hyg=LiquiditySignals(below_sma20=False, daily_change=0.01),
         liquidity_credit_lqd=LiquiditySignals(below_sma20=False, daily_change=0.01),
+        as_of=date(2026, 3, 30),
         price_signals={
             "NQ": PriceSignals(symbol="NQ", trend="up", daily_change=0.01, cum5_change=0.02, cum2_change=0.01, last_close=18000.0),
             "GC": PriceSignals(symbol="GC", trend="flat", daily_change=0.0, cum5_change=0.0, cum2_change=0.0, last_close=2300.0),
@@ -163,6 +166,7 @@ def test_format_breakdown_report_marks_hits_for_icl_factors() -> None:
             sma20=99.0,
             sma20_gap=0.01,
         ),
+        as_of=date(2026, 3, 30),
         price_signals={
             "NQ": PriceSignals(symbol="NQ", trend="up", daily_change=0.01, cum5_change=0.02, cum2_change=0.01, last_close=18000.0),
             "GC": PriceSignals(symbol="GC", trend="flat", daily_change=0.0, cum5_change=0.0, cum2_change=0.0, last_close=2300.0),
@@ -172,6 +176,10 @@ def test_format_breakdown_report_marks_hits_for_icl_factors() -> None:
                 index_value=42.0,
                 high_20=45.0,
                 recovery_confirm_satisfied_days_v2_off=1,
+                index_history=(
+                    (date(2026, 3, 27), 41.0),
+                    (date(2026, 3, 30), 42.0),
+                ),
             ),
         },
         liquidity_tip=LiquiditySignals(

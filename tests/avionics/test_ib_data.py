@@ -164,8 +164,8 @@ def test_fc_refresh_with_liquidity_options() -> None:
         futures_multiplier=1.0,
     )
     tip_bars = [
-        PriceBar(date=date(2025, 2, i), close=105.0, high=106.0, volume=2000.0)
-        for i in range(1, 4)
+        PriceBar(date=date(2025, 2, 28), close=105.0, high=106.0, volume=2000.0),
+        PriceBar(date=date(2025, 3, 1), close=105.5, high=106.5, volume=2100.0),
     ]
     snapshot = RawMarketSnapshot(
         as_of=date(2025, 3, 1),

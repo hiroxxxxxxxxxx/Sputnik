@@ -34,7 +34,7 @@ def test_load_factors_config_from_project_config() -> None:
     assert "high" in config["NQ"]["V"]
     assert "mid" in config["NQ"]["V"]
     assert "GC" in config
-    assert config["GC"]["P"]["P2_gap_trend"] == -0.04
+    assert config["GC"]["P"]["P2_gap_trend"] == -0.05
 
 
 def test_pfactor_from_loaded_config() -> None:

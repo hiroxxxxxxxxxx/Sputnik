@@ -96,15 +96,15 @@ def test_settlement_bar_indices_finds_ref_date() -> None:
     assert prev_idx == 3
 
 
-def test_settlement_bar_indices_not_found_uses_last_two() -> None:
-    """ref_date がリストに無い場合は (-1, -2)。"""
+def test_settlement_bar_indices_not_found_raises() -> None:
+    """ref_date がリストに無い場合は ValueError。"""
     base = date(2025, 2, 1)
     bars = [
         PriceBar(date=base + timedelta(days=i), close=100.0, high=101.0, volume=1000)
         for i in range(5)
     ]
-    latest_idx, prev_idx = _settlement_bar_indices_from_date(bars, date(2025, 3, 1))
-    assert (latest_idx, prev_idx) == (-1, -2)
+    with pytest.raises(ValueError, match="no bar with date"):
+        _settlement_bar_indices_from_date(bars, date(2025, 3, 1))
 
 
 def test_compute_capital_signals() -> None:
@@ -158,6 +158,7 @@ def test_signal_bundle_apply_all_distributes_to_factors() -> None:
     bundle = SignalBundle(
         liquidity_credit_hyg=LiquiditySignals(),
         liquidity_credit_lqd=LiquiditySignals(),
+        as_of=date(2026, 1, 15),
         price_signals={"NQ": price},
         volatility_signals={"NQ": vol},
     )
@@ -187,6 +188,7 @@ def test_signal_bundle_apply_all_capital_factors() -> None:
     bundle = SignalBundle(
         liquidity_credit_hyg=LiquiditySignals(),
         liquidity_credit_lqd=LiquiditySignals(),
+        as_of=date(2026, 1, 15),
         capital_signals=cap,
     )
 

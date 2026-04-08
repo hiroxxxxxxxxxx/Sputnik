@@ -4,6 +4,7 @@ FlightController（計器層）のテスト。三層制御と実行レベルを�
 from __future__ import annotations
 
 import asyncio
+from datetime import date
 
 import pytest
 
@@ -19,6 +20,7 @@ def _run(coro):
 _EMPTY_BUNDLE = SignalBundle(
     liquidity_credit_hyg=LiquiditySignals(),
     liquidity_credit_lqd=LiquiditySignals(),
+    as_of=date(2020, 1, 2),
 )
 
 

@@ -36,6 +36,8 @@ class BundleBuildOptions:
     account: str = ""
     volatility_symbols: Optional[Dict[str, str]] = None
     v_recovery_params: Optional[Dict[str, dict]] = None
+
+
 from .compute import (
     compute_capital_signals_from_snapshot,
     compute_liquidity_signals_credit_from_snapshot,
@@ -103,10 +105,11 @@ def build_signal_bundle(
         )
 
     return SignalBundle(
-        price_signals=price_signals,
-        volatility_signals=vol_signals,
         liquidity_credit_hyg=liquidity_credit_hyg,
         liquidity_credit_lqd=liquidity_credit_lqd,
+        as_of=as_of,
+        price_signals=price_signals,
+        volatility_signals=vol_signals,
         liquidity_tip=liquidity_tip_sig,
         capital_signals=cap_signals,
     )

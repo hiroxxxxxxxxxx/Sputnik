@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Dict, Optional, TYPE_CHECKING, Tuple
 
+from avionics.calendar import previous_ny_business_day
 from avionics.data.signals import CreditDailyRow
 from .base_factor import BaseFactor, LevelType
 
@@ -130,6 +131,34 @@ def c_level_from_credit_histories(
     return level
 
 
+def _c_level_at_as_of_prev(
+    hyg_nf: Tuple[CreditDailyRow, ...],
+    lqd_nf: Tuple[CreditDailyRow, ...],
+    as_of_prev: date,
+    thresholds: dict,
+) -> LevelType:
+    """newest-first 日次を as_of_prev 以下に切り、当日行を両方揃えて C レベルを畳み込む。"""
+    hyg_f = tuple(r for r in hyg_nf if len(r) >= 3 and r[0] <= as_of_prev)
+    lqd_f = tuple(r for r in lqd_nf if len(r) >= 3 and r[0] <= as_of_prev)
+    hyg_dates = {r[0] for r in hyg_f}
+    lqd_dates = {r[0] for r in lqd_f}
+    if as_of_prev not in hyg_dates or as_of_prev not in lqd_dates:
+        raise ValueError(
+            f"C recovery: missing HYG or LQD daily row for as_of_prev={as_of_prev.isoformat()}"
+        )
+    hr = next(r for r in hyg_f if r[0] == as_of_prev)
+    lr = next(r for r in lqd_f if r[0] == as_of_prev)
+    return c_level_from_credit_histories(
+        below_sma20_hyg=hr[1],
+        daily_change_hyg=float(hr[2]),
+        hyg_nf=hyg_f,
+        below_sma20_lqd=lr[1],
+        daily_change_lqd=float(lr[2]),
+        lqd_nf=lqd_f,
+        thresholds=thresholds,
+    )
+
+
 class CFactor(BaseFactor):
     """
     C因子（Credit Stress）：NQ系専用。
@@ -210,14 +239,29 @@ class CFactor(BaseFactor):
         *,
         altitude: "AltitudeRegime",
     ) -> Optional[tuple[int, int]]:
-        """bundle の liquidity_credit_hyg（と liquidity_credit_lqd）から復帰 x/N を算出。定義書: HYG AND LQD とも維持。"""
+        """bundle の credit 系列から復帰 x/N。安定 C0 では非表示、2→0 完了当日のみ N/N。"""
+        _ = altitude
         credit_hyg = bundle.liquidity_credit_hyg
         credit_lqd = bundle.liquidity_credit_lqd
         daily_hyg = credit_hyg.daily_history_credit
         daily_lqd = credit_lqd.daily_history_credit
-        count = self._count_recovery_satisfied_days_two_symbols(daily_hyg, daily_lqd)
+        as_of = getattr(bundle, "as_of", None)
+        if as_of is None:
+            raise ValueError("CFactor.get_recovery_progress_from_bundle requires bundle.as_of")
+        as_of_prev = previous_ny_business_day(as_of)
+        level_prev = _c_level_at_as_of_prev(
+            daily_hyg, daily_lqd, as_of_prev, self.thresholds
+        )
+        level_now = int(self.level)
         confirm = int(self.thresholds["confirm_days"])
-        return (min(count, confirm), confirm)
+        if level_now == 0 and level_prev == 2:
+            return (confirm, confirm)
+        if level_now == 2:
+            if level_prev == 0:
+                return None
+            count = self._count_recovery_satisfied_days_two_symbols(daily_hyg, daily_lqd)
+            return (min(count, confirm), confirm)
+        return None
 
     async def apply_signal_bundle(
         self,

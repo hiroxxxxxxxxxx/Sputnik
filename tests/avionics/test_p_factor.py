@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import date
 
 import pytest
 
@@ -145,6 +146,7 @@ def test_pfactor_apply_empty_bundle_runs_safely() -> None:
             SignalBundle(
                 liquidity_credit_hyg=LiquiditySignals(),
                 liquidity_credit_lqd=LiquiditySignals(),
+                as_of=date(2025, 3, 1),
             ),
             altitude="mid",
         )

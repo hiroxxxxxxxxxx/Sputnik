@@ -8,7 +8,7 @@ cron / systemd / EventBridge 等で **1 日 1 回**（NY RTH 終了後）だけ�
 用法:
   PYTHONPATH=src python scripts/batch/run_daily_signal_persist.py [--host HOST] [--port PORT] [--as-of YYYY-MM-DD]
 
-``--as-of`` は検証・再実行用。省略時は ``as_of_for_daily_signal_persist()`` に従う。
+``--as-of`` は検証・再実行用。省略時は ``latest_closed_ny_session_date()`` を使う。
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ async def main() -> int:
         "--as-of",
         type=str,
         default=None,
-        help="保存対象日 YYYY-MM-DD（省略時は NY 時刻に基づき自動決定）",
+        help="保存対象日 YYYY-MM-DD（省略時は直前に close した NY セッション日）",
     )
     args = parser.parse_args()
 
@@ -53,7 +53,7 @@ async def main() -> int:
 
     from avionics.factors.factors_config import FactorsConfigError, load_factors_config
     from avionics.factors.factors_config import get_v_thresholds
-    from avionics.calendar import as_of_for_daily_signal_persist, next_ny_business_day
+    from avionics.calendar import latest_closed_ny_session_date, next_ny_business_day
     from cockpit.stack import build_cockpit_stack
     from store.db import get_connection
     from store.signal_daily import upsert_signal_daily
@@ -76,7 +76,7 @@ async def main() -> int:
     if args.as_of:
         as_of_resolved = date.fromisoformat(args.as_of)
     else:
-        as_of_resolved = as_of_for_daily_signal_persist()
+        as_of_resolved = latest_closed_ny_session_date()
 
     conn = get_connection()
     try:

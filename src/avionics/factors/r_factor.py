@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any, List, Optional, TYPE_CHECKING, Tuple
 
+from avionics.calendar import previous_ny_business_day
 from avionics.data.signals import AltitudeRegime, TipDailyRow
 from .base_factor import BaseFactor, LevelType
 
@@ -112,14 +113,36 @@ class RFactor(BaseFactor):
         *,
         altitude: AltitudeRegime,
     ) -> Optional[tuple[int, int]]:
-        """bundle の liquidity_tip から復帰 x/N を算出。"""
+        """bundle の liquidity_tip から復帰 x/N を算出。安定 R0 では非表示、2→0 完了当日のみ N/N。"""
         tip = getattr(bundle, "liquidity_tip", None)
         if not tip:
             return None
         daily_history_tip = getattr(tip, "daily_history_tip", ()) or ()
-        count = self._count_recovery_satisfied_days(daily_history_tip, altitude) if daily_history_tip else 0
+        as_of = getattr(bundle, "as_of", None)
+        if as_of is None:
+            raise ValueError("RFactor.get_recovery_progress_from_bundle requires bundle.as_of")
+        as_of_prev = previous_ny_business_day(as_of)
+        rows_prev = [r for r in daily_history_tip if len(r) >= 2 and r[0] <= as_of_prev]
+        if not rows_prev:
+            raise ValueError(
+                f"R recovery: no tip daily rows on or before as_of_prev={as_of_prev.isoformat()}"
+            )
+        rows_of = sorted(rows_prev, key=lambda r: r[0])
+        level_prev = r_level_from_tip_history(rows_of, altitude, self.thresholds)
+        level_now = int(self.level)
         confirm = int(self.thresholds["confirm_days"])
-        return (min(count, confirm), confirm)
+        if level_now == 0 and level_prev == 2:
+            return (confirm, confirm)
+        if level_now == 2:
+            if level_prev == 0:
+                return None
+            count = (
+                self._count_recovery_satisfied_days(daily_history_tip, altitude)
+                if daily_history_tip
+                else 0
+            )
+            return (min(count, confirm), confirm)
+        return None
 
     async def apply_signal_bundle(
         self,

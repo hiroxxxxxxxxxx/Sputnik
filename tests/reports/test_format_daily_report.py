@@ -22,6 +22,7 @@ class _DummyFC:
         self._bundle = SignalBundle(
             liquidity_credit_hyg=LiquiditySignals(below_sma20=False, daily_change=0.01),
             liquidity_credit_lqd=LiquiditySignals(below_sma20=False, daily_change=0.01),
+            as_of=date(2026, 3, 30),
             price_signals={
                 "NQ": PriceSignals(
                     symbol="NQ",

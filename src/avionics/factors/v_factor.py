@@ -15,6 +15,7 @@ from __future__ import annotations
 from collections.abc import Awaitable
 from typing import Any, Optional, TYPE_CHECKING
 
+from avionics.calendar import previous_ny_business_day
 from avionics.compute import _count_consecutive_days_below
 from avionics.data.signals import AltitudeRegime
 from .base_factor import BaseFactor, BufferCondition, LevelType
@@ -58,6 +59,30 @@ def _v_transition_step(
             return 0 if (sat_v1 >= v1cd and knock_in) else 1
         return prev
     return prev
+
+
+def v_level_from_index_history_sync(
+    index_history: tuple[tuple[Any, float], ...],
+    th: dict,
+    *,
+    last_knock_in: bool,
+) -> LevelType:
+    """
+    index_history（日付昇順）を畳み込む同期版。最終日のみ last_knock_in、それ以前は True。
+    as_of_prev に対する level_prev 再計算用。
+    """
+    if not index_history:
+        raise ValueError("VolatilitySignal.index_history must not be empty for V level fold")
+    n = len(index_history)
+    level: LevelType = 0
+    for i, (_d, v) in enumerate(index_history):
+        series_upto = list(index_history[: i + 1])
+        sat_v1 = _count_consecutive_days_below(series_upto, float(th["V1_off"]))
+        sat_v2 = _count_consecutive_days_below(series_upto, float(th["V2_off"]))
+        is_last = i == n - 1
+        knock_eff = last_knock_in if is_last else True
+        level = _v_transition_step(level, float(v), th, sat_v1, sat_v2, knock_eff)
+    return level
 
 
 async def _v_level_from_index_history_async(
@@ -150,19 +175,46 @@ class VFactor(BaseFactor):
         *,
         altitude: AltitudeRegime,
     ) -> Optional[tuple[int, int]]:
-        """bundle の volatility_signals[symbol] から復帰 x/N を算出。"""
+        """bundle の volatility_signals[symbol] から復帰 x/N。V0 完了当日は N/N。"""
         sig = getattr(bundle, "volatility_signals", {}).get(symbol)
         if not sig:
             return None
+        hist = getattr(sig, "index_history", ()) or ()
+        if not hist:
+            raise ValueError(
+                "VFactor.get_recovery_progress_from_bundle requires index_history on signal"
+            )
+        as_of = getattr(bundle, "as_of", None)
+        if as_of is None:
+            raise ValueError("VFactor.get_recovery_progress_from_bundle requires bundle.as_of")
+        as_of_prev = previous_ny_business_day(as_of)
         th = self._get_thresholds(altitude)
-        if self.level == 2:
-            required = int(th["V2_confirm_days"])
-            satisfied = getattr(sig, "recovery_confirm_satisfied_days_v2_off", 0)
-            return (min(satisfied, required), required)
-        if self.level == 1:
-            required = int(th["V1_confirm_days"])
-            satisfied = getattr(sig, "recovery_confirm_satisfied_days_v1_off", 0)
-            return (min(satisfied, required), required)
+        hist_sorted = tuple(sorted(hist, key=lambda x: x[0]))
+        hist_prev = tuple((d, v) for d, v in hist_sorted if d <= as_of_prev)
+        if not hist_prev:
+            raise ValueError(
+                f"V recovery: index_history has no points on or before as_of_prev={as_of_prev.isoformat()}"
+            )
+        level_prev = v_level_from_index_history_sync(hist_prev, th, last_knock_in=True)
+        level_now = int(self.level)
+        v1cd = int(th["V1_confirm_days"])
+        v2cd = int(th["V2_confirm_days"])
+        if level_now == 0:
+            if level_prev == 1:
+                return (v1cd, v1cd)
+            if level_prev == 2:
+                return (v2cd, v2cd)
+            return None
+        if level_now == 2:
+            if level_prev == 0:
+                return None
+            satisfied = int(getattr(sig, "recovery_confirm_satisfied_days_v2_off", 0))
+            return (min(satisfied, v2cd), v2cd)
+        if level_now == 1:
+            if level_prev == 0:
+                return None
+            satisfied = int(getattr(sig, "recovery_confirm_satisfied_days_v1_off", 0))
+            return (min(satisfied, v1cd), v1cd)
         return None
 
     async def apply_signal_bundle(

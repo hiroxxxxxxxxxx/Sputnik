@@ -68,18 +68,31 @@ def _settlement_bar_indices_from_date(
 ) -> Tuple[int, int]:
     """
     ref_date でバーを検索し、「当日」と「前営業日」のインデックスを返す。
-    bars は日付昇順。一致するバーが無い場合は (-1, -2)。
+    bars は日付昇順。一致が無い・前足が無い場合は ValueError。
     """
-    if not bars or len(bars) < 2:
-        return (-1, -2)
+    if not bars:
+        raise ValueError("_settlement_bar_indices_from_date: bars is empty")
+    if len(bars) < 2:
+        raise ValueError(
+            f"_settlement_bar_indices_from_date: need >= 2 bars for ref_date={ref_date}, "
+            f"got {len(bars)}"
+        )
     idx = -1
     for i, b in enumerate(bars):
         if b.date == ref_date:
             idx = i
             break
-    if idx >= 1:
-        return (idx, idx - 1)
-    return (-1, -2)
+    if idx < 0:
+        raise ValueError(
+            f"_settlement_bar_indices_from_date: no bar with date {ref_date} "
+            f"(bars span {bars[0].date} .. {bars[-1].date}, count={len(bars)})"
+        )
+    if idx < 1:
+        raise ValueError(
+            f"_settlement_bar_indices_from_date: bar for {ref_date} is the first bar; "
+            "previous close is required"
+        )
+    return (idx, idx - 1)
 
 
 def _price_daily_row_at_index(
@@ -145,7 +158,7 @@ def compute_price_signals_from_bars(
     prev = bars[prev_idx]
 
     # SMA20: 清算値の足の直前20本
-    sma_bars = bars[:latest_idx] if latest_idx != -1 else bars[:-1]
+    sma_bars = bars[:latest_idx]
     sma20 = _sma(sma_bars, 20) if len(sma_bars) >= 20 else prev.close
     if sma20 <= 0:
         sma20 = prev.close or 1.0
@@ -169,10 +182,7 @@ def compute_price_signals_from_bars(
     if len(bars) + cum2_idx >= 0 and cum2_idx >= -len(bars) and bars[cum2_idx].close:
         cum2_change = (latest.close - bars[cum2_idx].close) / bars[cum2_idx].close
 
-    if latest_idx == -1:
-        high_20_slice = bars[-20:] if len(bars) >= 20 else bars
-    else:
-        high_20_slice = bars[latest_idx - 19 : latest_idx + 1] if latest_idx - 19 >= -len(bars) else bars[: latest_idx + 1]
+    high_20_slice = bars[max(0, latest_idx - 19) : latest_idx + 1]
     high_20 = max(b.high for b in high_20_slice) if high_20_slice else (latest.high or latest.close)
     high_20_gap = (latest.close / high_20 - 1.0) if high_20 else -0.01
     sma20_gap = (latest.close / sma20 - 1.0) if sma20 else None
@@ -348,7 +358,7 @@ def compute_liquidity_signals_credit_from_bars(
     latest_idx, prev_idx = _settlement_bar_indices_from_date(bars, as_of)
     latest = bars[latest_idx]
     prev = bars[prev_idx]
-    sma_bars = bars[:latest_idx] if latest_idx != -1 else bars[:-1]
+    sma_bars = bars[:latest_idx]
     sma20 = _sma(sma_bars, 20) if len(sma_bars) >= 20 else prev.close
     below_sma20 = latest.close < sma20 if sma20 else False
     daily_change = (latest.close - prev.close) / prev.close if prev.close else 0.0
@@ -390,10 +400,7 @@ def compute_liquidity_signals_tip_from_bars(
         )
     latest_idx, _ = _settlement_bar_indices_from_date(bars, as_of)
     latest = bars[latest_idx]
-    if latest_idx == -1:
-        high_20_slice = bars[-20:] if len(bars) >= 20 else bars
-    else:
-        high_20_slice = bars[max(0, latest_idx - 19) : latest_idx + 1]
+    high_20_slice = bars[max(0, latest_idx - 19) : latest_idx + 1]
     high_20 = max(b.high for b in high_20_slice) if high_20_slice else (latest.high or latest.close)
     if not high_20 or high_20 <= 0:
         raise ValueError(

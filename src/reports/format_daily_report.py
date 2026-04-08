@@ -216,7 +216,11 @@ async def _build_daily_flight_log_context(
     if altitude is None:
         raise ValueError("_build_daily_flight_log_context requires fc.refresh() or fc.apply_all with altitude")
     capital_snapshot = fc.get_last_capital_snapshot()
-    d = as_of or date.today()
+    if as_of is not None and as_of != bundle.as_of:
+        raise ValueError(
+            f"format_daily_report as_of={as_of!r} must match bundle.as_of={bundle.as_of!r}"
+        )
+    d = bundle.as_of
 
     signal = await fc.get_flight_controller_signal()
     worst_level = 0
@@ -287,7 +291,7 @@ async def format_daily_report(
     :param positions_detail: 銘柄別ポジション詳細。
         futures は nq_buy/nq_sell, mnq_*, gc_*, mgc_*（オプションは call_buy 等）。
     :param target_base_by_symbol: DB target_base_futures（**MNQ/MGC 相当枚数**。内部キーは NQ/GC）。
-    :param as_of: 基準日。未指定なら date.today()。
+    :param as_of: 検証用。指定時は fc.get_last_bundle().as_of と一致必須。見出し日付は常に bundle.as_of。
     :param template_name: 使用するテンプレートファイル名。
     :return: Telegram 送信用のテキスト。
     """

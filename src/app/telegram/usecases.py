@@ -19,7 +19,7 @@ async def refreshed_fc(
     timeout: float = 75.0,
 ):
     """IB 接続 -> FC refresh の共通処理。"""
-    from avionics.calendar import as_of_for_bundle
+    from avionics.calendar import latest_closed_ny_session_date
     from avionics.ib import with_ib_market_data_service
     from cockpit.stack import build_cockpit_stack
     from store.db import get_connection
@@ -33,7 +33,7 @@ async def refreshed_fc(
             host, port, client_id=client_id, timeout=timeout
         ) as fetcher:
             fc, _ = build_cockpit_stack(symbols, altitude=altitude)
-            as_of = as_of_for_bundle()
+            as_of = latest_closed_ny_session_date()
             await fc.refresh(fetcher, as_of, symbols, altitude=altitude)
             yield fc, fetcher, target_base_by_symbol
     finally:

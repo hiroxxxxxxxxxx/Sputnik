@@ -56,7 +56,7 @@ async def main() -> int:
 
     from avionics.factors.factors_config import FactorsConfigError, load_factors_config
     from cockpit.stack import build_cockpit_stack
-    from avionics.calendar import ny_date_now
+    from avionics.calendar import latest_closed_ny_session_date
     from store.db import get_connection
     from store.state import read_altitude_regime
 
@@ -76,7 +76,7 @@ async def main() -> int:
             client_id=args.client_id,
             timeout=75.0,
         ) as fetcher:
-            as_of = ny_date_now()
+            as_of = latest_closed_ny_session_date()
             print(f"取得中（as_of={as_of}, symbols={args.symbols}）...")
             await fc.refresh(fetcher, as_of, args.symbols, altitude=altitude)
             bundle = fc.get_last_bundle()
