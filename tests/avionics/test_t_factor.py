@@ -41,56 +41,27 @@ def test_downgrade_immediate(t_thresholds) -> None:
     _run(scenario())
 
 
-def test_upgrade_delayed(t_thresholds) -> None:
-    """
-    T因子が改善方向では confirm_days 連続確認後にのみ昇格することを確認する。
-    daily_history が不十分なときは復帰せず、十分な連続日数を渡すと復帰する。
-    """
-    from datetime import date, timedelta
+def test_upgrade_immediate(t_thresholds) -> None:
+    """T2 から up/flat へは日次待機なしで即 T0 に戻ることを確認する。"""
     tf = TFactor(symbol="NQ", thresholds=t_thresholds)
-    confirm = int(t_thresholds["confirm_days"])
-    d0 = date(2025, 3, 1)
-    down_row = (d0 - timedelta(days=confirm + 2), 0.0, 0.0, -0.01, "down", None)
 
     async def scenario():
-        short_ups = tuple(
-            (d0 - timedelta(days=i), 0.0, 0.0, -0.01, "up", None)
-            for i in range(confirm - 1)
-        )
-        short_history = short_ups + (down_row,)
-        await tf.apply_trend("up", daily_history=short_history)
+        await tf.apply_trend("down")
         assert tf.level == 2
-
-        full_ups = tuple(
-            (d0 - timedelta(days=i), 0.0, 0.0, -0.01, "up", None)
-            for i in range(confirm)
-        )
-        full_history = full_ups + (down_row,)
-        await tf.apply_trend("up", daily_history=full_history)
+        await tf.apply_trend("up", daily_history=())
         assert tf.level == 0
 
     _run(scenario())
 
 
 def test_level_calculation_single_symbol(t_thresholds) -> None:
-    """
-    単一銘柄のトレンドが T0/T2 に正しくマッピングされることを確認する。
-    """
-    from datetime import date, timedelta
+    """単一銘柄のトレンドが T0/T2 に即時マッピングされることを確認する。"""
     tf = TFactor(symbol="GC", thresholds=t_thresholds)
-    confirm = int(t_thresholds["confirm_days"])
 
     async def scenario():
         level_down = await tf.apply_trend("down")
         assert level_down == 2
-        d0 = date(2025, 3, 1)
-        down_row = (d0 - timedelta(days=confirm + 2), 0.0, 0.0, -0.01, "down", None)
-        full_ups = tuple(
-            (d0 - timedelta(days=i), 0.0, 0.0, -0.01, "up", None)
-            for i in range(confirm)
-        )
-        full_history = full_ups + (down_row,)
-        await tf.apply_trend("up", daily_history=full_history)
+        await tf.apply_trend("up")
         assert tf.level == 0
         await tf.apply_trend("flat")
         assert tf.level == 0

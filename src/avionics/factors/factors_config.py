@@ -73,7 +73,9 @@ def get_v_thresholds(config: Dict[str, Any], symbol: str) -> Dict[str, Any]:
 
 def get_t_thresholds(config: Dict[str, Any]) -> Dict[str, Any]:
     """
-    設定から T 因子しきい値を返す。該当キーがなければ FactorsConfigError を上げる。
+    設定から T 因子用の追加しきい値を返す（現状は空 dict でもよい）。
+
+    SCL の T は日数待機を持たないため [T] に必須キーはない。
 
     :param config: load_factors_config() の戻り値
     """
@@ -81,12 +83,7 @@ def get_t_thresholds(config: Dict[str, Any]) -> Dict[str, Any]:
         raise FactorsConfigError(
             "factors config missing [T]. Add [T] in config/factors.toml."
         )
-    out = dict(config["T"])
-    if "confirm_days" not in out:
-        raise FactorsConfigError(
-            "factors config [T] must have 'confirm_days'. Add in config/factors.toml."
-        )
-    return out
+    return dict(config["T"])
 
 
 def get_u_thresholds(config: Dict[str, Any]) -> Dict[str, Any]:

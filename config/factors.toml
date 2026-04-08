@@ -10,7 +10,6 @@ C1_on = 0.40
 C1_off = 0.36
 
 [T]
-confirm_days = 2
 
 [S]
 # 発動判定: 小数点第二位切上げ（ceil）
