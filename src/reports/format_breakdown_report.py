@@ -60,15 +60,41 @@ def _price_rows(ps: Any) -> list[dict[str, Any]]:
 
 
 def _apply_p_hits(rows: list[dict[str, Any]], p_factor: Any, ps: Any) -> None:
-    from avionics.factors.p_factor import p_classify_row_hit_row_keys, p_classify_row_with_reason
+    from avionics.factors.p_factor import p_classify_row_with_reason, p_failed_p0_row_keys
+    from reports.breakdown_p_hits import p_breakdown_hit_row_keys
 
     if p_factor is not None and ps.high_20_gap is not None:
         try:
             latest = p_factor.latest_price_daily_row(ps)
             _, dc, c5, hg, tr, c2 = latest[0], latest[1], latest[2], latest[3], latest[4], latest[5] if len(latest) > 5 else None
-            lvl_snap, rid = p_classify_row_with_reason(p_factor.thresholds, dc, c5, hg, tr, c2)
-            mark_hits(rows, set(p_classify_row_hit_row_keys(rid)))
-            if int(p_factor.level) != lvl_snap:
+            lvl_snap, rid_snap = p_classify_row_with_reason(p_factor.thresholds, dc, c5, hg, tr, c2)
+            cached_rid = getattr(p_factor, "last_classify_reason", None)
+            use_cache = (
+                cached_rid is not None
+                and cached_rid == rid_snap
+                and int(p_factor.level) == int(lvl_snap)
+            )
+            if use_cache:
+                rid = rid_snap
+                if rid == "P1_default":
+                    p0k = getattr(p_factor, "last_p0_failed_row_keys", None)
+                    mark_hits(
+                        rows,
+                        set(
+                            p0k
+                            if p0k is not None
+                            else p_failed_p0_row_keys(p_factor.thresholds, dc, c5, hg, tr)
+                        ),
+                    )
+                else:
+                    mark_hits(rows, set(p_breakdown_hit_row_keys(rid)))
+            else:
+                rid = rid_snap
+                if rid == "P1_default":
+                    mark_hits(rows, set(p_failed_p0_row_keys(p_factor.thresholds, dc, c5, hg, tr)))
+                else:
+                    mark_hits(rows, set(p_breakdown_hit_row_keys(rid)))
+            if int(p_factor.level) != int(lvl_snap):
                 rows.append(kv("P 注釈", "表示時点の因子レベルと最新行分類が一致しません（refresh 順序を確認）。"))
         except ValueError:
             pass
@@ -88,8 +114,8 @@ def _build_price_sections(fc: "FlightController", bundle: "SignalBundle", price_
         p_factor = factor_from_symbol(fc, sym, PFactor)
         t_fac = factor_from_symbol(fc, sym, TFactor)
         p_level = breakdown_level_suffix(p_factor)
-        t_level = breakdown_level_suffix(t_fac)
         _apply_p_hits(rows, p_factor, ps)
+        t_level = breakdown_level_suffix(t_fac)
         for r in rows:
             r.pop("row_key", None)
         sections.append(
@@ -122,13 +148,14 @@ def _volatility_rows(vs: Any) -> list[dict[str, Any]]:
 
 
 def _volatility_hit_keys(vs: Any, v_th: Any, v_level: int) -> set[str]:
+    """指数が「オン」閾値以上のときだけ指数行に ★。V2 維持中で指数が既に下がっていれば指数は付けない。"""
     keys: set[str] = set()
     if v_th is not None:
         v = float(vs.index_value)
         if v >= float(v_th["V2_on"]) or v >= float(v_th["V1_on"]):
             keys.add("index_value")
     if v_level == 2:
-        keys.update({"index_value", "v2_recovery"})
+        keys.add("v2_recovery")
     return keys
 
 
@@ -155,7 +182,6 @@ def _build_volatility_sections(fc: "FlightController", bundle: "SignalBundle", v
         elif v_level == 2:
             x2 = min(vs.recovery_confirm_satisfied_days_v2_off, v2_days)
             rows.append(kv("V2→V1復帰判定", fmt_progress(x2, v2_days), row_key="v2_recovery"))
-            v_hit_keys.update({"index_value", "v2_recovery"})
         mark_hits(rows, v_hit_keys)
         for r in rows:
             r.pop("row_key", None)
@@ -172,7 +198,7 @@ def _build_credit_sections(fc: "FlightController", bundle: "SignalBundle", price
     if bundle.liquidity_credit_hyg:
         c_hyg = liquidity_credit_section(_C_IDS[0], "", bundle.liquidity_credit_hyg)
         c_hit_keys: set[str] = set()
-        if c_fac is not None:
+        if c_fac is not None and int(c_fac.level) == 2:
             dc_th = float(c_fac.thresholds["daily_change_C2"])
             if bundle.liquidity_credit_hyg.below_sma20:
                 c_hit_keys.add("sma20_gap")
@@ -189,7 +215,7 @@ def _build_credit_sections(fc: "FlightController", bundle: "SignalBundle", price
     if lc_lqd:
         c_lqd = liquidity_credit_section(_C_IDS[1] if len(_C_IDS) > 1 else "3-B", "", lc_lqd)
         c_hit_keys: set[str] = set()
-        if c_fac is not None:
+        if c_fac is not None and int(c_fac.level) == 2:
             dc_th = float(c_fac.thresholds["daily_change_C2"])
             if lc_lqd.below_sma20:
                 c_hit_keys.add("sma20_gap")

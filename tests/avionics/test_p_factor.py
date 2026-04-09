@@ -10,7 +10,7 @@ from avionics.data.signals import LiquiditySignals, PriceSignals, SignalBundle
 from avionics.factors import FactorsConfigError, get_p_thresholds, load_factors_config
 from avionics.factors.p_factor import (
     _p_classify_row,
-    p_classify_row_hit_row_keys,
+    p_failed_p0_row_keys,
     p_classify_row_with_reason,
     p_level_from_daily_rows,
 )
@@ -75,6 +75,8 @@ def test_upgrade_immediate_when_p0_conditions_met() -> None:
 
         await pf.update_from_signals(**calm_kwargs)
         assert pf.level == 0
+        assert pf.last_classify_reason == "P0_calm"
+        assert pf.last_p0_failed_row_keys == frozenset()
 
     _run(scenario())
 
@@ -223,15 +225,28 @@ def test_p_classify_row_with_reason_p2_cum2_chain_order() -> None:
     assert level == 2 and rid == "P2_cum2"
 
 
-def test_p_classify_row_hit_row_keys_p0_all_four() -> None:
-    keys = p_classify_row_hit_row_keys("P0_relaxed")
-    assert keys == frozenset(
-        {"daily_change", "cum5_change", "high_20_gap", "trend"}
-    )
+def test_p_failed_p0_row_keys_detects_single_failure() -> None:
+    t = _p_nq()
+    keys = p_failed_p0_row_keys(t, daily_change=0.0, cum5_change=-0.05, high_20_gap=-0.01, trend="up")
+    assert keys == frozenset({"cum5_change"})
 
 
-def test_p_classify_row_hit_row_keys_p1_default_empty() -> None:
-    assert p_classify_row_hit_row_keys("P1_default") == frozenset()
+def test_p_failed_p0_row_keys_detects_multiple_failures() -> None:
+    t = _p_nq()
+    keys = p_failed_p0_row_keys(t, daily_change=0.02, cum5_change=-0.06, high_20_gap=-0.06, trend="down")
+    assert keys == frozenset({"cum5_change", "high_20_gap", "trend"})
+
+
+def test_p_failed_p0_row_keys_empty_when_all_p0_conditions_met() -> None:
+    t = _p_nq()
+    keys = p_failed_p0_row_keys(t, daily_change=0.0, cum5_change=0.0, high_20_gap=0.0, trend="up")
+    assert keys == frozenset()
+
+
+def test_p_failed_p0_row_keys_positive_daily_change_does_not_fail_daily_condition() -> None:
+    t = _p_nq()
+    keys = p_failed_p0_row_keys(t, daily_change=0.02, cum5_change=0.0, high_20_gap=0.0, trend="up")
+    assert keys == frozenset()
 
 
 def test_latest_price_daily_row_newest_from_history() -> None:

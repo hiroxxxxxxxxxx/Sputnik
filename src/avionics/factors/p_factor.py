@@ -28,25 +28,47 @@ PClassifyReasonId = Literal[
     "P1_daily_band",
     "P1_cum5_band",
     "P1_gap_band",
-    "P0_relaxed",
+    "P0_calm",
     "P1_default",
 ]
 
-_P_HIT_KEYS: dict[PClassifyReasonId, frozenset[str]] = {
-    "P2_daily": frozenset({"daily_change"}),
-    "P2_cum2": frozenset({"cum2_change"}),
-    "P2_gap_down": frozenset({"high_20_gap", "trend"}),
-    "P1_daily_band": frozenset({"daily_change"}),
-    "P1_cum5_band": frozenset({"cum5_change"}),
-    "P1_gap_band": frozenset({"high_20_gap"}),
-    "P0_relaxed": frozenset({"daily_change", "cum5_change", "high_20_gap", "trend"}),
-    "P1_default": frozenset(),
-}
+
+def _p0_axis_pass(
+    thresholds: dict,
+    daily_change: float,
+    cum5_change: float,
+    high_20_gap: float,
+    trend: TrendType,
+) -> tuple[bool, bool, bool, bool]:
+    """P0（Calm）の各軸が成立するか。判定式はここだけが正。"""
+    t = thresholds
+    return (
+        daily_change >= -t["P0_daily_abs"],
+        cum5_change >= t["P0_cum5_min"],
+        high_20_gap > t["P0_gap_min"],
+        trend == "up",
+    )
 
 
-def p_classify_row_hit_row_keys(reason: PClassifyReasonId) -> frozenset[str]:
-    """breakdown 行キー（日次・累積・乖離・トレンド）のどれに ★ を付けるか。"""
-    return _P_HIT_KEYS[reason]
+def p_failed_p0_row_keys(
+    thresholds: dict,
+    daily_change: float,
+    cum5_change: float,
+    high_20_gap: float,
+    trend: TrendType,
+) -> frozenset[str]:
+    """P0 条件のうち不成立になった入力行キーだけを返す。"""
+    ok_daily, ok_c5, ok_gap, ok_trend = _p0_axis_pass(thresholds, daily_change, cum5_change, high_20_gap, trend)
+    keys: set[str] = set()
+    if not ok_daily:
+        keys.add("daily_change")
+    if not ok_c5:
+        keys.add("cum5_change")
+    if not ok_gap:
+        keys.add("high_20_gap")
+    if not ok_trend:
+        keys.add("trend")
+    return frozenset(keys)
 
 
 def p_classify_row_with_reason(
@@ -70,13 +92,8 @@ def p_classify_row_with_reason(
         return 1, "P1_cum5_band"
     if t["P1_gap_lo"] <= high_20_gap <= t["P1_gap_hi"]:
         return 1, "P1_gap_band"
-    if (
-        abs(daily_change) <= t["P0_daily_abs"]
-        and cum5_change >= t["P0_cum5_min"]
-        and high_20_gap > t["P0_gap_min"]
-        and trend == "up"
-    ):
-        return 0, "P0_relaxed"
+    if all(_p0_axis_pass(t, daily_change, cum5_change, high_20_gap, trend)):
+        return 0, "P0_calm"
     return 1, "P1_default"
 
 
@@ -129,6 +146,18 @@ def _p_classify_row(
     )[0]
 
 
+def _p_row_tuple_for_classify(row: PriceDailyRow) -> tuple[float, float, float, TrendType, Optional[float]]:
+    _dt, daily_change, cum5_change, high_20_gap, trend, cum2_change = (
+        row[0],
+        row[1],
+        row[2],
+        row[3],
+        row[4],
+        row[5] if len(row) > 5 else None,
+    )
+    return daily_change, cum5_change, high_20_gap, trend, cum2_change
+
+
 class PFactor(BaseFactor):
     """
     P因子（Price Stress）：価格ストレス計器。
@@ -153,6 +182,8 @@ class PFactor(BaseFactor):
         定義書「3-1 PFD」「4-2-1-1 P因子」参照。
         """
         self.thresholds: dict = dict(thresholds)
+        self.last_classify_reason: PClassifyReasonId | None = None
+        self.last_p0_failed_row_keys: frozenset[str] | None = None
         super().__init__(name=name, levels=[0, 1, 2], history_size=history_size)
 
     async def apply_signal_bundle(
@@ -189,6 +220,13 @@ class PFactor(BaseFactor):
         rows = self._price_rows_oldest_first(signals)
         return rows[-1]
 
+    def _apply_classify_row_and_cache(self, row: PriceDailyRow) -> LevelType:
+        dc, c5, hg, tr, c2 = _p_row_tuple_for_classify(row)
+        level, rid = p_classify_row_with_reason(self.thresholds, dc, c5, hg, tr, c2)
+        self.last_classify_reason = rid
+        self.last_p0_failed_row_keys = p_failed_p0_row_keys(self.thresholds, dc, c5, hg, tr)
+        return level
+
     async def update_from_price_signals(self, signals: "PriceSignals") -> LevelType:
         """
         Layer 2 の PriceSignals から P レベルを更新する。
@@ -197,7 +235,7 @@ class PFactor(BaseFactor):
         最新行のみで分類し、インスタンスの前回 level に依存しない。
         """
         rows = self._price_rows_oldest_first(signals)
-        level = p_level_from_daily_rows(rows, self.thresholds)
+        level = self._apply_classify_row_and_cache(rows[-1])
         self.assign_level_from_computation(level)
         return level
 
@@ -224,7 +262,7 @@ class PFactor(BaseFactor):
             trend,
             cum2_change,
         )
-        level = p_level_from_daily_rows([row], self.thresholds)
+        level = self._apply_classify_row_and_cache(row)
         self.assign_level_from_computation(level)
         return level
 
