@@ -216,7 +216,10 @@ class PFactor(BaseFactor):
         ]
 
     def latest_price_daily_row(self, signals: "PriceSignals") -> PriceDailyRow:
-        """最新営業日相当の 1 行。breakdown の P 分類・★ 表示用。"""
+        """最新営業日相当の 1 行（daily_history があれば newest-first 先頭、なければ当日スナップショット 1 行）。
+
+        Layer 2 の compute が先頭行とトップレベルを揃えるため、breakdown の表・★ と一致する。
+        """
         rows = self._price_rows_oldest_first(signals)
         return rows[-1]
 

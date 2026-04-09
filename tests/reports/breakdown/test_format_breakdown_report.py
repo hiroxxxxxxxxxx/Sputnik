@@ -12,11 +12,12 @@ from avionics.data.raw_types import RawCapitalSnapshot
 from avionics.data.signals import (
     CapitalSignals,
     LiquiditySignals,
+    PriceDailyRow,
     PriceSignals,
     SignalBundle,
     VolatilitySignal,
 )
-from reports.format_breakdown_report import (
+from reports.breakdown.format_breakdown_report import (
     BREAKDOWN_HIT_LEGEND,
     format_breakdown_report,
 )
@@ -228,6 +229,162 @@ def test_format_breakdown_report_marks_hits_for_icl_factors() -> None:
     assert "日次変化率 | -3.00% ★" in text
     assert "[4] R（TIP） [ R=2 ]" in text
     assert "20日高値乖離率 | -3.00% ★" in text
+
+
+def test_format_breakdown_report_p1_gap_band_also_marks_p0_trend_when_flat() -> None:
+    """P1_gap_band でも P0 不合格軸（例: トレンド flat）は ★ 対象に含める。"""
+    fc = _DummyFC()
+    fc._bundle = SignalBundle(
+        liquidity_credit_hyg=LiquiditySignals(below_sma20=False, daily_change=0.01),
+        liquidity_credit_lqd=LiquiditySignals(below_sma20=False, daily_change=0.01),
+        as_of=date(2026, 3, 30),
+        price_signals={
+            "NQ": PriceSignals(
+                symbol="NQ",
+                trend="flat",
+                daily_change=0.0,
+                cum5_change=0.0,
+                cum2_change=0.0,
+                high_20_gap=-0.15,
+                last_close=18000.0,
+            ),
+        },
+        volatility_signals={},
+        capital_signals=CapitalSignals(mm_over_nlv=0.1, span_ratio=1.05),
+    )
+    p = PFactor(
+        name="P_NQ",
+        thresholds={
+            "P2_daily_max": -0.3,
+            "P2_cum2_max": -0.3,
+            "P2_gap_trend": -0.5,
+            "P1_daily_lo": -0.2,
+            "P1_daily_hi": -0.1,
+            "P1_cum5_lo": -0.2,
+            "P1_cum5_hi": -0.1,
+            "P1_gap_lo": -0.2,
+            "P1_gap_hi": -0.1,
+            "P0_daily_abs": 0.015,
+            "P0_cum5_min": -0.03,
+            "P0_gap_min": -0.03,
+        },
+    )
+    p.level = 1
+    fc._mapping = EngineFactorMapping(
+        symbol_factors={"NQ": [p]},
+        limit_factors=[],
+        global_market_factors=[],
+    )
+
+    text = format_breakdown_report(fc)
+    assert "20日高値乖離率 | -15.00% ★" in text
+    assert "トレンド | flat ★" in text
+    assert "日次変化率 | 0.00% ★" not in text
+
+
+def test_format_breakdown_report_p_hits_use_snapshot_p0_keys_not_factor_cache() -> None:
+    """因子の last_p0_failed_row_keys が古くても、表示 latest 行に対する P0 失敗軸で ★ を付ける。"""
+    fc = _DummyFC()
+    fc._bundle = SignalBundle(
+        liquidity_credit_hyg=LiquiditySignals(below_sma20=False, daily_change=0.01),
+        liquidity_credit_lqd=LiquiditySignals(below_sma20=False, daily_change=0.01),
+        as_of=date(2026, 3, 30),
+        price_signals={
+            "NQ": PriceSignals(
+                symbol="NQ",
+                trend="flat",
+                daily_change=0.0,
+                cum5_change=0.0,
+                cum2_change=0.0,
+                high_20_gap=-0.15,
+                last_close=18000.0,
+            ),
+        },
+        volatility_signals={},
+        capital_signals=CapitalSignals(mm_over_nlv=0.1, span_ratio=1.05),
+    )
+    p = PFactor(
+        name="P_NQ",
+        thresholds={
+            "P2_daily_max": -0.3,
+            "P2_cum2_max": -0.3,
+            "P2_gap_trend": -0.5,
+            "P1_daily_lo": -0.2,
+            "P1_daily_hi": -0.1,
+            "P1_cum5_lo": -0.2,
+            "P1_cum5_hi": -0.1,
+            "P1_gap_lo": -0.2,
+            "P1_gap_hi": -0.1,
+            "P0_daily_abs": 0.015,
+            "P0_cum5_min": -0.03,
+            "P0_gap_min": -0.03,
+        },
+    )
+    p.level = 1
+    p.last_classify_reason = "P1_gap_band"
+    p.last_p0_failed_row_keys = frozenset({"high_20_gap"})  # 真なら trend も含むが、キャッシュが古い想定
+    fc._mapping = EngineFactorMapping(
+        symbol_factors={"NQ": [p]},
+        limit_factors=[],
+        global_market_factors=[],
+    )
+
+    text = format_breakdown_report(fc)
+    assert "トレンド | flat ★" in text
+    assert "20日高値乖離率 | -15.00% ★" in text
+
+
+def test_format_breakdown_report_price_inputs_follow_daily_history_when_present() -> None:
+    """daily_history があるとき、表と P ★ は newest-first 先頭行を正本とする（トップレベルと食い違う場合は先頭が勝つ）。"""
+    d = date(2026, 3, 30)
+    hist_row: PriceDailyRow = (d, 0.0, 0.0, -0.15, "up", 0.0)
+    fc = _DummyFC()
+    fc._bundle = SignalBundle(
+        liquidity_credit_hyg=LiquiditySignals(below_sma20=False, daily_change=0.01),
+        liquidity_credit_lqd=LiquiditySignals(below_sma20=False, daily_change=0.01),
+        as_of=d,
+        price_signals={
+            "NQ": PriceSignals(
+                symbol="NQ",
+                trend="flat",
+                daily_change=0.0,
+                cum5_change=0.0,
+                cum2_change=0.0,
+                high_20_gap=-0.15,
+                last_close=18000.0,
+                daily_history=(hist_row,),
+            ),
+        },
+        volatility_signals={},
+        capital_signals=CapitalSignals(mm_over_nlv=0.1, span_ratio=1.05),
+    )
+    p = PFactor(
+        name="P_NQ",
+        thresholds={
+            "P2_daily_max": -0.3,
+            "P2_cum2_max": -0.3,
+            "P2_gap_trend": -0.5,
+            "P1_daily_lo": -0.2,
+            "P1_daily_hi": -0.1,
+            "P1_cum5_lo": -0.2,
+            "P1_cum5_hi": -0.1,
+            "P1_gap_lo": -0.2,
+            "P1_gap_hi": -0.1,
+            "P0_daily_abs": 0.015,
+            "P0_cum5_min": -0.03,
+            "P0_gap_min": -0.03,
+        },
+    )
+    p.level = 1
+    fc._mapping = EngineFactorMapping(
+        symbol_factors={"NQ": [p]},
+        limit_factors=[],
+        global_market_factors=[],
+    )
+
+    text = format_breakdown_report(fc)
+    assert "トレンド | up" in text
+    assert "トレンド | flat" not in text
 
 
 def test_format_breakdown_report_p1_default_marks_only_failed_p0_inputs() -> None:

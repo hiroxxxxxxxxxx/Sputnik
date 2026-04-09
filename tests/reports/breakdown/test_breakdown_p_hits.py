@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from reports.breakdown_p_hits import p_breakdown_hit_row_keys
+from reports.breakdown.breakdown_p_hits import p_breakdown_hit_row_keys
 
 
 def test_p_breakdown_hit_row_keys_p0_calm_no_row_marks() -> None:

@@ -5,9 +5,14 @@ from __future__ import annotations
 from datetime import date
 from typing import TYPE_CHECKING, Any, Optional
 
+from avionics.compute import (
+    liquidity_credit_canonical_inputs,
+    liquidity_tip_canonical_drawdown,
+    price_signals_p_input_tuple,
+)
 from cockpit.mode import ModeType
 from reports._render import render
-from reports.breakdown_helpers import (
+from reports.breakdown.breakdown_helpers import (
     BREAKDOWN_HIT_LEGEND,
     BREAKDOWN_LEVEL_STR,
     P_BREAKDOWN_HIT_MARKER,
@@ -46,60 +51,41 @@ def _collect_price_symbols(bundle: "SignalBundle") -> list[str]:
 
 
 def _price_rows(ps: Any) -> list[dict[str, Any]]:
+    dc, c5, hg, tr, c2 = price_signals_p_input_tuple(ps)
     return [
         kv("清算値", fmt_price(ps.last_close)),
         kv("20SMA", fmt_price(ps.sma20)),
         kv("20SMA乖離率", fmt_pct(ps.sma20_gap)),
-        kv("トレンド", ps.trend, row_key="trend"),
-        kv("日次変化率", fmt_pct(ps.daily_change), row_key="daily_change"),
-        kv("2日累積変動率", fmt_pct(ps.cum2_change), row_key="cum2_change"),
-        kv("5日累積変動率", fmt_pct(ps.cum5_change), row_key="cum5_change"),
+        kv("トレンド", tr, row_key="trend"),
+        kv("日次変化率", fmt_pct(dc), row_key="daily_change"),
+        kv("2日累積変動率", fmt_pct(c2), row_key="cum2_change"),
+        kv("5日累積変動率", fmt_pct(c5), row_key="cum5_change"),
         kv("20日高値", fmt_price(ps.high_20)),
-        kv("20日高値乖離率", fmt_pct(ps.high_20_gap), row_key="high_20_gap"),
+        kv("20日高値乖離率", fmt_pct(hg), row_key="high_20_gap"),
     ]
 
 
 def _apply_p_hits(rows: list[dict[str, Any]], p_factor: Any, ps: Any) -> None:
     from avionics.factors.p_factor import p_classify_row_with_reason, p_failed_p0_row_keys
-    from reports.breakdown_p_hits import p_breakdown_hit_row_keys
+    from reports.breakdown.breakdown_p_hits import p_breakdown_hit_row_keys
 
-    if p_factor is not None and ps.high_20_gap is not None:
+    if p_factor is not None:
+        dc, c5, hg, tr, c2 = price_signals_p_input_tuple(ps)
+        if hg is None:
+            rows.append(kv("P 注釈", "high_20_gap 未取得のため P 分類マークを付けていません。"))
+            return
         try:
-            latest = p_factor.latest_price_daily_row(ps)
-            _, dc, c5, hg, tr, c2 = latest[0], latest[1], latest[2], latest[3], latest[4], latest[5] if len(latest) > 5 else None
             lvl_snap, rid_snap = p_classify_row_with_reason(p_factor.thresholds, dc, c5, hg, tr, c2)
-            cached_rid = getattr(p_factor, "last_classify_reason", None)
-            use_cache = (
-                cached_rid is not None
-                and cached_rid == rid_snap
-                and int(p_factor.level) == int(lvl_snap)
-            )
-            if use_cache:
-                rid = rid_snap
-                if rid == "P1_default":
-                    p0k = getattr(p_factor, "last_p0_failed_row_keys", None)
-                    mark_hits(
-                        rows,
-                        set(
-                            p0k
-                            if p0k is not None
-                            else p_failed_p0_row_keys(p_factor.thresholds, dc, c5, hg, tr)
-                        ),
-                    )
-                else:
-                    mark_hits(rows, set(p_breakdown_hit_row_keys(rid)))
+            rid = rid_snap
+            if rid == "P0_calm":
+                mark_hits(rows, set())
             else:
-                rid = rid_snap
-                if rid == "P1_default":
-                    mark_hits(rows, set(p_failed_p0_row_keys(p_factor.thresholds, dc, c5, hg, tr)))
-                else:
-                    mark_hits(rows, set(p_breakdown_hit_row_keys(rid)))
+                p0_set = set(p_failed_p0_row_keys(p_factor.thresholds, dc, c5, hg, tr))
+                mark_hits(rows, set(p_breakdown_hit_row_keys(rid)) | p0_set)
             if int(p_factor.level) != int(lvl_snap):
                 rows.append(kv("P 注釈", "表示時点の因子レベルと最新行分類が一致しません（refresh 順序を確認）。"))
         except ValueError:
             pass
-    elif p_factor is not None:
-        rows.append(kv("P 注釈", "high_20_gap 未取得のため P 分類マークを付けていません。"))
 
 
 def _build_price_sections(fc: "FlightController", bundle: "SignalBundle", price_symbols: list[str]) -> list[dict[str, Any]]:
@@ -133,7 +119,10 @@ def _build_price_sections(fc: "FlightController", bundle: "SignalBundle", price_
 def _build_t_section(fc: "FlightController", bundle: "SignalBundle", price_symbols: list[str]) -> dict[str, Any] | None:
     if not price_symbols:
         return None
-    t_rows = [kv(f"{sym} トレンド", bundle.price_signals[sym].trend) for sym in price_symbols]
+    t_rows = [
+        kv(f"{sym} トレンド", price_signals_p_input_tuple(bundle.price_signals[sym])[3])
+        for sym in price_symbols
+    ]
     return {"section_id": "5", "scl_level": BREAKDOWN_LEVEL_STR.get(scl_level_for_breakdown(fc), "?"), "rows": t_rows}
 
 
@@ -147,20 +136,9 @@ def _volatility_rows(vs: Any) -> list[dict[str, Any]]:
     return [kv("ボラ指数 (VXN/GVZ 相当)", f"{vs.index_value:.2f}", row_key="index_value"), kv("20日高値", fmt_price(vs.high_20))]
 
 
-def _volatility_hit_keys(vs: Any, v_th: Any, v_level: int) -> set[str]:
-    """指数が「オン」閾値以上のときだけ指数行に ★。V2 維持中で指数が既に下がっていれば指数は付けない。"""
-    keys: set[str] = set()
-    if v_th is not None:
-        v = float(vs.index_value)
-        if v >= float(v_th["V2_on"]) or v >= float(v_th["V1_on"]):
-            keys.add("index_value")
-    if v_level == 2:
-        keys.add("v2_recovery")
-    return keys
-
-
 def _build_volatility_sections(fc: "FlightController", bundle: "SignalBundle", vol_symbols: list[str], *, altitude: "AltitudeRegime") -> list[dict[str, Any]]:
     from avionics.factors.v_factor import VFactor
+    from reports.breakdown.breakdown_v_hits import v_breakdown_hit_row_keys
 
     sections: list[dict[str, Any]] = []
     for idx, sym in enumerate(vol_symbols):
@@ -171,7 +149,7 @@ def _build_volatility_sections(fc: "FlightController", bundle: "SignalBundle", v
         v_level = v_factor_level(fc, sym)
         sid = _V_IDS[idx] if idx < len(_V_IDS) else str(idx + 10)
         rows = _volatility_rows(vs)
-        v_hit_keys = _volatility_hit_keys(vs, v_th, v_level)
+        v_hit_keys = v_breakdown_hit_row_keys(vs, v_th, v_level, v1_days)
         if v_level == 1:
             x1 = min(vs.recovery_confirm_satisfied_days_v1_off, v1_days)
             rows.append(kv("V1→V0復帰判定", fmt_progress(x1, v1_days), row_key="v1_recovery"))
@@ -190,7 +168,7 @@ def _build_volatility_sections(fc: "FlightController", bundle: "SignalBundle", v
 
 
 def _build_credit_sections(fc: "FlightController", bundle: "SignalBundle", price_symbols: list[str]) -> list[dict[str, Any]]:
-    from avionics.factors.c_factor import CFactor
+    from avionics.factors.c_factor import CFactor, c_breakdown_hit_row_keys_from_snapshot
 
     c_fac = first_factor_among_symbols(fc, price_symbols, CFactor)
     c_lv = breakdown_level_suffix(c_fac)
@@ -200,10 +178,14 @@ def _build_credit_sections(fc: "FlightController", bundle: "SignalBundle", price
         c_hit_keys: set[str] = set()
         if c_fac is not None and int(c_fac.level) == 2:
             dc_th = float(c_fac.thresholds["daily_change_C2"])
-            if bundle.liquidity_credit_hyg.below_sma20:
-                c_hit_keys.add("sma20_gap")
-            if bundle.liquidity_credit_hyg.daily_change is not None and float(bundle.liquidity_credit_hyg.daily_change) <= dc_th:
-                c_hit_keys.add("daily_change")
+            bs_h, dc_h = liquidity_credit_canonical_inputs(bundle.liquidity_credit_hyg)
+            c_hit_keys = set(
+                c_breakdown_hit_row_keys_from_snapshot(
+                    bs_h,
+                    dc_h,
+                    dc_th,
+                )
+            )
         mark_hits(c_hyg["rows"], c_hit_keys)
         for r in c_hyg["rows"]:
             r.pop("row_key", None)
@@ -217,10 +199,14 @@ def _build_credit_sections(fc: "FlightController", bundle: "SignalBundle", price
         c_hit_keys: set[str] = set()
         if c_fac is not None and int(c_fac.level) == 2:
             dc_th = float(c_fac.thresholds["daily_change_C2"])
-            if lc_lqd.below_sma20:
-                c_hit_keys.add("sma20_gap")
-            if lc_lqd.daily_change is not None and float(lc_lqd.daily_change) <= dc_th:
-                c_hit_keys.add("daily_change")
+            bs_l, dc_l = liquidity_credit_canonical_inputs(lc_lqd)
+            c_hit_keys = set(
+                c_breakdown_hit_row_keys_from_snapshot(
+                    bs_l,
+                    dc_l,
+                    dc_th,
+                )
+            )
         mark_hits(c_lqd["rows"], c_hit_keys)
         for r in c_lqd["rows"]:
             r.pop("row_key", None)
@@ -233,16 +219,20 @@ def _build_credit_sections(fc: "FlightController", bundle: "SignalBundle", price
 
 def _build_r_section(fc: "FlightController", bundle: "SignalBundle", price_symbols: list[str]) -> dict[str, Any] | None:
     from avionics.factors.r_factor import RFactor
+    from reports.breakdown.breakdown_r_hits import r_breakdown_hit_row_keys
 
     r_fac = first_factor_among_symbols(fc, price_symbols, RFactor)
     if not bundle.liquidity_tip:
         return None
     lt = bundle.liquidity_tip
-    rows = [kv("終値", fmt_price(lt.last_close)), kv("20日高値", fmt_price(lt.tip_reference_high)), kv("20日高値乖離率", fmt_pct(lt.tip_drawdown_from_high), row_key="tip_drawdown")]
-    if r_fac is not None and int(r_fac.level) == 2:
-        for row in rows:
-            if row.get("row_key") == "tip_drawdown":
-                row["hit"] = P_BREAKDOWN_HIT_MARKER
+    dd = liquidity_tip_canonical_drawdown(lt)
+    rows = [
+        kv("終値", fmt_price(lt.last_close)),
+        kv("20日高値", fmt_price(lt.tip_reference_high)),
+        kv("20日高値乖離率", fmt_pct(dd), row_key="tip_drawdown"),
+    ]
+    r_lv = int(r_fac.level) if r_fac is not None else 0
+    mark_hits(rows, set(r_breakdown_hit_row_keys(r_lv)))
     for r in rows:
         r.pop("row_key", None)
     return {"section_id": "4", "r_level": breakdown_level_suffix(r_fac), "rows": rows}

@@ -133,10 +133,14 @@ def liquidity_credit_section(
     title: str,
     lc: "LiquiditySignals",
 ) -> dict[str, Any]:
+    from avionics.compute import liquidity_credit_canonical_inputs
+
+    _, dc = liquidity_credit_canonical_inputs(lc)
+    dc_show = dc if dc is not None else lc.daily_change
     rows = [
         kv("終値", fmt_price(lc.last_close)),
         kv("SMA20", fmt_price(lc.sma20)),
         kv("SMA20乖離率", fmt_pct(lc.sma20_gap), row_key="sma20_gap"),
-        kv("日次変化率", fmt_pct(lc.daily_change), row_key="daily_change"),
+        kv("日次変化率", fmt_pct(dc_show), row_key="daily_change"),
     ]
     return {"section_id": section_id, "title": title, "rows": rows}

@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal, Optional
 
+from avionics.compute import price_signals_p_input_tuple
+
 from .base_factor import BaseFactor, LevelType
 
 if TYPE_CHECKING:
@@ -61,7 +63,8 @@ class TFactor(BaseFactor):
     ) -> None:
         price = getattr(bundle, "price_signals", {}).get(symbol) if symbol else None
         if price is not None:
-            await self.apply_trend(price.trend)
+            _dc, _c5, _hg, tr, _c2 = price_signals_p_input_tuple(price)
+            await self.apply_trend(tr, daily_history=price.daily_history)
 
     async def apply_trend(
         self,
@@ -71,7 +74,7 @@ class TFactor(BaseFactor):
         """
         銘柄別トレンド Signal（Layer 2）を反映する。
 
-        down → T2、up/flat → T0（いずれも即時）。daily_history は互換のため受け取るが無視する。
+        down → T2、up/flat → T0（いずれも即時）。daily_history はシグネチャ互換のため受け取るが未使用。
         定義書「0-4」「4-2-1-4」参照。
         """
         _ = daily_history

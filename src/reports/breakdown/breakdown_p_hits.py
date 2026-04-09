@@ -1,4 +1,7 @@
-"""breakdown レポート用: P 分類理由 id → 入力行キー（★ 付与対象）。"""
+"""breakdown レポート用: P 分類理由 id → 入力行キー（★ 付与の一部）。
+
+Calm 以外では format_breakdown_report が本辞書と p_failed_p0_row_keys の和集合で ★ を付ける（陥落要因の列挙）。
+"""
 
 from __future__ import annotations
 

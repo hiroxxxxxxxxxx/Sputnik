@@ -31,6 +31,8 @@ from avionics.compute import (
     _settlement_bar_indices_from_date,
     compute_capital_signals_from_cap,
     compute_price_signals_from_snapshot,
+    liquidity_credit_canonical_inputs,
+    liquidity_tip_canonical_drawdown,
 )
 
 try:
@@ -81,6 +83,48 @@ def test_compute_price_signals_settlement_uses_as_of() -> None:
     out = compute_price_signals_from_snapshot(snapshot, "NQ", as_of=bars[-2].date)
     assert out.daily_change == pytest.approx((99.0 - 98.0) / 98.0)
     assert out.last_close == 99.0
+
+
+def test_compute_price_signals_daily_history_head_matches_top_level() -> None:
+    """清算日の daily_history[0]（newest first）が PriceSignals 先頭フィールドと一致する。"""
+    base = date(2025, 2, 1)
+    bars = [
+        PriceBar(date=base + timedelta(days=i), close=100.0 + i * 0.5, high=101.0 + i, volume=1000)
+        for i in range(22)
+    ]
+    bars[-1] = PriceBar(date=bars[-1].date, close=102.0, high=120.0, volume=1000)
+    bars[-2] = PriceBar(date=bars[-2].date, close=101.0, high=119.0, volume=1000)
+    snapshot = RawMarketSnapshot(as_of=bars[-1].date, nq_price_bars=bars)
+    out = compute_price_signals_from_snapshot(snapshot, "NQ", bars[-1].date)
+    assert out.daily_history
+    h0 = out.daily_history[0]
+    assert h0[1] == out.daily_change
+    assert h0[2] == out.cum5_change
+    assert h0[3] == out.high_20_gap
+    assert h0[4] == out.trend
+    assert h0[5] == out.cum2_change
+
+
+def test_liquidity_credit_canonical_inputs_prefers_history_head() -> None:
+    d = date(2025, 3, 10)
+    row = (d, True, -0.05)
+    lc = LiquiditySignals(
+        below_sma20=False,
+        daily_change=0.01,
+        daily_history_credit=(row,),
+    )
+    bs, dc = liquidity_credit_canonical_inputs(lc)
+    assert bs is True
+    assert dc == pytest.approx(-0.05)
+
+
+def test_liquidity_tip_canonical_drawdown_prefers_history_head() -> None:
+    d = date(2025, 3, 10)
+    lt = LiquiditySignals(
+        tip_drawdown_from_high=-0.01,
+        daily_history_tip=((d, -0.08),),
+    )
+    assert liquidity_tip_canonical_drawdown(lt) == pytest.approx(-0.08)
 
 
 def test_settlement_bar_indices_finds_ref_date() -> None:

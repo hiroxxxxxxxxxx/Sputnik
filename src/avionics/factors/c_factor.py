@@ -12,6 +12,7 @@ from datetime import date
 from typing import Dict, Optional, TYPE_CHECKING, Tuple
 
 from avionics.calendar import previous_ny_business_day
+from avionics.compute import liquidity_credit_canonical_inputs
 from avionics.data.signals import CreditDailyRow
 from .base_factor import BaseFactor, LevelType
 
@@ -24,6 +25,28 @@ def _c_row_triggers_c2(
     daily_change_C2: float,
 ) -> bool:
     return len(row) >= 3 and (row[1] or row[2] <= daily_change_C2)
+
+
+def c_breakdown_hit_row_keys_from_snapshot(
+    below_sma20: Optional[bool],
+    daily_change: Optional[float],
+    daily_change_c2: float,
+) -> frozenset[str]:
+    """
+    breakdown 用: 当日スナップが `_c_row_triggers_c2` に該当するときのみ、
+    成立した条件に対応する row_key（sma20_gap / daily_change）を返す。
+    """
+    bs = bool(below_sma20) if below_sma20 is not None else False
+    dc_val = float(daily_change) if daily_change is not None else 0.0
+    row: CreditDailyRow = (date.min, bs, dc_val)
+    if not _c_row_triggers_c2(row, daily_change_c2):
+        return frozenset()
+    keys: set[str] = set()
+    if bs:
+        keys.add("sma20_gap")
+    if daily_change is not None and float(daily_change) <= daily_change_c2:
+        keys.add("daily_change")
+    return frozenset(keys)
 
 
 def _c_count_recovery_two_symbols(
@@ -272,16 +295,18 @@ class CFactor(BaseFactor):
     ) -> None:
         lc = bundle.liquidity_credit_hyg
         lc_lqd = bundle.liquidity_credit_lqd
-        if lc.below_sma20 is None or lc.daily_change is None:
+        bs_h, dc_h = liquidity_credit_canonical_inputs(lc)
+        bs_l, dc_l = liquidity_credit_canonical_inputs(lc_lqd)
+        if bs_h is None or dc_h is None:
             raise ValueError("CFactor requires HYG credit signals (below_sma20, daily_change)")
-        if lc_lqd.below_sma20 is None or lc_lqd.daily_change is None:
+        if bs_l is None or dc_l is None:
             raise ValueError("CFactor requires LQD credit signals (below_sma20, daily_change)")
         level = c_level_from_credit_histories(
-            below_sma20_hyg=lc.below_sma20,
-            daily_change_hyg=lc.daily_change,
+            below_sma20_hyg=bs_h,
+            daily_change_hyg=dc_h,
             hyg_nf=lc.daily_history_credit,
-            below_sma20_lqd=lc_lqd.below_sma20,
-            daily_change_lqd=lc_lqd.daily_change,
+            below_sma20_lqd=bs_l,
+            daily_change_lqd=dc_l,
             lqd_nf=lc_lqd.daily_history_credit,
             thresholds=self.thresholds,
         )

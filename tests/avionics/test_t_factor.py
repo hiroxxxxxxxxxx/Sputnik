@@ -7,7 +7,7 @@ import pytest
 
 from avionics import TFactor
 from avionics.factors import FactorsConfigError, get_t_thresholds, load_factors_config
-from avionics.data.signals import LiquiditySignals, SignalBundle
+from avionics.data.signals import LiquiditySignals, PriceDailyRow, PriceSignals, SignalBundle
 
 
 def _run(coro):
@@ -66,6 +66,35 @@ def test_level_calculation_single_symbol(t_thresholds) -> None:
         assert tf.level == 0
         await tf.apply_trend("flat")
         assert tf.level == 0
+
+    _run(scenario())
+
+
+def test_tfactor_apply_signal_bundle_uses_price_daily_history_canonical_trend(t_thresholds) -> None:
+    """トップレベル trend と daily_history 先頭が違うとき、先頭（P と同じ正本）で T を更新する。"""
+    tf = TFactor(symbol="NQ", thresholds=t_thresholds)
+    d = date(2025, 6, 10)
+    hist: PriceDailyRow = (d, 0.0, 0.0, -0.01, "down", 0.0)
+    ps = PriceSignals(
+        symbol="NQ",
+        trend="flat",
+        daily_change=0.0,
+        cum5_change=0.0,
+        cum2_change=0.0,
+        high_20_gap=-0.01,
+        last_close=1.0,
+        daily_history=(hist,),
+    )
+    bundle = SignalBundle(
+        liquidity_credit_hyg=LiquiditySignals(below_sma20=False, daily_change=0.0),
+        liquidity_credit_lqd=LiquiditySignals(below_sma20=False, daily_change=0.0),
+        as_of=d,
+        price_signals={"NQ": ps},
+    )
+
+    async def scenario():
+        await tf.apply_signal_bundle("NQ", bundle, altitude="mid")
+        assert tf.level == 2
 
     _run(scenario())
 

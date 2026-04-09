@@ -39,6 +39,7 @@ class PriceSignals:
     sma20_gap: Optional[float] = None
     high_20: Optional[float] = None
     high_20_gap: Optional[float] = None
+    # newest first。compute が埋める場合、先頭行の (日次・累積・ギャップ・トレンド) はトップレベルと同一。
     daily_history: Tuple[PriceDailyRow, ...] = ()
 
 
@@ -71,7 +72,9 @@ class LiquiditySignals:
     tip_drawdown_from_high: Optional[float] = None
     # R/TIP: 高値比ドローダウン算出時の比較用高値（rolling 窓の max high）
     tip_reference_high: Optional[float] = None
+    # newest first。compute が埋める場合、先頭行の below_sma20 / daily_change はトップレベルと一致。
     daily_history_credit: Tuple[CreditDailyRow, ...] = ()
+    # newest first。compute が埋める場合、先頭のドローダウンは tip_drawdown_from_high と一致。
     daily_history_tip: Tuple[TipDailyRow, ...] = ()
 
 

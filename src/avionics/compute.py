@@ -95,6 +95,79 @@ def _settlement_bar_indices_from_date(
     return (idx, idx - 1)
 
 
+def _settlement_price_daily_row_and_metrics(
+    bars: list[PriceBar],
+    latest_idx: int,
+    prev_idx: int,
+) -> tuple[PriceDailyRow, float, float, float]:
+    """
+    as_of 清算日 1 本分を唯一の式で導く（PriceSignals 先頭フィールドと daily_history[0] の共通正本）。
+
+    戻り値: (daily_row, sma20, high_20, last_close)
+    """
+    latest = bars[latest_idx]
+    prev = bars[prev_idx]
+    sma_bars = bars[:latest_idx]
+    sma20 = _sma(sma_bars, 20) if len(sma_bars) >= 20 else (prev.close or 1.0)
+    if sma20 <= 0:
+        sma20 = prev.close or 1.0
+    if latest.close > sma20 * 1.005:
+        trend: TrendType = "up"
+    elif latest.close < sma20 * 0.995:
+        trend = "down"
+    else:
+        trend = "flat"
+    daily_change = (latest.close - prev.close) / prev.close if prev.close else 0.0
+    cum5_change = 0.0
+    cum5_idx = latest_idx - 5
+    if len(bars) + cum5_idx >= 0 and cum5_idx >= -len(bars) and bars[cum5_idx].close:
+        cum5_change = (latest.close - bars[cum5_idx].close) / bars[cum5_idx].close
+    cum2_change: Optional[float] = None
+    cum2_idx = latest_idx - 2
+    if len(bars) + cum2_idx >= 0 and cum2_idx >= -len(bars) and bars[cum2_idx].close:
+        cum2_change = (latest.close - bars[cum2_idx].close) / bars[cum2_idx].close
+    high_20_slice = bars[max(0, latest_idx - 19) : latest_idx + 1]
+    high_20 = max(b.high for b in high_20_slice) if high_20_slice else (latest.high or latest.close)
+    high_20_gap = (latest.close / high_20 - 1.0) if high_20 else -0.01
+    row: PriceDailyRow = (latest.date, daily_change, cum5_change, high_20_gap, trend, cum2_change)
+    return row, float(sma20), float(high_20), float(latest.close)
+
+
+def price_signals_p_input_tuple(ps: PriceSignals) -> tuple[float, float, float, TrendType, Optional[float]]:
+    """
+    P 分類・breakdown の変動行に使う (daily_change, cum5_change, high_20_gap, trend, cum2_change)。
+
+    compute が埋めた daily_history があるときは newest-first の先頭行を正本とする（先頭＝トップレベルと一致）。
+    """
+    if ps.daily_history:
+        r = ps.daily_history[0]
+        c2 = r[5] if len(r) > 5 else None
+        return (r[1], r[2], r[3], r[4], c2)
+    return (ps.daily_change, ps.cum5_change, ps.high_20_gap, ps.trend, ps.cum2_change)
+
+
+def liquidity_credit_canonical_inputs(lc: LiquiditySignals) -> tuple[Optional[bool], Optional[float]]:
+    """
+    C 因子・credit breakdown 用の (below_sma20, daily_change)。
+
+    daily_history_credit があるときは newest-first 先頭行を正本とする（compute 生成ではトップレベルと一致）。
+    """
+    if lc.daily_history_credit:
+        r = lc.daily_history_credit[0]
+        if len(r) >= 3:
+            return (bool(r[1]), float(r[2]))
+    return (lc.below_sma20, lc.daily_change)
+
+
+def liquidity_tip_canonical_drawdown(lt: LiquiditySignals) -> Optional[float]:
+    """R・TIP breakdown 用。daily_history_tip があるときは newest-first 先頭のドローダウンを正本とする。"""
+    if lt.daily_history_tip:
+        r = lt.daily_history_tip[0]
+        if len(r) >= 2:
+            return float(r[1])
+    return lt.tip_drawdown_from_high
+
+
 def _price_daily_row_at_index(
     bars: list[PriceBar],
     i: int,
@@ -154,59 +227,34 @@ def compute_price_signals_from_bars(
         )
 
     latest_idx, prev_idx = _settlement_bar_indices_from_date(bars, as_of)
-    latest = bars[latest_idx]
-    prev = bars[prev_idx]
+    settlement_row, sma20, high_20, last_close = _settlement_price_daily_row_and_metrics(
+        bars, latest_idx, prev_idx
+    )
+    sma20_gap = (last_close / sma20 - 1.0) if sma20 else None
 
-    # SMA20: 清算値の足の直前20本
-    sma_bars = bars[:latest_idx]
-    sma20 = _sma(sma_bars, 20) if len(sma_bars) >= 20 else prev.close
-    if sma20 <= 0:
-        sma20 = prev.close or 1.0
-
-    if latest.close > sma20 * 1.005:
-        trend: TrendType = "up"
-    elif latest.close < sma20 * 0.995:
-        trend = "down"
-    else:
-        trend = "flat"
-
-    daily_change = (latest.close - prev.close) / prev.close if prev.close else 0.0
-
-    cum5_change = 0.0
-    cum5_idx = latest_idx - 5
-    if len(bars) + cum5_idx >= 0 and cum5_idx >= -len(bars) and bars[cum5_idx].close:
-        cum5_change = (latest.close - bars[cum5_idx].close) / bars[cum5_idx].close
-
-    cum2_change: Optional[float] = None
-    cum2_idx = latest_idx - 2
-    if len(bars) + cum2_idx >= 0 and cum2_idx >= -len(bars) and bars[cum2_idx].close:
-        cum2_change = (latest.close - bars[cum2_idx].close) / bars[cum2_idx].close
-
-    high_20_slice = bars[max(0, latest_idx - 19) : latest_idx + 1]
-    high_20 = max(b.high for b in high_20_slice) if high_20_slice else (latest.high or latest.close)
-    high_20_gap = (latest.close / high_20 - 1.0) if high_20 else -0.01
-    sma20_gap = (latest.close / sma20 - 1.0) if sma20 else None
-
-    # 復帰確認用: 基準日から遡る。各日で SMA20・20日高値を使うため j>=19 の日のみ（20本揃い）
+    # 復帰確認用: 基準日から遡る。清算日は上記 settlement_row のみを使い、過去日は従来の index 行。
     daily_history_list: List[PriceDailyRow] = []
     j_min = max(19, latest_idx - RECOVERY_LOOKBACK_DAYS)
     for j in range(latest_idx, j_min - 1, -1):
-        row = _price_daily_row_at_index(bars, j)
-        if row is not None:
-            daily_history_list.append(row)
+        if j == latest_idx:
+            daily_history_list.append(settlement_row)
+        else:
+            row = _price_daily_row_at_index(bars, j)
+            if row is not None:
+                daily_history_list.append(row)
     daily_history = tuple(daily_history_list)
 
     return PriceSignals(
         symbol=symbol,
-        trend=trend,
-        daily_change=daily_change,
-        cum5_change=cum5_change,
-        cum2_change=cum2_change,
-        last_close=latest.close,
-        sma20=float(sma20),
+        trend=settlement_row[4],
+        daily_change=settlement_row[1],
+        cum5_change=settlement_row[2],
+        cum2_change=settlement_row[5],
+        last_close=last_close,
+        sma20=sma20,
         sma20_gap=float(sma20_gap) if sma20_gap is not None else None,
-        high_20=float(high_20),
-        high_20_gap=float(high_20_gap),
+        high_20=high_20,
+        high_20_gap=settlement_row[3],
         daily_history=daily_history,
     )
 

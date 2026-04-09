@@ -8,6 +8,7 @@ import pytest
 from avionics import VFactor
 from avionics.data.signals import LiquiditySignals, SignalBundle, VolatilitySignal
 from avionics.factors import FactorsConfigError, get_v_thresholds, load_factors_config
+from avionics.factors.v_factor import v_index_meets_on_band
 
 try:
     _config = load_factors_config()
@@ -22,6 +23,14 @@ def _run(coro):
 
 def _v_nq() -> dict:
     return get_v_thresholds(_config, "NQ")
+
+
+def test_v_index_meets_on_band() -> None:
+    th = {"V2_on": 30.0, "V1_on": 20.0}
+    assert v_index_meets_on_band(19.5, th) is False
+    assert v_index_meets_on_band(20.0, th) is True
+    assert v_index_meets_on_band(29.0, th) is True
+    assert v_index_meets_on_band(30.0, th) is True
 
 
 def _hist(*points: tuple[date, float]) -> tuple[tuple[date, float], ...]:

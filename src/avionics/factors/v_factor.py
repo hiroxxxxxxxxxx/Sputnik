@@ -61,6 +61,12 @@ def _v_transition_step(
     return prev
 
 
+def v_index_meets_on_band(index_value: float, th: dict) -> bool:
+    """指数が V2_on または V1_on 以上なら True（breakdown の指数行 ★ とオン帯判定を 1 箇所に固定）。"""
+    v = float(index_value)
+    return v >= float(th["V2_on"]) or v >= float(th["V1_on"])
+
+
 def v_level_from_index_history_sync(
     index_history: tuple[tuple[Any, float], ...],
     th: dict,

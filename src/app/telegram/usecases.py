@@ -65,7 +65,7 @@ async def fetch_breakdown_report(
     client_id: int = 3,
     timeout: float = 75.0,
 ) -> str:
-    from reports.format_breakdown_report import format_breakdown_report
+    from reports.breakdown.format_breakdown_report import format_breakdown_report
 
     async with refreshed_fc(
         host, port, symbols, client_id=client_id, timeout=timeout
