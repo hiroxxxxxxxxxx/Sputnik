@@ -188,7 +188,8 @@ def test_format_daily_report_with_positions() -> None:
 def test_format_daily_report_without_positions() -> None:
     fc = _DummyFC()
     text = asyncio.run(format_daily_report(fc, ["NQ", "GC"], as_of=date(2026, 3, 30)))
-    assert "[4] POSITION SNAPSHOT" not in text
+    assert "[4] POSITION SNAPSHOT" in text
+    assert "Main | Engine=OFF | Strategy=NONE" in text
 
 
 def test_format_daily_report_zero_positions_show_engine_off() -> None:

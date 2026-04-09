@@ -44,12 +44,14 @@ async def _build_position_report_context(
         modes_by_symbol=modes_by_symbol,
         altitude=str(fc.last_altitude_regime or "mid"),
     )
+    target_rows = position_ctx["futures_target_rows"]
+    option_rows = position_ctx["options_rows"]
     return {
         "date_iso": d.isoformat(),
-        "symbols": position_ctx["symbols"],
-        "futures_rows": position_ctx["futures_rows"],
-        "options_rows": position_ctx["options_rows"],
-        "futures_target_rows": position_ctx["futures_target_rows"],
+        "nq_futures_target_rows": [r for r in target_rows if r.get("symbol") == "NQ"],
+        "gc_futures_target_rows": [r for r in target_rows if r.get("symbol") == "GC"],
+        "nq_options_rows": [r for r in option_rows if r.get("symbol") == "NQ"],
+        "gc_options_rows": [r for r in option_rows if r.get("symbol") == "GC"],
     }
 
 

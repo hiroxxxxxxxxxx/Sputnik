@@ -2,90 +2,133 @@
 ━━━━━━━━━━━━━━━━━━━━
 Layer 2 シグナル（各因子の入力値）内訳
 ━━━━━━━━━━━━━━━━━━━━
-{% for sec in price_sections %}
 ────────────────────
-[{{ sec.section_id }}] P/T 入力 <{{ sec.symbol }}> [ P={{ sec.p_level }} T={{ sec.t_level }} ]
+[1-A] P/T 入力 <{{ price_nq.symbol }}> [ P={{ price_nq.p_level }} T={{ price_nq.t_level }} ]
 ────────────────────
-{% for row in sec.rows %}
-{{ row.label }} | {{ row.value }}{% if row.hit %} {{ row.hit }}{% endif %}
-
+清算値 | {{ price_nq["values"]["last_close"].value }}
+20SMA | {{ price_nq["values"]["sma20"].value }}
+20SMA乖離率 | {{ price_nq["values"]["sma20_gap"].value }}
+トレンド | {{ price_nq["values"]["trend"].value }}{{ " ★" if price_nq["values"]["trend"].hit | default(false) else "" }}
+日次変化率 | {{ price_nq["values"]["daily_change"].value }}{{ " ★" if price_nq["values"]["daily_change"].hit | default(false) else "" }}
+2日累積変動率 | {{ price_nq["values"]["cum2_change"].value }}{{ " ★" if price_nq["values"]["cum2_change"].hit | default(false) else "" }}
+5日累積変動率 | {{ price_nq["values"]["cum5_change"].value }}{{ " ★" if price_nq["values"]["cum5_change"].hit | default(false) else "" }}
+20日高値 | {{ price_nq["values"]["high_20"].value }}
+20日高値乖離率 | {{ price_nq["values"]["high_20_gap"].value }}{{ " ★" if price_nq["values"]["high_20_gap"].hit | default(false) else "" }}
+{% for note in price_nq.notes %}
+P 注釈 | {{ note }}
 {% endfor %}
-{% endfor %}
-{% for sec in volatility_sections %}
 ────────────────────
-[{{ sec.section_id }}] V 入力 <{{ sec.symbol }}> [ V={{ sec.v_level }} ]
+[1-B] P/T 入力 <{{ price_gc.symbol }}> [ P={{ price_gc.p_level }} T={{ price_gc.t_level }} ]
 ────────────────────
-{% for row in sec.rows %}
-{{ row.label }} | {{ row.value }}{% if row.hit %} {{ row.hit }}{% endif %}
-
-{% endfor %}
-{% endfor %}
-{% for csec in credit_sections %}
+清算値 | {{ price_gc["values"]["last_close"].value }}
+20SMA | {{ price_gc["values"]["sma20"].value }}
+20SMA乖離率 | {{ price_gc["values"]["sma20_gap"].value }}
+トレンド | {{ price_gc["values"]["trend"].value }}{{ " ★" if price_gc["values"]["trend"].hit | default(false) else "" }}
+日次変化率 | {{ price_gc["values"]["daily_change"].value }}{{ " ★" if price_gc["values"]["daily_change"].hit | default(false) else "" }}
+2日累積変動率 | {{ price_gc["values"]["cum2_change"].value }}{{ " ★" if price_gc["values"]["cum2_change"].hit | default(false) else "" }}
+5日累積変動率 | {{ price_gc["values"]["cum5_change"].value }}{{ " ★" if price_gc["values"]["cum5_change"].hit | default(false) else "" }}
+20日高値 | {{ price_gc["values"]["high_20"].value }}
+20日高値乖離率 | {{ price_gc["values"]["high_20_gap"].value }}{{ " ★" if price_gc["values"]["high_20_gap"].hit | default(false) else "" }}
+{% for note in price_gc.notes %}P 注釈 | {{ note }}{% endfor %}
 ────────────────────
-[{{ csec.section_id }}] C（{{ csec.credit_symbol }}） [ C={{ csec.c_level }} ]
+[2-A] V 入力 <{{ vol_nq.symbol }}> [ V={{ vol_nq.v_level }} ]
 ────────────────────
-{% for row in csec.rows %}
-{{ row.label }} | {{ row.value }}{% if row.hit %} {{ row.hit }}{% endif %}
-
-{% endfor %}
-{% endfor %}
-{% if r_section %}
+ボラ指数 (VXN/GVZ 相当) | {{ vol_nq["values"]["index_value"].value }}{{ " ★" if vol_nq["values"]["index_value"].hit | default(false) else "" }}
+20日高値 | {{ vol_nq["values"]["high_20"].value }}
+V1→V0復帰判定 | {{ vol_nq["values"]["v1_recovery"].done }}/{{ vol_nq["values"]["v1_recovery"].total }}日目{{ " ★" if vol_nq["values"]["v1_recovery"].hit | default(false) else "" }}
+ ・ノックイン成立 | {{ vol_nq["values"]["v1_knock_in"].value }}{{ " ★" if vol_nq["values"]["v1_knock_in"].hit | default(false) else "" }}
+ ・ノックイン判定時刻 | {{ vol_nq["values"]["v1_knock_in_time"].value }}
+V2→V1復帰判定 | {{ vol_nq["values"]["v2_recovery"].done }}/{{ vol_nq["values"]["v2_recovery"].total }}日目{{ " ★" if vol_nq["values"]["v2_recovery"].hit | default(false) else "" }}
 ────────────────────
-[{{ r_section.section_id }}] R（TIP） [ R={{ r_section.r_level }} ]
+[2-B] V 入力 <{{ vol_gc.symbol }}> [ V={{ vol_gc.v_level }} ]
 ────────────────────
-{% for row in r_section.rows %}
-{{ row.label }} | {{ row.value }}{% if row.hit %} {{ row.hit }}{% endif %}
-
-{% endfor %}
-{% endif %}
-{% if t_section %}
+ボラ指数 (VXN/GVZ 相当) | {{ vol_gc["values"]["index_value"].value }}{{ " ★" if vol_gc["values"]["index_value"].hit | default(false) else "" }}
+20日高値 | {{ vol_gc["values"]["high_20"].value }}
+V1→V0復帰判定 | {{ vol_gc["values"]["v1_recovery"].done }}/{{ vol_gc["values"]["v1_recovery"].total }}日目{{ " ★" if vol_gc["values"]["v1_recovery"].hit | default(false) else "" }}
+ ・ノックイン成立 | {{ vol_gc["values"]["v1_knock_in"].value }}{{ " ★" if vol_gc["values"]["v1_knock_in"].hit | default(false) else "" }}
+ ・ノックイン判定時刻 | {{ vol_gc["values"]["v1_knock_in_time"].value }}
+V2→V1復帰判定 | {{ vol_gc["values"]["v2_recovery"].done }}/{{ vol_gc["values"]["v2_recovery"].total }}日目{{ " ★" if vol_gc["values"]["v2_recovery"].hit | default(false) else "" }}
 ────────────────────
-[{{ t_section.section_id }}] T（SCL） [ SCL={{ t_section.scl_level }} ]
+[3-A] C（{{ credit_hyg.credit_symbol }}） [ C={{ credit_hyg.c_level }} ]
 ────────────────────
-{% for row in t_section.rows %}
-{{ row.label }} | {{ row.value }}
-{% endfor %}
-{% endif %}
-{% if u_section %}
+終値 | {{ credit_hyg["values"]["last_close"].value }}
+SMA20 | {{ credit_hyg["values"]["sma20"].value }}
+SMA20乖離率 | {{ credit_hyg["values"]["sma20_gap"].value }}{{ " ★" if credit_hyg["values"]["sma20_gap"].hit | default(false) else "" }}
+日次変化率 | {{ credit_hyg["values"]["daily_change"].value }}{{ " ★" if credit_hyg["values"]["daily_change"].hit | default(false) else "" }}
 ────────────────────
-[{{ u_section.section_id }}] U（資本使用率） [ U={{ u_section.u_level }} ]
+[3-B] C（{{ credit_lqd.credit_symbol }}） [ C={{ credit_lqd.c_level }} ]
 ────────────────────
-{% for row in u_section.rows %}
-{{ row.label }} | {{ row.value }}
-{% endfor %}
-{% endif %}
-{% if s_section %}
+終値 | {{ credit_lqd["values"]["last_close"].value }}
+SMA20 | {{ credit_lqd["values"]["sma20"].value }}
+SMA20乖離率 | {{ credit_lqd["values"]["sma20_gap"].value }}{{ " ★" if credit_lqd["values"]["sma20_gap"].hit | default(false) else "" }}
+日次変化率 | {{ credit_lqd["values"]["daily_change"].value }}{{ " ★" if credit_lqd["values"]["daily_change"].hit | default(false) else "" }}
 ────────────────────
-[{{ s_section.section_id }}] S（SPAN） [ S={{ s_section.s_level }} ]
+[4] R（TIP） [ R={{ r_section.r_level }} ]
 ────────────────────
-{% for row in s_section.rows %}
-{{ row.label }} | {{ row.value }}
-{% endfor %}
-{% endif %}
-{% if pos_symbols %}
+終値 | {{ r_section["values"]["last_close"].value }}
+20日高値 | {{ r_section["values"]["tip_reference_high"].value }}
+20日高値乖離率 | {{ r_section["values"]["tip_drawdown"].value }}{{ " ★" if r_section["values"]["tip_drawdown"].hit | default(false) else "" }}
+────────────────────
+[5] T（SCL） [ SCL={{ t_section.scl_level }} ]
+────────────────────
+NQ トレンド | {{ t_section.nq_trend }}
+GC トレンド | {{ t_section.gc_trend }}
+────────────────────
+[6-A] U（資本使用率） [ U={{ u_section.u_level }} ]
+────────────────────
+MM/NLV | {{ u_section.mm_over_nlv }}
+────────────────────
+[6-B] S（SPAN） [ S={{ s_section.s_level }} ]
+────────────────────
+SPAN 比 (span_ratio) | {{ s_section.span_ratio }}
+S whatIf total | {{ s_section.whatif_total }}
+S baseline total | {{ s_section.baseline_total }}
+S total ratio (whatIf/base) | {{ s_section.total_ratio }}
+S NQ (whatIf/base/ratio) | {{ s_section.nq.whatif }} / {{ s_section.nq.baseline }} / {{ s_section.nq.ratio }}{{ "\nS NQ reason | " ~ s_section.nq.reason if s_section.nq.reason else "" }}
+S GC (whatIf/base/ratio) | {{ s_section.gc.whatif }} / {{ s_section.gc.baseline }} / {{ s_section.gc.ratio }}{{ "\nS GC reason | " ~ s_section.gc.reason if s_section.gc.reason else "" }}
 ────────────────────
 [7] POSITION SNAPSHOT
-{% for sym in pos_symbols %}
-━━━━━━━━ {{ sym }} ━━━━━━━━
+━━━━━━━━ NQ ━━━━━━━━
 Futures target diff (MNQ/MGC 相当枚数; target / actual_net / delta)
-{% for row in pos_futures_target_rows %}
-{% if row.symbol == sym %}
+{%- if pos_futures_target_rows_nq %}
+{% for row in pos_futures_target_rows_nq %}
 {{ row.micro_label }} | target={{ row.target }} | actual={{ row.actual }} | delta={{ row.delta }}
-{% endif %}
 {% endfor %}
-
+{%- else %}
+—
+{%- endif %}
 Options strategy diff (target / actual / delta)
-{% for row in pos_options_rows %}
-{% if row.symbol == sym %}
+{%- if pos_options_rows_nq %}
+{% for row in pos_options_rows_nq %}
 {% if row.strategy == "UNCLASSIFIED" %}
 {{ row.strategy }} | actual={{ row.actual }} | {{ row.unclassified_detail }}
 {% else %}
 {{ row.strategy }} | target={{ row.target }} | actual={{ row.actual }} | delta={{ row.delta }}
 {% endif %}
+{% endfor %}
+{%- else %}
+—
+{%- endif %}
+━━━━━━━━ GC ━━━━━━━━
+Futures target diff (MNQ/MGC 相当枚数; target / actual_net / delta)
+{%- if pos_futures_target_rows_gc %}
+{% for row in pos_futures_target_rows_gc %}
+{{ row.micro_label }} | target={{ row.target }} | actual={{ row.actual }} | delta={{ row.delta }}
+{% endfor %}
+{%- else %}
+—
+{%- endif %}
+Options strategy diff (target / actual / delta)
+{%- if pos_options_rows_gc %}
+{% for row in pos_options_rows_gc %}
+{% if row.strategy == "UNCLASSIFIED" %}
+{{ row.strategy }} | actual={{ row.actual }} | {{ row.unclassified_detail }}
+{% else %}
+{{ row.strategy }} | target={{ row.target }} | actual={{ row.actual }} | delta={{ row.delta }}
 {% endif %}
 {% endfor %}
-{% endfor %}
-{% endif %}
-
+{%- else %}
+—
+{%- endif %}
 ━━━━━━━━━━━━━━━━━━━━
-{{ hit_legend }}
+※ ★ = 因子判定の決定枝に関係する入力行を示す。

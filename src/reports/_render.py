@@ -29,7 +29,8 @@ def render(template_name: str, context: dict[str, Any]) -> str:
     env = Environment(
         loader=FileSystemLoader(str(_TEMPLATE_DIR)),
         autoescape=select_autoescape(enabled_extensions=()),
-        trim_blocks=True,
+        # Keep newline behavior predictable for line-oriented text reports.
+        trim_blocks=False,
         lstrip_blocks=True,
     )
     return env.get_template(template_name).render(**context)

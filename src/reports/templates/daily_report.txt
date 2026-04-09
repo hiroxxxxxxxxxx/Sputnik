@@ -3,49 +3,37 @@
 ✈️ 飛行状態: {{ mode }} (Lv{{ worst_level }})
 🛡 システム: 🟢 正常 (Auto-Pilot: ON)
 ━━━━━━━━━━━━━━━━━━━━
-
-{% for section in icl_sections %}
 ────────────────────
-[{{ section.section_id }}] ICL（個別層）<{{ section.symbol }}> | {{ section.level }}
-{% for row in section.rows %}
-{{ row.factor }} | {{ row.lv }} | {{ row.value }}{% if row.recovery %} (復帰{{ row.recovery }}日目){% endif %}
-
-{% endfor %}
-
-{% endfor %}
+[{{ icl_nq.section_id }}] ICL（個別層）<{{ icl_nq.symbol }}> | {{ icl_nq.level }}
+P | {{ icl_nq.rows.P.lv }} | {{ icl_nq.rows.P.price }} / {{ icl_nq.rows.P.trend }}{{ (" (Stay" ~ icl_nq.rows.P.recovery ~ "日目)") if icl_nq.rows.P.recovery else "" }}
+V | {{ icl_nq.rows.V.lv }} | {{ icl_nq.rows.V.value }}{{ (" (Stay" ~ icl_nq.rows.V.recovery ~ "日目)") if icl_nq.rows.V.recovery else "" }}
+C | {{ icl_nq.rows.C.lv }} | {{ "Below SMA20" if icl_nq.rows.C.below_sma20 else "Above SMA20" if icl_nq.rows.C.below_sma20 is not none else "—" }}{{ (" (Stay" ~ icl_nq.rows.C.recovery ~ "日目)") if icl_nq.rows.C.recovery else "" }}
+────────────────────
+[{{ icl_gc.section_id }}] ICL（個別層）<{{ icl_gc.symbol }}> | {{ icl_gc.level }}
+P | {{ icl_gc.rows.P.lv }} | {{ icl_gc.rows.P.price }} / {{ icl_gc.rows.P.trend }}{{ (" (Stay" ~ icl_gc.rows.P.recovery ~ "日目)") if icl_gc.rows.P.recovery else "" }}
+V | {{ icl_gc.rows.V.lv }} | {{ icl_gc.rows.V.value }}{{ (" (Stay" ~ icl_gc.rows.V.recovery ~ "日目)") if icl_gc.rows.V.recovery else "" }}
+R | {{ icl_gc.rows.R.lv }} | {{ icl_gc.rows.R.drawdown_pct if icl_gc.rows.R.drawdown_pct is not none else "—" }}{{ (" (Stay" ~ icl_gc.rows.R.recovery ~ "日目)") if icl_gc.rows.R.recovery else "" }}
 ────────────────────
 [2] SCL（同期層） | {{ scl_level }}
-{% for row in scl_rows %}
-{{ row.factor }} | {{ row.lv }} | {{ row.value }}{% if row.recovery %} (復帰{{ row.recovery }}日目){% endif %}
-
-{% endfor %}
-
+{{ t_row.factor }} | {{ t_row.lv }} | {{ t_row.value }}{{ (" (Stay" ~ t_row.recovery ~ "日目)") if t_row.recovery else "" }}
 ────────────────────
 [3] LCL（制限層） | {{ lcl_level }}
-{% for row in lcl_rows %}
-{{ row.factor }} | {{ row.lv }} | {{ row.value }}{% if row.factor == "U" %} (C1:40% C2:50%){% elif row.factor == "S" %} (S1:1.1 S2:1.3){% endif %}{% if row.recovery %} (復帰{{ row.recovery }}日目){% endif %}
-
-{% endfor %}
-{{ nlv_line }}
-
-{% if cash_buffer_line %}{{ cash_buffer_line }}
+{{ u_row.factor }} | {{ u_row.lv }} | {{ u_row.value }} (C1:40% C2:50%){{ (" (Stay" ~ u_row.recovery ~ "日目)") if u_row.recovery else "" }}
+{{ s_row.factor }} | {{ s_row.lv }} | {{ s_row.value }} (S1:1.1 S2:1.3){{ (" (Stay" ~ s_row.recovery ~ "日目)") if s_row.recovery else "" }}
+NLV: {{ nlv_value }}  /  ExcessLiq: {{ excess_liq_k }}
+{% if cash_buffer_ok %}Cash Buffer: (🟢 安定)
 {% endif %}
-
-{% if position_state_sections %}
 ────────────────────
 [4] POSITION SNAPSHOT
-{% for sec in position_state_sections %}
-━━━━━━━━ {{ sec.symbol }} ━━━━━━━━
-{% for row in sec.rows %}
-{{ row.part }} | Engine={{ row.engine_state }} | Strategy={{ row.strategy_name }}
-{% endfor %}
-{% endfor %}
-{% endif %}
-
+━━━━━━━━ {{ pos_nq.symbol }} ━━━━━━━━
+Main | Engine={{ pos_nq.rows[0].engine_state }} | Strategy={{ pos_nq.rows[0].strategy_name }}
+Attitude | Engine={{ pos_nq.rows[1].engine_state }} | Strategy={{ pos_nq.rows[1].strategy_name }}
+Booster | Engine={{ pos_nq.rows[2].engine_state }} | Strategy={{ pos_nq.rows[2].strategy_name }}
+━━━━━━━━ {{ pos_gc.symbol }} ━━━━━━━━
+Main | Engine={{ pos_gc.rows[0].engine_state }} | Strategy={{ pos_gc.rows[0].strategy_name }}
+Attitude | Engine={{ pos_gc.rows[1].engine_state }} | Strategy={{ pos_gc.rows[1].strategy_name }}
+Booster | Engine={{ pos_gc.rows[2].engine_state }} | Strategy={{ pos_gc.rows[2].strategy_name }}
 ────────────────────
 [5] 24H MAINTENANCE SCHEDULE
-{% for line in maintenance_lines %}
-- {{ line }}
-{% endfor %}
-
+- {{ maintenance_line }}
 ━━━━━━━━━━━━━━━━━━━━

@@ -54,12 +54,12 @@ def _build_icl_sections(
     _icl_ids = ("1-A", "1-B")
     sections: list[dict[str, Any]] = []
 
-    c_val = "—"
+    c_below_sma20: bool | None = None
     if bundle.liquidity_credit_hyg:
-        c_val = "Below SMA20" if bundle.liquidity_credit_hyg.below_sma20 else "Above SMA20"
-    r_val = "—"
+        c_below_sma20 = bool(bundle.liquidity_credit_hyg.below_sma20)
+    r_drawdown_pct: str | None = None
     if bundle.liquidity_tip and bundle.liquidity_tip.tip_drawdown_from_high is not None:
-        r_val = f"{bundle.liquidity_tip.tip_drawdown_from_high * 100:.1f}%"
+        r_drawdown_pct = f"{bundle.liquidity_tip.tip_drawdown_from_high * 100:.1f}%"
 
     for idx, sym in enumerate(symbols):
         if sym not in ("NQ", "GC"):
@@ -79,16 +79,33 @@ def _build_icl_sections(
         if sym == "NQ":
             icl_level = max(int(icl_level), int(p_lv), int(v_lv), int(c_lv))
             rows = [
-                {"factor": "P", "lv": LEVEL_STR.get(p_lv, "?"), "value": f"{price_str} / {p_trend}", "recovery": rec.get("P", "")},
+                {
+                    "factor": "P",
+                    "lv": LEVEL_STR.get(p_lv, "?"),
+                    "price": price_str,
+                    "trend": p_trend,
+                    "recovery": rec.get("P", ""),
+                },
                 {"factor": "V", "lv": LEVEL_STR.get(v_lv, "?"), "value": sym_vol, "recovery": rec.get("V", "")},
-                {"factor": "C", "lv": LEVEL_STR.get(c_lv, "?"), "value": c_val, "recovery": rec.get("C", "")},
+                {
+                    "factor": "C",
+                    "lv": LEVEL_STR.get(c_lv, "?"),
+                    "below_sma20": c_below_sma20,
+                    "recovery": rec.get("C", ""),
+                },
             ]
         else:
             icl_level = max(int(icl_level), int(p_lv), int(v_lv), int(r_lv))
             rows = [
-                {"factor": "P", "lv": LEVEL_STR.get(p_lv, "?"), "value": f"{price_str} / {p_trend}", "recovery": rec.get("P", "")},
+                {
+                    "factor": "P",
+                    "lv": LEVEL_STR.get(p_lv, "?"),
+                    "price": price_str,
+                    "trend": p_trend,
+                    "recovery": rec.get("P", ""),
+                },
                 {"factor": "V", "lv": LEVEL_STR.get(v_lv, "?"), "value": sym_vol, "recovery": rec.get("V", "")},
-                {"factor": "R", "lv": LEVEL_STR.get(r_lv, "?"), "value": r_val, "recovery": rec.get("R", "")},
+                {"factor": "R", "lv": LEVEL_STR.get(r_lv, "?"), "drawdown_pct": r_drawdown_pct, "recovery": rec.get("R", "")},
             ]
         sections.append({"section_id": section_id, "symbol": sym, "level": LEVEL_STR.get(icl_level, "?"), "rows": rows})
     return sections
@@ -96,15 +113,21 @@ def _build_icl_sections(
 
 def _build_capital_lines(
     capital_snapshot: Optional["RawCapitalSnapshot"],
-) -> tuple[str, str]:
-    """NLV / Cash Buffer のテンプレート行を返す。"""
+) -> dict[str, str | bool]:
+    """NLV / Cash Buffer 表示向けの値を返す。"""
     if capital_snapshot:
-        nlv_line = f"NLV: ${capital_snapshot.nlv:,.0f}  /  ExcessLiq: ${(capital_snapshot.nlv - capital_snapshot.mm) / 1000:.0f}k"
-        cash_buffer_line = "Cash Buffer: (🟢 安定)"
+        nlv_value = f"${capital_snapshot.nlv:,.0f}"
+        excess_liq_k = f"${(capital_snapshot.nlv - capital_snapshot.mm) / 1000:.0f}k"
+        cash_buffer_ok = True
     else:
-        nlv_line = "NLV: —  /  ExcessLiq: —"
-        cash_buffer_line = ""
-    return nlv_line, cash_buffer_line
+        nlv_value = "—"
+        excess_liq_k = "—"
+        cash_buffer_ok = False
+    return {
+        "nlv_value": nlv_value,
+        "excess_liq_k": excess_liq_k,
+        "cash_buffer_ok": cash_buffer_ok,
+    }
 
 
 def _build_scl_lcl_rows(
@@ -233,7 +256,7 @@ async def _build_daily_flight_log_context(
 
     mapping = fc.mapping
     icl_sections = _build_icl_sections(symbols, signal, bundle, mapping, altitude=altitude)
-    nlv_line, cash_buffer_line = _build_capital_lines(capital_snapshot)
+    capital_ctx = _build_capital_lines(capital_snapshot)
     scl_level, scl_rows, lcl_level, lcl_rows = _build_scl_lcl_rows(
         signal, bundle, mapping, symbols, altitude=altitude
     )
@@ -245,32 +268,100 @@ async def _build_daily_flight_log_context(
         altitude=str(altitude),
     )
 
+    icl_by_symbol = {s["symbol"]: s for s in icl_sections}
+
+    def _icl_default(symbol: str, section_id: str) -> dict[str, Any]:
+        return {
+            "section_id": section_id,
+            "symbol": symbol,
+            "level": "0",
+            "rows": {
+                "P": {"lv": "0", "price": "—", "trend": "—", "recovery": ""},
+                "V": {"lv": "0", "value": "—", "recovery": ""},
+                "C": {"lv": "0", "below_sma20": None, "recovery": ""},
+                "R": {"lv": "0", "drawdown_pct": None, "recovery": ""},
+            },
+        }
+
+    def _normalize_icl(sec: dict[str, Any], *, symbol: str, section_id: str) -> dict[str, Any]:
+        out = _icl_default(symbol, section_id)
+        out["level"] = str(sec.get("level", "0"))
+        rows = {r["factor"]: r for r in sec.get("rows", [])}
+        if "P" in rows:
+            out["rows"]["P"] = {
+                "lv": rows["P"].get("lv", "0"),
+                "price": rows["P"].get("price", "—"),
+                "trend": rows["P"].get("trend", "—"),
+                "recovery": rows["P"].get("recovery", ""),
+            }
+        if "V" in rows:
+            out["rows"]["V"] = {
+                "lv": rows["V"].get("lv", "0"),
+                "value": rows["V"].get("value", "—"),
+                "recovery": rows["V"].get("recovery", ""),
+            }
+        if "C" in rows:
+            out["rows"]["C"] = {
+                "lv": rows["C"].get("lv", "0"),
+                "below_sma20": rows["C"].get("below_sma20"),
+                "recovery": rows["C"].get("recovery", ""),
+            }
+        if "R" in rows:
+            out["rows"]["R"] = {
+                "lv": rows["R"].get("lv", "0"),
+                "drawdown_pct": rows["R"].get("drawdown_pct"),
+                "recovery": rows["R"].get("recovery", ""),
+            }
+        return out
+
+    icl_nq = _normalize_icl(icl_by_symbol.get("NQ", _icl_default("NQ", "1-A")), symbol="NQ", section_id="1-A")
+    icl_gc = _normalize_icl(icl_by_symbol.get("GC", _icl_default("GC", "1-B")), symbol="GC", section_id="1-B")
+
+    pos_by_symbol = {s["symbol"]: s for s in [
+        {
+            "symbol": sec.symbol,
+            "rows": [
+                {
+                    "part": row.part,
+                    "engine_state": "ON" if row.engine_on else "OFF",
+                    "strategy_name": row.strategy_name,
+                }
+                for row in sec.rows
+            ],
+        }
+        for sec in position_state_sections
+    ]}
+
+    def _default_pos(symbol: str) -> dict[str, Any]:
+        return {
+            "symbol": symbol,
+            "rows": [
+                {"part": "Main", "engine_state": "OFF", "strategy_name": "NONE"},
+                {"part": "Attitude", "engine_state": "OFF", "strategy_name": "NONE"},
+                {"part": "Booster", "engine_state": "OFF", "strategy_name": "NONE"},
+            ],
+        }
+
+    pos_nq = pos_by_symbol.get("NQ", _default_pos("NQ"))
+    pos_gc = pos_by_symbol.get("GC", _default_pos("GC"))
+
     return {
         "date_iso": d.isoformat(),
         "mode": MODE_STR.get(worst_level, "?"),
         "worst_level": str(worst_level),
-        "icl_sections": icl_sections,
+        "icl_nq": icl_nq,
+        "icl_gc": icl_gc,
         "scl_level": scl_level,
-        "scl_rows": scl_rows,
+        "t_row": scl_rows[0] if scl_rows else {"factor": "T", "lv": "0", "value": "—", "recovery": ""},
         "lcl_level": lcl_level,
-        "lcl_rows": lcl_rows,
-        "position_state_sections": [
-            {
-                "symbol": sec.symbol,
-                "rows": [
-                    {
-                        "part": row.part,
-                        "engine_state": "ON" if row.engine_on else "OFF",
-                        "strategy_name": row.strategy_name,
-                    }
-                    for row in sec.rows
-                ],
-            }
-            for sec in position_state_sections
-        ],
-        "nlv_line": nlv_line,
-        "cash_buffer_line": cash_buffer_line,
-        "maintenance_lines": ["カレンダー連携は未実装のためスキップ"],
+        "u_row": lcl_rows[0] if lcl_rows else {"factor": "U", "lv": "0", "value": "N/A", "recovery": ""},
+        "s_row": lcl_rows[1] if len(lcl_rows) > 1 else {"factor": "S", "lv": "0", "value": "N/A", "recovery": ""},
+        "pos_nq": pos_nq,
+        "pos_gc": pos_gc,
+        "nlv_value": capital_ctx["nlv_value"],
+        "excess_liq_k": capital_ctx["excess_liq_k"],
+        "cash_buffer_ok": capital_ctx["cash_buffer_ok"],
+        "maintenance_line": "カレンダー連携は未実装のためスキップ",
     }
 
 

@@ -1,5 +1,4 @@
 【Cockpit】取得: {{ now_utc }}
-
 {% for block in symbol_blocks %}
 ■ {{ block.symbol }}: {{ block.mode }} (Lv{{ block.throttle_level }})
   {{ block.reason }}

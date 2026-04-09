@@ -1,11 +1,11 @@
 COCKPIT_BOT_COMMANDS_MESSAGE = (
     "-----------------------------------\n"
     "■計器レポート用コマンド\n"
-    "/cockpit または /status … 現在の計器（IB から取得）\n"
     "/daily … Daily Flight Log（市場・資本・各層）\n"
-    "/position … ポジション明細 + target 差分\n"
     "/breakdown … 各因子の計算内訳（Layer 2 シグナル）\n"
     "/schedule … 取引時間スキャン（夏冬・短縮・休場の事前通知）\n"
+    "/position … ポジション明細 + target 差分\n"
+    "/cockpit または /status … 現在の計器（IB から取得）\n"
     "-----------------------------------\n"
     "■マスタ管理（参照）用コマンド\n"
     "/altitude … 高度設定\n"

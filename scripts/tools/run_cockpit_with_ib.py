@@ -82,7 +82,7 @@ async def main() -> int:
             bundle = fc.get_last_bundle()
 
             if args.breakdown and bundle:
-                from reports.breakdown.format_breakdown_report import format_breakdown_report
+                from reports.format_breakdown_report import format_breakdown_report
 
                 print(format_breakdown_report(fc))
                 print("---")

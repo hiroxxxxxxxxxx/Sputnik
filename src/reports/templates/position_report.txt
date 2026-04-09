@@ -1,32 +1,29 @@
 📌 【POSITIONS】 {{ date_iso }}
 ━━━━━━━━━━━━━━━━━━━━
-
-{% if futures_rows %}
-{% for sym in symbols %}
-━━━━━━━━ {{ sym }} ━━━━━━━━
-{% set sym_fut = futures_rows | selectattr("symbol", "equalto", sym) | list %}
-{% set sym_opt = options_rows | selectattr("symbol", "equalto", sym) | list %}
-{% set sym_target = futures_target_rows | selectattr("symbol", "equalto", sym) | list %}
-{% if sym_target %}
+━━━━━━━━ NQ ━━━━━━━━
 Futures target diff (MNQ/MGC 相当枚数; target / actual_net / delta)
-{% for row in sym_target %}
+{%- for row in nq_futures_target_rows %}
 {{ row.micro_label }} | target={{ row.target }} | actual={{ row.actual }} | delta={{ row.delta }}
-{% endfor %}
-{% endif %}
-{% if sym_opt %}
+{%- endfor %}
 Options strategy diff (target / actual / delta)
-{% for row in sym_opt %}
-{% if row.strategy == "UNCLASSIFIED" %}
+{%- for row in nq_options_rows %}
+{%- if row.strategy == "UNCLASSIFIED" %}
 {{ row.strategy }} | actual={{ row.actual }} | {{ row.unclassified_detail }}
-{% else %}
+{%- else %}
 {{ row.strategy }} | target={{ row.target }} | actual={{ row.actual }} | delta={{ row.delta }}
-{% endif %}
-{% endfor %}
-{% endif %}
-{% if not loop.last %}
-
-{% endif %}
-{% endfor %}
-{% endif %}
-
+{%- endif %}
+{%- endfor %}
+━━━━━━━━ GC ━━━━━━━━
+Futures target diff (MNQ/MGC 相当枚数; target / actual_net / delta)
+{%- for row in gc_futures_target_rows %}
+{{ row.micro_label }} | target={{ row.target }} | actual={{ row.actual }} | delta={{ row.delta }}
+{%- endfor %}
+Options strategy diff (target / actual / delta)
+{%- for row in gc_options_rows %}
+{%- if row.strategy == "UNCLASSIFIED" %}
+{{ row.strategy }} | actual={{ row.actual }} | {{ row.unclassified_detail }}
+{%- else %}
+{{ row.strategy }} | target={{ row.target }} | actual={{ row.actual }} | delta={{ row.delta }}
+{%- endif %}
+{%- endfor %}
 ━━━━━━━━━━━━━━━━━━━━

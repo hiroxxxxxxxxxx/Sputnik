@@ -17,10 +17,7 @@ from avionics.data.signals import (
     SignalBundle,
     VolatilitySignal,
 )
-from reports.breakdown.format_breakdown_report import (
-    BREAKDOWN_HIT_LEGEND,
-    format_breakdown_report,
-)
+from reports.format_breakdown_report import format_breakdown_report
 
 
 class _DummyFC:
@@ -93,8 +90,8 @@ def test_format_breakdown_report_with_positions_detail() -> None:
 def test_format_breakdown_report_without_positions_detail() -> None:
     fc = _DummyFC()
     text = format_breakdown_report(fc)
-    assert "[7] POSITION SNAPSHOT" not in text
-    assert BREAKDOWN_HIT_LEGEND in text
+    assert "[7] POSITION SNAPSHOT" in text
+    assert "※ ★ = 因子判定の決定枝に関係する入力行を示す。" in text
     assert "P/T 入力 <NQ> [ P=— T=— ]" in text
     assert "[5] T（SCL） [ SCL=0 ]" in text
     assert "NQ トレンド | up" in text
