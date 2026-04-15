@@ -40,12 +40,14 @@ def parse_float_or_none(raw: Any) -> Optional[float]:
     if raw is None:
         return None
     try:
-        if isinstance(raw, (int, float)):
-            return float(raw)
         s = str(raw).replace(",", "").strip()
         if not s:
             return None
-        return float(s)
+        value = float(s)
+        # IB が「値なし」を示す巨大値（double max）を返すケースを除外する。
+        if value > 1e300:
+            return None
+        return value
     except (TypeError, ValueError):
         return None
 
@@ -68,6 +70,17 @@ def extract_whatif_margin_change(state: Any) -> tuple[float, str]:
     if maint_before is not None and maint_after is not None:
         return (float(maint_after - maint_before), "maintMarginAfter-maintMarginBefore")
 
+    raw_state_values = {
+        "initMarginBefore": getattr(state, "initMarginBefore", "N/A"),
+        "initMarginAfter": getattr(state, "initMarginAfter", "N/A"),
+        "maintMarginBefore": getattr(state, "maintMarginBefore", "N/A"),
+        "maintMarginAfter": getattr(state, "maintMarginAfter", "N/A"),
+        "initMarginChange": getattr(state, "initMarginChange", "N/A"),
+        "maintMarginChange": getattr(state, "maintMarginChange", "N/A"),
+        "warningText": getattr(state, "warningText", "N/A"),
+    }
+    print(f"DEBUG: Raw whatIf state values: {raw_state_values}")
+
     raise ValueError(
         "whatIf margin fields missing: "
         f"maintChange={getattr(state, 'maintMarginChange', None)!r}, "
@@ -75,7 +88,8 @@ def extract_whatif_margin_change(state: Any) -> tuple[float, str]:
         f"initBefore={getattr(state, 'initMarginBefore', None)!r}, "
         f"initAfter={getattr(state, 'initMarginAfter', None)!r}, "
         f"maintBefore={getattr(state, 'maintMarginBefore', None)!r}, "
-        f"maintAfter={getattr(state, 'maintMarginAfter', None)!r}"
+        f"maintAfter={getattr(state, 'maintMarginAfter', None)!r}, "
+        f"rawState={raw_state_values!r}"
     )
 
 
@@ -100,7 +114,12 @@ def extract_order_state_from_whatif_result(result: Any) -> tuple[Any, str]:
     status_state = getattr(status, "orderState", None)
     if status_state is not None:
         return status_state, "result.orderStatus.orderState"
-    return result, "fallback(result)"
+    if isinstance(result, (list, tuple)) and len(result) == 0:
+        raise ValueError("whatIf returned empty result")
+    raise ValueError(
+        "whatIf result has no OrderState payload: "
+        f"type={type(result)!r}, repr={result!r}"
+    )
 
 
 def parse_contract_expiry_ymd(raw: Any) -> str:
@@ -169,34 +188,67 @@ async def run_whatif_margin_probe(
     account: Optional[str],
     timeout_seconds: float = 12.0,
 ) -> dict[str, Any]:
-    from ib_async import LimitOrder
+    from ib_async import LimitOrder, MarketOrder
 
-    order = LimitOrder("BUY", 1, whatif_limit_price_for_symbol(symbol_for_price))
-    order.whatIf = True
-    if account:
-        order.account = account
+    account_candidates = [account] if account else [None]
+    if account is not None:
+        account_candidates.append(None)
 
+    attempt_errors: list[str] = []
+    original_raise_request_errors = getattr(ib, "RaiseRequestErrors", None)
+    if hasattr(ib, "RaiseRequestErrors"):
+        ib.RaiseRequestErrors = True
     try:
-        if hasattr(ib, "whatIfOrderAsync"):
-            result = await asyncio.wait_for(
-                ib.whatIfOrderAsync(contract, order), timeout=timeout_seconds
-            )
-        elif hasattr(ib, "whatIfOrder"):
-            result = ib.whatIfOrder(contract, order)
-        else:
-            raise ValueError("IB client does not support whatIf order API")
-    except Exception as exc:
-        raise ValueError(
-            f"failed to run whatIf probe (symbol={symbol_for_price}, account={account!r}): {exc}"
-        ) from exc
+        for account_candidate in account_candidates:
+            account_label = account_candidate if account_candidate is not None else "none"
+            limit_order = LimitOrder("BUY", 1, whatif_limit_price_for_symbol(symbol_for_price))
+            limit_order.whatIf = True
+            limit_order.tif = "DAY"
+            if account_candidate:
+                limit_order.account = account_candidate
 
-    state, state_source = extract_order_state_from_whatif_result(result)
-    warning_text = getattr(state, "warningText", None)
-    margin_change, margin_path = extract_whatif_margin_change(state)
-    return {
-        "margin_change": margin_change,
-        "margin_path": margin_path,
-        "warning": (str(warning_text) if warning_text not in (None, "") else None),
-        "state_source": state_source,
-        "state": state,
-    }
+            market_order = MarketOrder("BUY", 1)
+            market_order.whatIf = True
+            market_order.tif = "DAY"
+            if account_candidate:
+                market_order.account = account_candidate
+
+            attempts = [
+                (f"limit/account={account_label}", limit_order),
+                (f"market/account={account_label}", market_order),
+            ]
+            for attempt_name, order in attempts:
+                try:
+                    await asyncio.sleep(0)
+                    if hasattr(ib, "whatIfOrderAsync"):
+                        result = await asyncio.wait_for(
+                            ib.whatIfOrderAsync(contract, order), timeout=timeout_seconds
+                        )
+                    elif hasattr(ib, "whatIfOrder"):
+                        result = ib.whatIfOrder(contract, order)
+                    else:
+                        raise ValueError("IB client does not support whatIf order API")
+
+                    print(f"DEBUG: whatIf[{attempt_name}] result type: {type(result)}")
+                    print(f"DEBUG: whatIf[{attempt_name}] result attributes: {dir(result)}")
+                    state, state_source = extract_order_state_from_whatif_result(result)
+                    warning_text = getattr(state, "warningText", None)
+                    margin_change, margin_path = extract_whatif_margin_change(state)
+                    return {
+                        "margin_change": margin_change,
+                        "margin_path": margin_path,
+                        "warning": (str(warning_text) if warning_text not in (None, "") else None),
+                        "state_source": f"{state_source}/{attempt_name}",
+                        "state": state,
+                    }
+                except Exception as exc:
+                    attempt_errors.append(f"{attempt_name}: {type(exc).__name__}: {exc}")
+                    continue
+    finally:
+        if hasattr(ib, "RaiseRequestErrors"):
+            ib.RaiseRequestErrors = original_raise_request_errors
+
+    raise ValueError(
+        f"failed to run whatIf probe (symbol={symbol_for_price}, account={account!r}); "
+        + "; ".join(attempt_errors)
+    )

@@ -32,6 +32,14 @@ class IBWhatIfOrderService:
             from ib_async import Stock  # type: ignore
 
             contract = Stock("AAPL", "SMART", "USD")
+            try:
+                if hasattr(self._ib, "qualifyContractsAsync"):
+                    qualified = await self._ib.qualifyContractsAsync(contract)
+                    first_qualified = qualified[0] if qualified else None
+                    if first_qualified is not None:
+                        contract = first_qualified
+            except Exception as exc:
+                raise ValueError(f"failed to resolve contract for {sym}: {exc}") from exc
         elif sym in ("NQ", "MNQ", "GC", "MGC"):
             engine_symbol = "NQ" if sym in ("NQ", "MNQ") else "GC"
             base = contract_for_micro_future(engine_symbol)
