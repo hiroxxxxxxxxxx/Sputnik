@@ -19,10 +19,11 @@ Compose で ib-gateway と cockpit-bot（および runner）を動かすには�
 ```bash
 cd docker
 cp .env.example .env
-# .env を編集し、IB_USERID と IB_PASSWORD を設定
+# .env を編集し、IB_USERID / IB_PASSWORD / IB_TRADING_MODE を設定
 ```
 
 - **IB_USERID** / **IB_PASSWORD**: IB Gateway ログイン用（必須・本番では取り扱いに注意）
+- **IB_TRADING_MODE**: 接続モード。`paper` または `live`（必須）
 - **TELEGRAM_TOKEN** / **TELEGRAM_CHAT_ID**: 任意。設定すると **cockpit-bot 起動時**（`up -d` で起動したとき）に Telegram へ「Sputnik Docker 起動」を送信する（`TELEGRAM_STARTUP_MESSAGE` で文言変更可）
 
 `.env` は git にコミットしないでください（`.env.example` のみリポジトリに含めます）。
@@ -173,7 +174,7 @@ docker compose -f docker/docker-compose.yml up -d
 | **VNC はつながるが画面が真っ黒** | 正常な場合あり。イメージは ApiOnly で GUI が最小限のため、デスクトップが黒いままになることがある。**API（8888）が応答すれば運用上問題なし**。`run_cockpit_with_ib.py` や Telegram ボットで接続できるかで判断する。 |
 | `ModuleNotFoundError: avionics` | コンテナ内の `PYTHONPATH=/app/src` を確認。`docker compose run --rm runner env \| grep PYTHON` |
 | IB 接続タイムアウト | ib-gateway のログで「Listening for incoming API connections」を確認。ブラウザで http://localhost:6080 から Gateway 画面を確認。 |
-| ペーパー/本番の切り替え | ib-gateway の `TRADING_MODE=paper` を変更（本番は `live` 等。イメージのドキュメント参照）。 |
+| ペーパー/本番の切り替え | `docker/.env` の `IB_TRADING_MODE=paper` を変更（本番は `live`）。変更後は `docker compose -f docker/docker-compose.yml up -d --force-recreate ib-gateway cockpit-bot` で再作成する。 |
 | `config/factors.toml` がない | `config/` をマウントしているため、プロジェクトの `config/factors.toml` を用意するか、因子を使わないテスト・スクリプトのみ実行する。 |
 | **名前解決失敗**（errorno -3） | ホストでボットを動かしている場合（/ping で ib-gateway:7497）: `IBKR_HOST=127.0.0.1 IBKR_PORT=7497` で起動。Docker で /cockpit のみ -3 の場合は api.telegram.org の解決失敗の可能性。dns: 8.8.8.8, 8.8.4.4 とネットワークを確認。 |
 | **Error 10141** / **「接続」「承諾」を手動で押す必要がある** | compose で **IBC_AcceptIncomingConnectionAction=accept**（API 接続の自動許可）と **IBC_AcceptNonBrokerageAccountWarning=yes**（Paper 免責の自動承諾）を設定している。これで noVNC で手動操作せずに API が使える。まだ出る場合は `docker compose ... up -d --force-recreate` でコンテナを再作成してから試す。 |
@@ -197,7 +198,7 @@ cp docker/.env.example docker/.env
 nano docker/.env   # または code / vim など
 ```
 
-**必須**: `IB_USERID` と `IB_PASSWORD` に IB のログインID・パスワードを書く。  
+**必須**: `IB_USERID` と `IB_PASSWORD` に IB のログインID・パスワードを書き、`IB_TRADING_MODE` に `paper` または `live` を書く。  
 **Telegram を使う場合**: `TELEGRAM_TOKEN` に Bot トークン、必要なら `TELEGRAM_CHAT_ID` も書く。保存して閉じる。
 
 ---
@@ -295,7 +296,7 @@ IBKR_HOST=127.0.0.1 IBKR_PORT=7497 python scripts/bot/telegram_cockpit_bot.py
 
 ## まとめ（手順の流れ）
 
-1. **環境変数**: `docker/.env` に `IB_USERID`・`IB_PASSWORD` を設定（`cp docker/.env.example docker/.env`）
+1. **環境変数**: `docker/.env` に `IB_USERID`・`IB_PASSWORD`・`IB_TRADING_MODE` を設定（`cp docker/.env.example docker/.env`）
 2. **ビルド・起動**: `docker compose -f docker/docker-compose.yml up -d`（ib-gateway の起動を待つ）
 3. **テスト**: `docker compose -f docker/docker-compose.yml run --rm runner`
 4. **Cockpit+IB**: `docker compose -f docker/docker-compose.yml run --rm runner python scripts/tools/run_cockpit_with_ib.py`

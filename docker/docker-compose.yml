@@ -28,7 +28,7 @@ services:
       - USERNAME=${IB_USERID}
       - PASSWORD=${IB_PASSWORD}
       - GATEWAY_OR_TWS=gateway
-      - IBC_TradingMode=paper
+      - IBC_TradingMode=${IB_TRADING_MODE}
       - IBC_ReadOnlyApi=no
       - IBC_AcceptIncomingConnectionAction=accept   # API 接続を自動許可（デフォルト manual）
       - IBC_AcceptNonBrokerageAccountWarning=yes    # Paper 免責を自動承諾（API 接続前に必要）
