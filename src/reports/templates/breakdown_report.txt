@@ -76,16 +76,17 @@ GC トレンド | {{ t_section.gc_trend }}
 ────────────────────
 [6-A] U（資本使用率） [ U={{ u_section.u_level }} ]
 ────────────────────
-MM/NLV | {{ u_section.mm_over_nlv }}
+使用率 (MM/NLV) | {{ u_section.u_ratio }}
+MM | {{ u_section.mm }}
+NLV | {{ u_section.nlv }}
+ExcessLiq (NLV-MM) | {{ u_section.excess_liq }}
 ────────────────────
 [6-B] S（SPAN） [ S={{ s_section.s_level }} ]
 ────────────────────
-SPAN 比 (span_ratio) | {{ s_section.span_ratio }}
-S whatIf total | {{ s_section.whatif_total }}
-S baseline total | {{ s_section.baseline_total }}
-S total ratio (whatIf/base) | {{ s_section.total_ratio }}
-S NQ (whatIf/base/ratio) | {{ s_section.nq.whatif }} / {{ s_section.nq.baseline }} / {{ s_section.nq.ratio }}{{ "\nS NQ reason | " ~ s_section.nq.reason if s_section.nq.reason else "" }}
-S GC (whatIf/base/ratio) | {{ s_section.gc.whatif }} / {{ s_section.gc.baseline }} / {{ s_section.gc.ratio }}{{ "\nS GC reason | " ~ s_section.gc.reason if s_section.gc.reason else "" }}
+項目 | whatIf | baseline | ratio
+TOTAL | {{ s_section.whatif_total }} | {{ s_section.baseline_total }} | {{ s_section.total_ratio }}
+NQ | {{ s_section.nq.whatif }} | {{ s_section.nq.baseline }} | {{ s_section.nq.ratio }}{{ "\nNQ reason | " ~ s_section.nq.reason if s_section.nq.reason else "" }}
+GC | {{ s_section.gc.whatif }} | {{ s_section.gc.baseline }} | {{ s_section.gc.ratio }}{{ "\nGC reason | " ~ s_section.gc.reason if s_section.gc.reason else "" }}
 ────────────────────
 [7] POSITION SNAPSHOT
 ━━━━━━━━ NQ ━━━━━━━━

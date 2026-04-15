@@ -23,16 +23,21 @@ async def refreshed_fc(
     from avionics.ib import with_ib_market_data_service
     from cockpit.stack import build_cockpit_stack
     from store.db import get_connection
-    from store.state import read_altitude_regime, read_target_futures
+    from store.state import read_altitude_regime, read_s_factor_baseline, read_target_futures
 
     conn = get_connection()
     try:
         altitude = read_altitude_regime(conn)
         target_base_by_symbol = read_target_futures(conn)
+        s_baseline_by_symbol = read_s_factor_baseline(conn)
         async with with_ib_market_data_service(
             host, port, client_id=client_id, timeout=timeout
         ) as fetcher:
-            fc, _ = build_cockpit_stack(symbols, altitude=altitude)
+            fc, _ = build_cockpit_stack(
+                symbols,
+                altitude=altitude,
+                s_baseline_by_symbol=s_baseline_by_symbol,
+            )
             as_of = latest_closed_ny_session_date()
             await fc.refresh(fetcher, as_of, symbols, altitude=altitude)
             yield fc, fetcher, target_base_by_symbol

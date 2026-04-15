@@ -348,7 +348,7 @@ def compute_capital_signals_from_cap(cap: Optional[RawCapitalSnapshot]) -> Capit
     """
     証拠金スナップショットから U/S 用シグナルを算出する。
 
-    mm_over_nlv = MM/NLV。span_ratio = Current Density / Base Density。
+    mm_over_nlv = MM/NLV。span_ratio は whatIf/baseline（partial許容）を優先する。
     証拠金密度 = MM / (現在値 × 先物倍率)（定義書 4-2-3-2）。
     """
     if cap is None:
@@ -374,12 +374,12 @@ def compute_capital_signals_from_cap(cap: Optional[RawCapitalSnapshot]) -> Capit
         if not baseline_symbols:
             raise ValueError("RawCapitalSnapshot.s_baseline_mm_per_lot must not be empty")
         if s_whatif is not None:
-            missing = [sym for sym in baseline_symbols if sym not in s_whatif]
-            if not missing:
-                baseline_total = sum(float(s_baseline[sym]) for sym in baseline_symbols)
+            success_symbols = [sym for sym in baseline_symbols if sym in s_whatif]
+            if success_symbols:
+                baseline_total = sum(float(s_baseline[sym]) for sym in success_symbols)
                 if baseline_total <= 0:
-                    raise ValueError(f"S baseline total must be > 0, got {baseline_total}")
-                whatif_total = sum(float(s_whatif[sym]) for sym in baseline_symbols)
+                    raise ValueError(f"S success baseline total must be > 0, got {baseline_total}")
+                whatif_total = sum(float(s_whatif[sym]) for sym in success_symbols)
                 if whatif_total <= 0:
                     raise ValueError(f"S whatIf total must be > 0, got {whatif_total}")
                 span_ratio = whatif_total / baseline_total

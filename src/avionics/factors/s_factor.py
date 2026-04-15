@@ -65,8 +65,18 @@ class SFactor(BaseFactor):
         altitude: "AltitudeRegime",
     ) -> None:
         cap = getattr(bundle, "capital_signals", None)
-        if cap is not None:
-            await self.update_from_ratio(cap.span_ratio)
+        if cap is None:
+            return
+
+        baseline = getattr(cap, "s_baseline_mm_per_lot", None)
+        whatif = getattr(cap, "s_whatif_mm_per_lot", None)
+        if baseline:
+            baseline_symbols = sorted(baseline.keys())
+            success_symbols = [sym for sym in baseline_symbols if whatif is not None and sym in whatif]
+            # S因子は whatIf 比で駆動する。成功銘柄が無い周期は更新をスキップ。
+            if not success_symbols:
+                return
+        await self.update_from_ratio(cap.span_ratio)
 
     async def update_from_ratio(self, span_ratio: float) -> LevelType:
         """SPAN乖離率からSレベルを更新する。定義書「0-4」「4-2-2-2」参照。"""

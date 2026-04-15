@@ -22,14 +22,21 @@ def build_u_section(fc: "FlightController", bundle: "SignalBundle") -> dict[str,
     if not bundle.capital_signals:
         return None
     cs = bundle.capital_signals
+    cap_snapshot = fc.get_last_capital_snapshot()
+    mm = getattr(cap_snapshot, "mm", None)
+    nlv = getattr(cap_snapshot, "nlv", None)
+    excess_liq = (float(nlv) - float(mm)) if mm is not None and nlv is not None else None
     return {
         "u_level": breakdown_level_suffix(_limit_factor(fc, UFactor)),
-        "mm_over_nlv": f"{cs.mm_over_nlv:.2f} ({cs.mm_over_nlv * 100:.2f}%)",
+        "u_ratio": f"{cs.mm_over_nlv:.2f} ({cs.mm_over_nlv * 100:.2f}%)",
+        "mm": "N/A" if mm is None else f"{float(mm):,.2f}",
+        "nlv": "N/A" if nlv is None else f"{float(nlv):,.2f}",
+        "excess_liq": "N/A" if excess_liq is None else f"{float(excess_liq):,.2f}",
     }
 
 
 def _default_u_section() -> dict[str, Any]:
-    return {"u_level": "—", "mm_over_nlv": "N/A"}
+    return {"u_level": "—", "u_ratio": "N/A", "mm": "N/A", "nlv": "N/A", "excess_liq": "N/A"}
 
 
 def build_fixed_u_section(fc: "FlightController", bundle: "SignalBundle") -> dict[str, Any]:

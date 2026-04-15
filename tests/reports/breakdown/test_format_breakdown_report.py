@@ -79,12 +79,15 @@ def test_format_breakdown_report_with_positions_detail() -> None:
     assert "PB | target=" in text
     assert "UNCLASSIFIED | actual=2 | P B=0 S=2 | C B=0 S=0" in text
     assert "[6-A] U（資本使用率）" in text
+    assert "U比 (MM/NLV) | 0.10 (10.00%)" in text
+    assert "MM | 100,000.00" in text
+    assert "NLV | 1,000,000.00" in text
+    assert "ExcessLiq (NLV-MM) | 900,000.00" in text
     assert "[6-B] S（SPAN）" in text
-    assert "S whatIf total | 1800.00" in text
-    assert "S baseline total | 1500.00" in text
-    assert "S total ratio (whatIf/base) | 1.20" in text
-    assert "S NQ (whatIf/base/ratio) | 1200.00 / 1000.00 / 1.20" in text
-    assert "S GC (whatIf/base/ratio) | 600.00 / 500.00 / 1.20" in text
+    assert "項目 | whatIf | baseline | ratio" in text
+    assert "TOTAL | 1800.00 | 1500.00 | 1.20" in text
+    assert "NQ | 1200.00 | 1000.00 | 1.20" in text
+    assert "GC | 600.00 | 500.00 | 1.20" in text
 
 
 def test_format_breakdown_report_without_positions_detail() -> None:
@@ -113,11 +116,9 @@ def test_format_breakdown_report_span_breakdown_na_fallback() -> None:
         capital_signals=CapitalSignals(mm_over_nlv=0.1, span_ratio=1.05),
     )
     text = format_breakdown_report(fc)
-    assert "S whatIf total | N/A" in text
-    assert "S baseline total | N/A" in text
-    assert "S total ratio (whatIf/base) | N/A" in text
-    assert "S NQ (whatIf/base/ratio) | N/A / N/A / N/A" in text
-    assert "S GC (whatIf/base/ratio) | N/A / N/A / N/A" in text
+    assert "TOTAL | N/A | N/A | N/A" in text
+    assert "NQ | N/A | N/A | N/A" in text
+    assert "GC | N/A | N/A | N/A" in text
 
 
 def test_format_breakdown_report_span_breakdown_partial_success() -> None:
@@ -140,12 +141,35 @@ def test_format_breakdown_report_span_breakdown_partial_success() -> None:
         ),
     )
     text = format_breakdown_report(fc)
-    assert "S whatIf total | N/A" in text
-    assert "S baseline total | 1500.00" in text
-    assert "S total ratio (whatIf/base) | N/A" in text
-    assert "S NQ (whatIf/base/ratio) | 1200.00 / 1000.00 / 1.20" in text
-    assert "S GC (whatIf/base/ratio) | N/A / 500.00 / N/A" in text
-    assert "S GC reason | ValueError: No Trading Permission" in text
+    assert "TOTAL | 1200.00 | 1500.00 | 1.20" in text
+    assert "NQ | 1200.00 | 1000.00 | 1.20" in text
+    assert "GC | N/A | 500.00 | N/A" in text
+    assert "GC reason | PermissionError: No Trading Permission" in text
+
+
+def test_format_breakdown_report_span_breakdown_all_failed_with_baseline() -> None:
+    fc = _DummyFC()
+    fc._bundle = SignalBundle(
+        liquidity_credit_hyg=LiquiditySignals(below_sma20=False, daily_change=0.01),
+        liquidity_credit_lqd=LiquiditySignals(below_sma20=False, daily_change=0.01),
+        as_of=date(2026, 3, 30),
+        price_signals={
+            "NQ": PriceSignals(symbol="NQ", trend="up", daily_change=0.01, cum5_change=0.02, cum2_change=0.01, last_close=18000.0),
+            "GC": PriceSignals(symbol="GC", trend="flat", daily_change=0.0, cum5_change=0.0, cum2_change=0.0, last_close=2300.0),
+        },
+        volatility_signals={},
+        capital_signals=CapitalSignals(
+            mm_over_nlv=0.1,
+            span_ratio=0.1,
+            s_whatif_mm_per_lot={},
+            s_baseline_mm_per_lot={"NQ": 1000.0, "GC": 500.0},
+            s_whatif_errors={"NQ": "ValueError: failed", "GC": "ValueError: failed"},
+        ),
+    )
+    text = format_breakdown_report(fc)
+    assert "TOTAL | N/A | 1500.00 | N/A" in text
+    assert "NQ reason | ValueError: failed" in text
+    assert "GC reason | ValueError: failed" in text
 
 
 def test_format_breakdown_report_marks_hits_for_icl_factors() -> None:

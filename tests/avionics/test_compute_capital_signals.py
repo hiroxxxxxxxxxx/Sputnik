@@ -22,7 +22,7 @@ def test_compute_capital_signals_uses_s_whatif_ratio_when_present() -> None:
     assert round(out.span_ratio, 4) == 1.2
 
 
-def test_compute_capital_signals_keeps_density_ratio_when_s_baseline_missing_whatif_symbol() -> None:
+def test_compute_capital_signals_uses_partial_whatif_ratio_when_some_symbols_missing() -> None:
     cap = RawCapitalSnapshot(
         as_of=date(2026, 3, 31),
         mm=100_000.0,
@@ -35,7 +35,7 @@ def test_compute_capital_signals_keeps_density_ratio_when_s_baseline_missing_wha
     )
     out = compute_capital_signals_from_cap(cap)
     assert out.mm_over_nlv == 0.1
-    assert round(out.span_ratio, 4) == 0.1
+    assert round(out.span_ratio, 4) == 1.2
 
 
 def test_compute_capital_signals_allows_missing_whatif_when_baseline_present() -> None:
