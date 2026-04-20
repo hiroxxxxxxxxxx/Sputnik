@@ -30,9 +30,11 @@ def build_r_section(fc: "FlightController", bundle: "SignalBundle", price_symbol
         "tip_reference_high": value_entry(fmt_price(lt.tip_reference_high)),
         "tip_drawdown": value_entry(fmt_pct(liquidity_tip_canonical_drawdown(lt))),
     }
-    r_lv = int(r_fac.level) if r_fac is not None else 0
-    if r_lv == 2:
-        mark_value_keys(values, {"tip_drawdown"})
+    tip_dd = liquidity_tip_canonical_drawdown(lt)
+    if r_fac is not None and int(r_fac.level) == 2 and tip_dd is not None:
+        l2_th = float(r_fac.thresholds[f"drawdown_{fc.last_altitude_regime}_L2"])
+        if float(tip_dd) <= l2_th:
+            mark_value_keys(values, {"tip_drawdown"})
     return {"r_level": breakdown_level_suffix(r_fac), "values": values}
 
 

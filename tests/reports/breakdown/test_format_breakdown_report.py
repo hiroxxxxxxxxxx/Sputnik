@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import date
 
+import pytest
+
 from cockpit.mode import BOOST
 from avionics.factors.c_factor import CFactor
 from avionics.factors.p_factor import PFactor
@@ -79,7 +81,7 @@ def test_format_breakdown_report_with_positions_detail() -> None:
     assert "PB | target=" in text
     assert "UNCLASSIFIED | actual=2 | P B=0 S=2 | C B=0 S=0" in text
     assert "[6-A] U（資本使用率）" in text
-    assert "U比 (MM/NLV) | 0.10 (10.00%)" in text
+    assert "使用率 (MM/NLV) | 0.10 (10.00%)" in text
     assert "MM | 100,000.00" in text
     assert "NLV | 1,000,000.00" in text
     assert "ExcessLiq (NLV-MM) | 900,000.00" in text
@@ -243,13 +245,274 @@ def test_format_breakdown_report_marks_hits_for_icl_factors() -> None:
     )
 
     text = format_breakdown_report(fc)
-    assert "ボラ指数 (VXN/GVZ 相当) | 42.00 ★" in text
+    assert "ボラ指数 (VXN) | 42.00 ★" in text
     assert "V2→V1復帰判定 | 1/2日目 ★" in text
     assert "C（HYG） [ C=2 ]" in text
     assert "SMA20乖離率 | -1.20% ★" in text
     assert "日次変化率 | -3.00% ★" in text
     assert "[4] R（TIP） [ R=2 ]" in text
     assert "20日高値乖離率 | -3.00% ★" in text
+
+
+def test_format_breakdown_report_does_not_mark_credit_hit_when_level_is_stale() -> None:
+    fc = _DummyFC()
+    fc._bundle = SignalBundle(
+        liquidity_credit_hyg=LiquiditySignals(
+            below_sma20=True,
+            daily_change=0.0,
+            last_close=77.0,
+            sma20=78.0,
+            sma20_gap=-0.012,
+        ),
+        liquidity_credit_lqd=LiquiditySignals(
+            below_sma20=False,
+            daily_change=0.0,
+            last_close=100.0,
+            sma20=99.0,
+            sma20_gap=0.01,
+        ),
+        as_of=date(2026, 3, 30),
+        price_signals={
+            "NQ": PriceSignals(symbol="NQ", trend="up", daily_change=0.01, cum5_change=0.02, cum2_change=0.01, last_close=18000.0),
+            "GC": PriceSignals(symbol="GC", trend="flat", daily_change=0.0, cum5_change=0.0, cum2_change=0.0, last_close=2300.0),
+        },
+        volatility_signals={},
+        liquidity_tip=LiquiditySignals(
+            tip_drawdown_from_high=-0.01,
+            tip_reference_high=106.0,
+            last_close=105.0,
+        ),
+    )
+    c = CFactor(name="C", thresholds={"daily_change_C2": -0.025, "confirm_days": 2})
+    c.level = 0
+    fc._mapping = EngineFactorMapping(
+        symbol_factors={"NQ": [c]},
+        limit_factors=[],
+        global_market_factors=[],
+    )
+
+    text = format_breakdown_report(fc)
+    assert "C（HYG） [ C=0 ]" in text
+    assert "SMA20乖離率 | -1.20% ★" not in text
+
+
+def test_format_breakdown_report_does_not_mark_r_hit_when_level_is_stale() -> None:
+    fc = _DummyFC()
+    fc._bundle = SignalBundle(
+        liquidity_credit_hyg=LiquiditySignals(below_sma20=False, daily_change=0.01),
+        liquidity_credit_lqd=LiquiditySignals(below_sma20=False, daily_change=0.01),
+        as_of=date(2026, 3, 30),
+        price_signals={
+            "NQ": PriceSignals(symbol="NQ", trend="up", daily_change=0.01, cum5_change=0.02, cum2_change=0.01, last_close=18000.0),
+            "GC": PriceSignals(symbol="GC", trend="flat", daily_change=0.0, cum5_change=0.0, cum2_change=0.0, last_close=2300.0),
+        },
+        volatility_signals={},
+        liquidity_tip=LiquiditySignals(
+            tip_drawdown_from_high=-0.03,
+            tip_reference_high=106.0,
+            last_close=103.0,
+        ),
+    )
+    r = RFactor(
+        name="R",
+        thresholds={
+            "drawdown_high_L2": -0.03,
+            "drawdown_mid_L2": -0.025,
+            "drawdown_low_L2": -0.02,
+            "drawdown_high_L0": -0.02,
+            "drawdown_mid_L0": -0.015,
+            "drawdown_low_L0": -0.01,
+            "confirm_days": 2,
+        },
+    )
+    r.level = 0
+    fc._mapping = EngineFactorMapping(
+        symbol_factors={"GC": [r]},
+        limit_factors=[],
+        global_market_factors=[],
+    )
+
+    text = format_breakdown_report(fc)
+    assert "[4] R（TIP） [ R=0 ]" in text
+    assert "20日高値乖離率 | -3.00% ★" not in text
+
+
+def test_format_breakdown_report_marks_v2_to_v1_decision_branch_inputs() -> None:
+    fc = _DummyFC()
+    fc._bundle = SignalBundle(
+        liquidity_credit_hyg=LiquiditySignals(below_sma20=False, daily_change=0.01),
+        liquidity_credit_lqd=LiquiditySignals(below_sma20=False, daily_change=0.01),
+        as_of=date(2026, 3, 30),
+        price_signals={
+            "NQ": PriceSignals(symbol="NQ", trend="up", daily_change=0.01, cum5_change=0.02, cum2_change=0.01, last_close=18000.0),
+            "GC": PriceSignals(symbol="GC", trend="flat", daily_change=0.0, cum5_change=0.0, cum2_change=0.0, last_close=2300.0),
+        },
+        volatility_signals={
+            "NQ": VolatilitySignal(
+                index_value=37.0,
+                high_20=45.0,
+                recovery_confirm_satisfied_days_v1_off=0,
+                recovery_confirm_satisfied_days_v2_off=2,
+                index_history=(
+                    (date(2026, 3, 26), 41.0),
+                    (date(2026, 3, 27), 37.5),
+                    (date(2026, 3, 30), 37.0),
+                ),
+            ),
+        },
+        capital_signals=CapitalSignals(mm_over_nlv=0.1, span_ratio=1.05),
+    )
+    v = VFactor(
+        name="V",
+        thresholds={
+            "high": {"V2_on": 40.0, "V2_off": 38.0, "V2_confirm_days": 2, "V1_on": 30.0, "V1_off": 28.0, "V1_confirm_days": 1},
+            "mid": {"V2_on": 40.0, "V2_off": 38.0, "V2_confirm_days": 2, "V1_on": 30.0, "V1_off": 28.0, "V1_confirm_days": 1},
+            "low": {"V2_on": 35.0, "V2_off": 33.0, "V2_confirm_days": 2, "V1_on": 25.0, "V1_off": 23.0, "V1_confirm_days": 1},
+        },
+    )
+    v.level = 1
+    fc._mapping = EngineFactorMapping(
+        symbol_factors={"NQ": [v]},
+        limit_factors=[],
+        global_market_factors=[],
+    )
+
+    text = format_breakdown_report(fc)
+    assert "V 入力 <NQ> [ V=1 ]" in text
+    assert "ボラ指数 (VXN) | 37.00 ★" in text
+    assert "V2→V1復帰判定 | 2/2日目 ★" in text
+    assert "V1→V0復帰判定 | 0/1日目 ★" not in text
+
+
+def test_format_breakdown_report_marks_index_in_v1_hysteresis_band() -> None:
+    """V1_off < index < V1_on の V1維持でも、指数は判定入力として ★ を付ける。"""
+    fc = _DummyFC()
+    fc._bundle = SignalBundle(
+        liquidity_credit_hyg=LiquiditySignals(below_sma20=False, daily_change=0.01),
+        liquidity_credit_lqd=LiquiditySignals(below_sma20=False, daily_change=0.01),
+        as_of=date(2026, 3, 30),
+        price_signals={
+            "NQ": PriceSignals(symbol="NQ", trend="up", daily_change=0.01, cum5_change=0.02, cum2_change=0.01, last_close=18000.0),
+            "GC": PriceSignals(symbol="GC", trend="flat", daily_change=0.0, cum5_change=0.0, cum2_change=0.0, last_close=2300.0),
+        },
+        volatility_signals={
+            "GC": VolatilitySignal(
+                index_value=28.95,
+                high_20=45.51,
+                recovery_confirm_satisfied_days_v1_off=0,
+                index_history=(
+                    (date(2026, 3, 27), 31.0),
+                    (date(2026, 3, 30), 28.95),
+                ),
+            ),
+        },
+        capital_signals=CapitalSignals(mm_over_nlv=0.1, span_ratio=1.05),
+    )
+    v = VFactor(
+        name="V_GC",
+        thresholds={
+            "high": {"V2_on": 40.0, "V2_off": 38.0, "V2_confirm_days": 2, "V1_on": 30.0, "V1_off": 28.0, "V1_confirm_days": 1},
+            "mid": {"V2_on": 40.0, "V2_off": 38.0, "V2_confirm_days": 2, "V1_on": 30.0, "V1_off": 28.0, "V1_confirm_days": 1},
+            "low": {"V2_on": 35.0, "V2_off": 33.0, "V2_confirm_days": 2, "V1_on": 25.0, "V1_off": 23.0, "V1_confirm_days": 1},
+        },
+    )
+    v.level = 1
+    fc._mapping = EngineFactorMapping(
+        symbol_factors={"GC": [v]},
+        limit_factors=[],
+        global_market_factors=[],
+    )
+
+    text = format_breakdown_report(fc)
+    assert "V 入力 <GC> [ V=1 ]" in text
+    assert "ボラ指数 (GVZ) | 28.95 ★" in text
+    assert "V1→V0復帰判定 | 0/1日目 ★" not in text
+
+
+def test_format_breakdown_report_marks_only_recovery_when_index_allows_v0() -> None:
+    """index が V1_off 未満でも復帰条件で止まる場合、復帰判定のみ ★ にする。"""
+    fc = _DummyFC()
+    fc._bundle = SignalBundle(
+        liquidity_credit_hyg=LiquiditySignals(below_sma20=False, daily_change=0.01),
+        liquidity_credit_lqd=LiquiditySignals(below_sma20=False, daily_change=0.01),
+        as_of=date(2026, 3, 30),
+        price_signals={
+            "NQ": PriceSignals(symbol="NQ", trend="up", daily_change=0.01, cum5_change=0.02, cum2_change=0.01, last_close=18000.0),
+            "GC": PriceSignals(symbol="GC", trend="flat", daily_change=0.0, cum5_change=0.0, cum2_change=0.0, last_close=2300.0),
+        },
+        volatility_signals={
+            "GC": VolatilitySignal(
+                index_value=27.50,
+                high_20=45.51,
+                recovery_confirm_satisfied_days_v1_off=0,
+                index_history=(
+                    (date(2026, 3, 27), 31.0),
+                    (date(2026, 3, 30), 27.50),
+                ),
+            ),
+        },
+        capital_signals=CapitalSignals(mm_over_nlv=0.1, span_ratio=1.05),
+    )
+    v = VFactor(
+        name="V_GC",
+        thresholds={
+            "high": {"V2_on": 40.0, "V2_off": 38.0, "V2_confirm_days": 2, "V1_on": 30.0, "V1_off": 28.0, "V1_confirm_days": 1},
+            "mid": {"V2_on": 40.0, "V2_off": 38.0, "V2_confirm_days": 2, "V1_on": 30.0, "V1_off": 28.0, "V1_confirm_days": 1},
+            "low": {"V2_on": 35.0, "V2_off": 33.0, "V2_confirm_days": 2, "V1_on": 25.0, "V1_off": 23.0, "V1_confirm_days": 1},
+        },
+    )
+    v.level = 1
+    fc._mapping = EngineFactorMapping(
+        symbol_factors={"GC": [v]},
+        limit_factors=[],
+        global_market_factors=[],
+    )
+
+    text = format_breakdown_report(fc)
+    assert "ボラ指数 (GVZ) | 27.50 ★" not in text
+    assert "V1→V0復帰判定 | 0/1日目 ★" in text
+
+
+def test_format_breakdown_report_raises_on_v_level_mismatch() -> None:
+    fc = _DummyFC()
+    fc._bundle = SignalBundle(
+        liquidity_credit_hyg=LiquiditySignals(below_sma20=False, daily_change=0.01),
+        liquidity_credit_lqd=LiquiditySignals(below_sma20=False, daily_change=0.01),
+        as_of=date(2026, 3, 30),
+        price_signals={
+            "NQ": PriceSignals(symbol="NQ", trend="up", daily_change=0.01, cum5_change=0.02, cum2_change=0.01, last_close=18000.0),
+            "GC": PriceSignals(symbol="GC", trend="flat", daily_change=0.0, cum5_change=0.0, cum2_change=0.0, last_close=2300.0),
+        },
+        volatility_signals={
+            "GC": VolatilitySignal(
+                index_value=28.95,
+                high_20=45.51,
+                recovery_confirm_satisfied_days_v1_off=0,
+                index_history=(
+                    (date(2026, 3, 27), 31.0),
+                    (date(2026, 3, 30), 28.95),
+                ),
+            ),
+        },
+        capital_signals=CapitalSignals(mm_over_nlv=0.1, span_ratio=1.05),
+    )
+    v = VFactor(
+        name="V_GC",
+        thresholds={
+            "high": {"V2_on": 40.0, "V2_off": 38.0, "V2_confirm_days": 2, "V1_on": 30.0, "V1_off": 28.0, "V1_confirm_days": 1},
+            "mid": {"V2_on": 40.0, "V2_off": 38.0, "V2_confirm_days": 2, "V1_on": 30.0, "V1_off": 28.0, "V1_confirm_days": 1},
+            "low": {"V2_on": 35.0, "V2_off": 33.0, "V2_confirm_days": 2, "V1_on": 25.0, "V1_off": 23.0, "V1_confirm_days": 1},
+        },
+    )
+    v.level = 2
+    fc._mapping = EngineFactorMapping(
+        symbol_factors={"GC": [v]},
+        limit_factors=[],
+        global_market_factors=[],
+    )
+
+    with pytest.raises(ValueError, match="V breakdown mismatch"):
+        _ = format_breakdown_report(fc)
 
 
 def test_format_breakdown_report_p1_gap_band_also_marks_p0_trend_when_flat() -> None:
@@ -445,7 +708,7 @@ def test_format_breakdown_report_p1_default_marks_only_failed_p0_inputs() -> Non
             "P0_gap_min": -0.03,
         },
     )
-    # level がスナップショット分類とずれている場合は見出しは factor.level を正とし、注釈で知らせる。
+    # 不一致は許容せずエラーで検知する。
     p.level = 0
     fc._mapping = EngineFactorMapping(
         symbol_factors={"NQ": [p]},
@@ -453,14 +716,8 @@ def test_format_breakdown_report_p1_default_marks_only_failed_p0_inputs() -> Non
         global_market_factors=[],
     )
 
-    text = format_breakdown_report(fc)
-    assert "P/T 入力 <NQ> [ P=0 T=— ]" in text
-    assert "表示時点の因子レベルと最新行分類が一致しません" in text
-    assert "トレンド | down ★" in text
-    assert "5日累積変動率 | -4.00% ★" in text
-    assert "20日高値乖離率 | -4.00% ★" in text
-    assert "日次変化率 | 0.00%" in text
-    assert "日次変化率 | 0.00% ★" not in text
+    with pytest.raises(ValueError, match="P breakdown mismatch"):
+        _ = format_breakdown_report(fc)
 
 
 def test_format_breakdown_report_p0_relaxed_no_stars_on_price_inputs() -> None:
@@ -510,7 +767,6 @@ def test_format_breakdown_report_p0_relaxed_no_stars_on_price_inputs() -> None:
 
     text = format_breakdown_report(fc)
     assert "P/T 入力 <NQ> [ P=0 T=— ]" in text
-    assert "表示時点の因子レベルと最新行分類が一致しません" not in text
     assert "トレンド | up ★" not in text
     assert "日次変化率 | 1.00% ★" not in text
     assert "5日累積変動率 | 2.00% ★" not in text

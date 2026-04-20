@@ -63,13 +63,16 @@ def _apply_p_hits(values: dict[str, dict[str, object]], notes: list[str], p_fact
         return
     try:
         lvl_snap, rid = p_classify_row_with_reason(p_factor.thresholds, dc, c5, hg, tr, c2)
-        if rid != "P0_calm":
-            p0_set = set(p_failed_p0_row_keys(p_factor.thresholds, dc, c5, hg, tr))
-            mark_value_keys(values, _p_reason_hit_keys(rid) | p0_set)
-        if int(p_factor.level) != int(lvl_snap):
-            notes.append("表示時点の因子レベルと最新行分類が一致しません（refresh 順序を確認）。")
     except ValueError:
-        pass
+        return
+    if rid != "P0_calm":
+        p0_set = set(p_failed_p0_row_keys(p_factor.thresholds, dc, c5, hg, tr))
+        mark_value_keys(values, _p_reason_hit_keys(rid) | p0_set)
+    if int(p_factor.level) != int(lvl_snap):
+        raise ValueError(
+            "P breakdown mismatch: factor.level and latest snapshot classification differ. "
+            "Ensure refresh/apply order is consistent."
+        )
 
 
 def build_p_sections(fc: "FlightController", bundle: "SignalBundle", price_symbols: list[str]) -> list[dict[str, Any]]:

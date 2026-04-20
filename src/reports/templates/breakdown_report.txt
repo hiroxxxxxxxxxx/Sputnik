@@ -33,7 +33,7 @@ P 注釈 | {{ note }}
 ────────────────────
 [2-A] V 入力 <{{ vol_nq.symbol }}> [ V={{ vol_nq.v_level }} ]
 ────────────────────
-ボラ指数 (VXN/GVZ 相当) | {{ vol_nq["values"]["index_value"].value }}{{ " ★" if vol_nq["values"]["index_value"].hit | default(false) else "" }}
+ボラ指数 (VXN) | {{ vol_nq["values"]["index_value"].value }}{{ " ★" if vol_nq["values"]["index_value"].hit | default(false) else "" }}
 20日高値 | {{ vol_nq["values"]["high_20"].value }}
 V1→V0復帰判定 | {{ vol_nq["values"]["v1_recovery"].done }}/{{ vol_nq["values"]["v1_recovery"].total }}日目{{ " ★" if vol_nq["values"]["v1_recovery"].hit | default(false) else "" }}
  ・ノックイン成立 | {{ vol_nq["values"]["v1_knock_in"].value }}{{ " ★" if vol_nq["values"]["v1_knock_in"].hit | default(false) else "" }}
@@ -42,7 +42,7 @@ V2→V1復帰判定 | {{ vol_nq["values"]["v2_recovery"].done }}/{{ vol_nq["valu
 ────────────────────
 [2-B] V 入力 <{{ vol_gc.symbol }}> [ V={{ vol_gc.v_level }} ]
 ────────────────────
-ボラ指数 (VXN/GVZ 相当) | {{ vol_gc["values"]["index_value"].value }}{{ " ★" if vol_gc["values"]["index_value"].hit | default(false) else "" }}
+ボラ指数 (GVZ) | {{ vol_gc["values"]["index_value"].value }}{{ " ★" if vol_gc["values"]["index_value"].hit | default(false) else "" }}
 20日高値 | {{ vol_gc["values"]["high_20"].value }}
 V1→V0復帰判定 | {{ vol_gc["values"]["v1_recovery"].done }}/{{ vol_gc["values"]["v1_recovery"].total }}日目{{ " ★" if vol_gc["values"]["v1_recovery"].hit | default(false) else "" }}
  ・ノックイン成立 | {{ vol_gc["values"]["v1_knock_in"].value }}{{ " ★" if vol_gc["values"]["v1_knock_in"].hit | default(false) else "" }}
